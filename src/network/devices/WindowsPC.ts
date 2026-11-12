@@ -178,7 +178,7 @@ import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracer
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
 import { cmdWhoami } from './windows/WinWhoami';
-import { cmdNetUser, cmdNetLocalgroup } from './windows/WinNetUser';
+import { cmdNetUser, cmdNetLocalgroup, type NetUserContext } from './windows/WinNetUser';
 import { cmdIcacls } from './windows/WinIcacls';
 import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
@@ -4140,7 +4140,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
+      const netCtx2 = this.netUserContext();
       if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
       if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -4772,7 +4772,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'net' && args.length > 0) {
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
+      const netUserCtx = this.netUserContext();
       if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
       if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -4902,6 +4902,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   simulatedNow(): number {
     return this.clockPort.monotonic() - this.bootMonotonicMs;
+  }
+
+  private netUserContext(): NetUserContext {
+    return {
+      hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone,
+      enumerated: (kind, target) => this.announceGroupEnumeration(kind, target, 'C:\\Windows\\System32\\net1.exe'),
+    };
+  }
+
+  announceGroupEnumeration(kind: 'user-groups' | 'group-members', target: string, processName: string): void {
+    const image = processName.slice(processName.lastIndexOf('\\') + 1);
+    this.userMgr.recordGroupEnumeration(kind, target, this.procMgr.getProcessesByName(image)[0]?.pid ?? 0, processName);
   }
 
   setSystemTime(epochMs: number): void {

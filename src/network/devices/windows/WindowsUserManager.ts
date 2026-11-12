@@ -219,6 +219,13 @@ export class WindowsUserManager {
     });
   }
 
+  recordGroupEnumeration(kind: 'user-groups' | 'group-members', target: string, processId: number, processName: string): void {
+    this.bus?.publish({
+      topic: 'windows.group.enumerated',
+      payload: { deviceId: this.deviceId, kind, target, actor: this.currentUser, processId, processName },
+    });
+  }
+
   private initDefaults(): void {
     // Built-in users
     this.addUser({

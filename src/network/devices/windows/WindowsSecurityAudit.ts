@@ -65,6 +65,8 @@ export const SECURITY_EVENT = {
   AUDIT_LOG_CLEARED: 1102,
   SYSTEM_TIME_CHANGED: 4616,
   CREDENTIAL_VALIDATION: 4776,
+  USER_GROUPS_ENUMERATED: 4798,
+  GROUP_MEMBERS_ENUMERATED: 4799,
   AUDIT_POLICY_CHANGED: 4719,
   FIREWALL_RULE_ADDED: 4946,
   FIREWALL_RULE_MODIFIED: 4947,
@@ -334,6 +336,14 @@ export class WindowsSecurityAudit {
       ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
       IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
     }, undefined, failureReasonOf(codes.status, codes.subStatus));
+  }
+
+  groupEnumerated(kind: 'user-groups' | 'group-members', target: string, actor: string, processId: number, processName: string): void {
+    const userGroups = kind === 'user-groups';
+    this.record(userGroups ? SECURITY_EVENT.USER_GROUPS_ENUMERATED : SECURITY_EVENT.GROUP_MEMBERS_ENUMERATED, 'SuccessAudit', {
+      ...(userGroups ? this.targetFields(target) : this.groupFields(target)), ...this.subjectFields(actor),
+      CallerProcessId: `0x${processId.toString(16)}`, CallerProcessName: processName,
+    });
   }
 
   credentialValidation(name: string, workstation: string, cause?: LogonFailureCause): void {

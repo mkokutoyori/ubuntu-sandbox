@@ -66,6 +66,7 @@ export interface NetUserContext {
   timezone?: string;
   /** Non-null only on a promoted DC (`Install-ADDSForest` succeeded) — backs `net user /domain` (PRD-Windows-Server.md §5 P5). */
   directoryStore?: DirectoryStore | null;
+  enumerated?: (kind: 'user-groups' | 'group-members', target: string) => void;
 }
 
 // ─── net user ─────────────────────────────────────────────────────
@@ -249,6 +250,7 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   if (!user) return netError('The user name could not be found.');
 
   const groups = ctx.userManager.getGroupsForUser(user.name);
+  ctx.enumerated?.('user-groups', user.name);
   const localGroups = groups.map(g => `*${g.name}`).join('  ');
   const expiresAt = ctx.userManager.passwordExpiresAt(user.name);
   const minAge = ctx.userManager.passwordMinimumAgeDays();
@@ -339,6 +341,7 @@ function formatGroupMembers(ctx: NetUserContext, groupName: string): string {
     return `The specified group could not be found.\n\nMore help is available by typing NET HELPMSG 3711.`;
   }
   const group = ctx.userManager.getGroup(groupName)!;
+  ctx.enumerated?.('group-members', group.name);
 
   const lines: string[] = [
     ...renderKeyValue([['Alias name', group.name], ['Comment', group.description]], { labelWidth: 14 }),

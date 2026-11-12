@@ -1692,6 +1692,7 @@ class WindowsUserAdapter implements IUserProvider {
   getGroupMembers(group: string): UserInfo[] {
     const g = this.mgr().getGroup(group);
     if (!g) return [];
+    this.pc.announceGroupEnumeration('group-members', g.name, 'C:\\Program Files\\PowerShell\\7\\pwsh.exe');
     const out: UserInfo[] = [];
     for (const memberName of g.members) {
       const u = this.mgr().getUser(memberName);

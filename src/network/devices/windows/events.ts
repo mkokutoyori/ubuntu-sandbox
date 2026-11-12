@@ -156,6 +156,14 @@ export interface WindowsGroupEventPayload extends WindowsDeviceRef {
   actor?: string;
 }
 
+export interface WindowsGroupEnumeratedPayload extends WindowsDeviceRef {
+  kind: 'user-groups' | 'group-members';
+  target: string;
+  actor: string;
+  processId: number;
+  processName: string;
+}
+
 export interface WindowsGroupMemberEventPayload extends WindowsGroupEventPayload {
   member: string;
   /** True when the member was added, false when removed. */
@@ -230,6 +238,7 @@ export type WindowsDomainEvent =
   | { topic: 'windows.group.created'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }
+  | { topic: 'windows.group.enumerated'; payload: WindowsGroupEnumeratedPayload }
   | { topic: 'windows.process.started'; payload: WindowsProcessEventPayload }
   | { topic: 'windows.process.stopped'; payload: WindowsProcessEventPayload }
   | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }
