@@ -1154,7 +1154,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private serveWinRm(socket: TcpSocket): void {
-    this.getWinRmServerHandler().register(socket as unknown as TcpStream);
+    this.getWinRmServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, this.reverseLookupClient(socket.remoteIp));
   }
 
   private serveKdc(socket: TcpSocket): void {
