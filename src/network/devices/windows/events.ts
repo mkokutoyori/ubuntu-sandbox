@@ -102,6 +102,8 @@ export interface WindowsLogonDetails {
   readonly processName?: string;
   readonly logonProcess?: string;
   readonly authenticationPackage?: string;
+  readonly lmPackage?: string;
+  readonly keyLength?: number;
   readonly workstation?: string;
   readonly ipAddress?: string;
   readonly ipPort?: string;

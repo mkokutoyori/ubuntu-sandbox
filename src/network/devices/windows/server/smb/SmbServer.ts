@@ -102,6 +102,7 @@ export class SmbServerHandler {
 
     conn.onClose?.(() => {
       if (sessionId !== null) this.ctx.sessions.close(sessionId);
+      if (user !== null) this.ctx.userMgr.recordNetworkLogoff(user);
     });
 
     const groupsFor = (username: string): string[] =>
@@ -174,11 +175,20 @@ export class SmbServerHandler {
           const account = this.ctx.userMgr.getUser(username);
           let authedUser: string | null = null;
           let authedGroups: string[] | null = null;
-          if (account && account.enabled && this.ctx.userMgr.checkPassword(username, password)) {
+          const details = {
+            workstation: clientComputerName, ipAddress: clientIp, processId: '0x0', processName: '-',
+            logonProcess: 'NtLmSsp', authenticationPackage: 'NTLM', lmPackage: 'NTLM V2', keyLength: 128,
+          };
+          if (account && account.enabled && this.ctx.userMgr.checkPassword(username, password, 3, false, false)) {
             authedUser = username;
           } else {
             const domain = this.ctx.domainAuth?.(rawUsername, password);
             if (domain?.ok) { authedUser = domain.sam; authedGroups = domain.groups; }
+          }
+          if (authedUser) this.ctx.userMgr.recordNetworkLogon(authedUser, true, details);
+          else {
+            const cause = account === undefined ? 'unknown-user' : !account.enabled ? 'disabled' : 'bad-password';
+            this.ctx.userMgr.recordNetworkLogon(username, false, details, cause);
           }
           if (!authedUser) {
             reply({ ok: false, status: 'STATUS_LOGON_FAILURE', message: 'The user name or password is incorrect.' });
@@ -222,6 +232,7 @@ export class SmbServerHandler {
 
         case 'logoff': {
           if (sessionId !== null) { this.ctx.sessions.close(sessionId); sessionId = null; }
+          if (user !== null) this.ctx.userMgr.recordNetworkLogoff(user);
           user = null;
           reply({ ok: true });
           break;

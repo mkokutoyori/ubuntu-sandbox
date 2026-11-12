@@ -299,7 +299,7 @@ export class WindowsSecurityAudit {
       AuthenticationPackageName: details.authenticationPackage ?? 'Negotiate',
       WorkstationName: details.workstation ?? this.identity.machine,
       LogonGuid: '{00000000-0000-0000-0000-000000000000}',
-      TransmittedServices: '-', LmPackageName: '-', KeyLength: '0',
+      TransmittedServices: '-', LmPackageName: details.lmPackage ?? '-', KeyLength: String(details.keyLength ?? 0),
       ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
       IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
       ImpersonationLevel: '%%1833', RestrictedAdminMode: '-',
@@ -329,7 +329,7 @@ export class WindowsSecurityAudit {
       LogonProcessName: details.logonProcess ?? 'User32',
       AuthenticationPackageName: details.authenticationPackage ?? 'Negotiate',
       WorkstationName: details.workstation ?? this.identity.machine,
-      TransmittedServices: '-', LmPackageName: '-', KeyLength: '0',
+      TransmittedServices: '-', LmPackageName: details.lmPackage ?? '-', KeyLength: String(details.keyLength ?? 0),
       ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
       IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
     }, undefined, failureReasonOf(codes.status, codes.subStatus));

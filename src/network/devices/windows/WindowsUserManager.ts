@@ -824,6 +824,22 @@ export class WindowsUserManager {
     return ok;
   }
 
+  recordNetworkLogon(
+    account: string, success: boolean, details?: WindowsLogonDetails, failure?: WindowsLogonFailureCause,
+  ): void {
+    this.bus?.publish({
+      topic: 'windows.account.logon',
+      payload: { deviceId: this.deviceId, account, success, logonType: 3, details, ...(failure === undefined ? {} : { failure }) },
+    });
+  }
+
+  recordNetworkLogoff(account: string): void {
+    this.bus?.publish({
+      topic: 'windows.account.logoff',
+      payload: { deviceId: this.deviceId, account, logonType: 3 },
+    });
+  }
+
   // ─── `runas /savecred` vault (PRD-Nslookup-Dig-Rndc-Runas.md P12) ──
 
   saveCredential(name: string, password: string): void {
