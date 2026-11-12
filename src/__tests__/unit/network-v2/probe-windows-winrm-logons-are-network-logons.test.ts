@@ -6,103 +6,91 @@
  * LmPackageName and KeyLength, Kerberos carries a package of its own and a key length of 0; WorkstationName, IpAddress and IpPort name the client.
  * The SMB server was aligned first (probe-windows-smb-logons-are-network-logons); the WinRM server had the same defect.
  *
- * Measured before the change: WinRmServerHandler checked the password with the default logon type (2, interactive) and no details, so a
- * correct logon was journalled as an interactive one with no client address, a wrong password was journalled as type 2 too, and an unknown
- * account was not journalled at all (the check was skipped when the account did not exist). Closing the session wrote no 4634.
+ * Measured before the change, two machines on one switch, WinRM enabled on PC-A, `Invoke-Command -ComputerName 10.0.0.1 -Credential "user:password"` from PC-B:
+ * WinRmServerHandler checked the password with the default logon type (2, interactive) and no details, so a correct logon was journalled as an
+ * interactive one with no client address, a wrong password was journalled as type 2 too, and an unknown account was not journalled at all (the
+ * check was skipped when the account did not exist). Closing the session wrote no 4634.
  *
- * The probe drives the device's real WinRM handler over a stub stream (the wire path of the client is not involved: its PSCredential plumbing
- * is outside this change), with the real user manager and event log of a WindowsPC.
- *
- * Discrimination (git stash push -- src/network src/powershell): 5 of 6 cases fall on the base. The WITNESS passes either way: the handler
- * accepts the right password and refuses the wrong one.
+ * Discrimination (git stash push -- src/network src/powershell): 5 of 6 cases fall on the base. The WITNESS passes either way: the remote command
+ * runs with the right credential and is refused with the wrong one, so the entries describe a logon that happened or failed.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { GenericSwitch } from '@/network/devices/GenericSwitch';
+import { Cable } from '@/network/hardware/Cable';
+import { IPAddress, SubnetMask } from '@/network/core/types';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-import type { TcpStream } from '@/network/tcp/types';
 
-class Stream implements TcpStream {
-  readonly localIp = '10.0.0.1';
-  readonly localPort = 5985;
-  readonly remoteIp = '10.0.0.2';
-  readonly remotePort = 49152;
-  readonly sent: Array<Record<string, unknown>> = [];
-  private readonly closers: Array<(reason: string) => void> = [];
-  private readonly readers: Array<(data: string) => void> = [];
-  write(data: string): void { this.sent.push(JSON.parse(data) as Record<string, unknown>); }
-  close(): void { this.drop(); }
-  onData(handler: (data: string) => void): () => void { this.readers.push(handler); return () => undefined; }
-  onClose(handler: (reason: string) => void): () => void { this.closers.push(handler); return () => undefined; }
-  send(message: Record<string, unknown>): void { for (const reader of this.readers) reader(JSON.stringify(message)); }
-  drop(): void { for (const closer of this.closers) closer('reset'); }
-  get last(): Record<string, unknown> { return this.sent[this.sent.length - 1]; }
-}
+let onA: (line: string) => Promise<string>;
+let onB: (line: string) => Promise<string>;
 
-let pc: WindowsPC;
-let ps: (line: string) => Promise<string>;
-
-function client(): Stream {
-  const stream = new Stream();
-  pc.getWinRmServerHandler().register(stream, '10.0.0.2', 'PC-B');
-  return stream;
-}
+const remote = (user: string, password: string): string =>
+  `Invoke-Command -ComputerName 10.0.0.1 -Credential "${user}:${password}" -ScriptBlock { hostname }`;
 
 beforeEach(async () => {
-  pc = new WindowsPC('windows-pc', 'PC-A', 0, 0);
-  pc.setCurrentUser('Administrator');
-  const shell = PowerShellSubShell.create(pc).subShell;
-  ps = async (line) => (await shell.processLine(line)).output.join('\n');
-  await ps('New-LocalUser -Name rmuser -Password (ConvertTo-SecureString "Passw0rd!" -AsPlainText -Force) | Out-Null');
+  EquipmentRegistry.getInstance().clear();
+  const a = new WindowsPC('windows-pc', 'PC-A', 0, 0);
+  const b = new WindowsPC('windows-pc', 'PC-B', 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
+  [a, b].forEach((device, index) => new Cable(`c${index}`).connect(device.getPorts()[0], sw.getPorts()[index]));
+  const mask = new SubnetMask('255.255.255.0');
+  a.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
+  b.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), mask);
+  a.setCurrentUser('Administrator');
+  b.setCurrentUser('Administrator');
+  const shellA = PowerShellSubShell.create(a).subShell;
+  const shellB = PowerShellSubShell.create(b).subShell;
+  onA = async (line) => (await shellA.processLine(line)).output.join('\n');
+  onB = async (line) => (await shellB.processLine(line)).output.join('\n');
+  await onA('Enable-PSRemoting -Force | Out-Null');
+  await onA('New-LocalUser -Name rmuser -Password (ConvertTo-SecureString "Passw0rd!" -AsPlainText -Force) | Out-Null');
+  await onA('Add-LocalGroupMember -Group Administrators -Member rmuser');
 });
 
 const LAST = (id: number): string => `(Get-WinEvent -FilterHashtable @{LogName="Security"; Id=${id}})[0]`;
+const NETWORK_LOGON = '(Get-WinEvent -FilterHashtable @{LogName="Security"; Id=4624} | Where-Object { $_.Message -match "Logon Type:\\s+3" })[0]';
 
 describe('WinRM logons in the Security log', () => {
-  it('WITNESS: the right password is accepted and the wrong one refused', async () => {
-    const good = client();
-    good.send({ op: 'auth', username: 'rmuser', password: 'Passw0rd!' });
-    expect(good.last.ok).toBe(true);
-    const bad = client();
-    bad.send({ op: 'auth', username: 'rmuser', password: 'nope' });
-    expect(bad.last.ok).toBe(false);
+  it('WITNESS: the remote command runs with the right credential and is refused with the wrong one', async () => {
+    expect((await onB(remote('rmuser', 'Passw0rd!'))).trim()).toBe('PC-A');
+    expect(await onB(remote('rmuser', 'nope'))).toContain('Connecting to remote server 10.0.0.1 failed');
   });
 
   it('a good logon is a type 3 network logon for the account', async () => {
-    client().send({ op: 'auth', username: 'rmuser', password: 'Passw0rd!' });
-    const xml = await ps(`(Get-WinEvent -FilterHashtable @{LogName="Security"; Id=4624} | Where-Object { $_.Message -match "Logon Type:\\s+3" })[0].ToXml()`);
+    await onB(remote('rmuser', 'Passw0rd!'));
+    const xml = await onA(`${NETWORK_LOGON}.ToXml()`);
     expect(xml).toContain("<Data Name='TargetUserName'>rmuser</Data>");
     expect(xml).toContain("<Data Name='LogonType'>3</Data>");
   });
 
-  it('names the machine and the address the logon came from, with the NTLM package', async () => {
-    client().send({ op: 'auth', username: 'rmuser', password: 'Passw0rd!' });
-    const xml = await ps(`(Get-WinEvent -FilterHashtable @{LogName="Security"; Id=4624} | Where-Object { $_.Message -match "Logon Type:\\s+3" })[0].ToXml()`);
-    expect(xml).toContain("<Data Name='WorkstationName'>PC-B</Data>");
+  it('names the address the logon came from, with the NTLM package', async () => {
+    await onB(remote('rmuser', 'Passw0rd!'));
+    const xml = await onA(`${NETWORK_LOGON}.ToXml()`);
     expect(xml).toContain("<Data Name='IpAddress'>10.0.0.2</Data>");
     expect(xml).toContain("<Data Name='AuthenticationPackageName'>NTLM</Data>");
     expect(xml).toContain("<Data Name='LogonProcessName'>NtLmSsp</Data>");
+    expect(xml).not.toContain("<Data Name='WorkstationName'>PC-A</Data>");
   });
 
   it('a wrong password writes 4625 of type 3 with the bad-password sub status', async () => {
-    client().send({ op: 'auth', username: 'rmuser', password: 'nope' });
-    const xml = await ps(`${LAST(4625)}.ToXml()`);
+    await onB(remote('rmuser', 'nope'));
+    const xml = await onA(`${LAST(4625)}.ToXml()`);
     expect(xml).toContain("<Data Name='LogonType'>3</Data>");
     expect(xml).toContain("<Data Name='SubStatus'>0xC000006A</Data>");
     expect(xml).toContain("<Data Name='IpAddress'>10.0.0.2</Data>");
   });
 
   it('an unknown account writes 4625 with the unknown-user sub status', async () => {
-    client().send({ op: 'auth', username: 'ghost', password: 'Passw0rd!' });
-    const xml = await ps(`${LAST(4625)}.ToXml()`);
+    await onB(remote('ghost', 'Passw0rd!'));
+    const xml = await onA(`${LAST(4625)}.ToXml()`);
     expect(xml).toContain("<Data Name='SubStatus'>0xC0000064</Data>");
     expect(xml).toContain("<Data Name='TargetUserName'>ghost</Data>");
   });
 
   it('closing the session writes 4634 of type 3', async () => {
-    const stream = client();
-    stream.send({ op: 'auth', username: 'rmuser', password: 'Passw0rd!' });
-    stream.drop();
-    const xml = await ps(`${LAST(4634)}.ToXml()`);
+    await onB(remote('rmuser', 'Passw0rd!'));
+    const xml = await onA(`${LAST(4634)}.ToXml()`);
     expect(xml).toContain("<Data Name='LogonType'>3</Data>");
     expect(xml).toContain("<Data Name='TargetUserName'>rmuser</Data>");
   });
