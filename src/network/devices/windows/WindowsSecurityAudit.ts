@@ -13,6 +13,7 @@
  */
 
 import type { WindowsLogonDetails, WindowsLogonFailureCause } from './events';
+import { START_TYPE_CODES, type ServiceStartType } from './WindowsServiceManager';
 import { createAuditIdentity, nextLogonId, type AuditIdentity } from './eventlog/AuditIdentity';
 import { renderSecurityMessage, clearedChannelMessage, failureReasonOf } from './eventlog/SecurityEventTemplates';
 
@@ -610,11 +611,20 @@ export class WindowsSecurityAudit {
       undefined, changedBy);
   }
 
-  serviceInstalled(serviceName: string, binaryPath: string, account: string, installedBy: string): void {
+  serviceInstalled(
+    serviceName: string, binaryPath: string, account: string, installedBy: string,
+    startType: string = 'Manual', sharedProcess = false,
+  ): void {
+    const type = sharedProcess ? '0x20' : '0x10';
+    const start = String(START_TYPE_CODES[startType as ServiceStartType] ?? 3);
     this.success(SECURITY_EVENT.SERVICE_INSTALLED,
       `A service was installed in the system.\n\nService Information:\n\tService Name:\t${serviceName}\n\t` +
-      `Service File Name:\t${binaryPath}\n\tService Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`,
-      undefined, installedBy);
+      `Service File Name:\t${binaryPath}\n\tService Type:\t${type}\n\tService Start Type:\t${start}\n\t` +
+      `Service Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`,
+      {
+        ServiceName: serviceName, ServiceFileName: binaryPath, ServiceType: type, ServiceStartType: start,
+        ServiceAccount: account, ...splitAccount(installedBy),
+      }, installedBy);
   }
 
   systemTimeChanged(actor: string, previousMs: number, newMs: number, processId: number, processName: string): void {

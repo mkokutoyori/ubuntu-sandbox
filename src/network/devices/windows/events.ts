@@ -76,6 +76,8 @@ export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
   displayName: string;
   binaryPath: string;
   account: string;
+  startType: string;
+  sharedProcess: boolean;
   /** The username that ran the install (for 4697 audit attribution). */
   installedBy: string;
 }

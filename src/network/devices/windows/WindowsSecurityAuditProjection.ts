@@ -91,7 +91,7 @@ export class WindowsSecurityAuditProjection {
 
   private onServiceCreated(p: WindowsServiceCreatedPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    this.audit.serviceInstalled(p.serviceName, p.binaryPath, p.account, p.installedBy);
+    this.audit.serviceInstalled(p.serviceName, p.binaryPath, p.account, p.installedBy, p.startType, p.sharedProcess);
   }
 
   private onServiceAccountChanged(p: WindowsServiceAccountChangedPayload): void {

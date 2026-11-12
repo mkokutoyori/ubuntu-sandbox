@@ -220,7 +220,7 @@ export class WindowsEventLogProjection {
       `Service Name:  ${p.serviceName}\n` +
       `Service File Name:  ${p.binaryPath}\n` +
       `Service Type:  user mode service\n` +
-      `Service Start Type:  demand start\n` +
+      `Service Start Type:  ${START_TYPE_WORDS[p.startType] ?? p.startType}\n` +
       `Service Account:  ${p.account}`,
       // L'ordre compte : un script lit `Data[0]` pour le nom du service,
       // `Data[1]` pour le binaire. 7045 est le premier événement qu'on
@@ -230,7 +230,7 @@ export class WindowsEventLogProjection {
         ServiceName: p.serviceName,
         ImagePath: p.binaryPath,
         ServiceType: 'user mode service',
-        StartType: 'demand start',
+        StartType: START_TYPE_WORDS[p.startType] ?? p.startType,
         AccountName: p.account,
       },
     );

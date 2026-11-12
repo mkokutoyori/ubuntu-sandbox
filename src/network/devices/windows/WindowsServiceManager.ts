@@ -739,6 +739,7 @@ export class WindowsServiceManager {
       payload: {
         deviceId: this.deviceId, serviceName: name, displayName,
         binaryPath: opts.binaryPath, account, installedBy,
+        startType: opts.startType ?? 'Manual', sharedProcess: SHARED_HOST_IMAGES.has(image.toLowerCase()),
       },
     });
     return '';
