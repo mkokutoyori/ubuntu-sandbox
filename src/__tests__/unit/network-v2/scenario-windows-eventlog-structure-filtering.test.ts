@@ -41,7 +41,7 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
       expect(out).not.toMatch(/requires -LogName/i);
     });
 
-    it('les objets retournés par -ListLog n\'exposent ni LogType ni IsEnabled : le filtre Where-Object {$_.IsEnabled} ne retient jamais aucun journal', async () => {
+    it('les objets retournés par -ListLog exposent LogType et IsEnabled : le filtre Where-Object {$_.IsEnabled} retient les journaux actifs et non vides', async () => {
       const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
       const sh = ps(pc);
       await run(sh, '$AllLogs = Get-WinEvent -ListLog *');
@@ -49,30 +49,27 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
       expect(Number(total)).toBeGreaterThan(0);
 
       const enabled = await run(sh, '($AllLogs | Where-Object {$_.IsEnabled -and $_.RecordCount -gt 0} | Measure-Object).Count');
-      expect(Number(enabled)).toBe(0);
+      expect(Number(enabled)).toBeGreaterThan(0);
+      expect(await run(sh, '($AllLogs | Where-Object { $_.LogName -eq "Security" }).LogType')).toBe('Administrative');
     });
 
-    it('Get-WinEvent -ListLog "Microsoft-Windows-*" ne filtre pas par motif : le nom passé après -ListLog est ignoré, la liste complète est retournée telle quelle', async () => {
+    it('Get-WinEvent -ListLog "Microsoft-Windows-*" filtre par motif : seuls les journaux dont le nom correspond sont rendus', async () => {
       const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
       const sh = ps(pc);
       const allOut = await run(sh, '(Get-WinEvent -ListLog *).Count');
       const patternOut = await run(sh, '(Get-WinEvent -ListLog "Microsoft-Windows-*").Count');
-      expect(patternOut).toBe(allOut);
+      expect(Number(patternOut)).toBeGreaterThan(0);
+      expect(Number(patternOut)).toBeLessThan(Number(allOut));
 
-      // Le motif est ignoré, et c'est ce que ce test mesure : la liste
-      // rendue contient `Security`, qui ne correspond pourtant pas à
-      // `Microsoft-Windows-*`. (L'énoncé vérifiait auparavant l'absence
-      // de tout canal `Microsoft-Windows-`, ce qui confondait deux
-      // choses : le filtre inopérant, et l'inexistence du canal
-      // PowerShell/Operational — lequel existe désormais.)
       const names = await run(sh, "Get-WinEvent -ListLog 'Microsoft-Windows-*' | Select-Object -ExpandProperty LogName");
-      expect(names).toMatch(/Security/);
+      expect(names).toMatch(/Microsoft-Windows-PowerShell\/Operational/);
+      expect(names).not.toMatch(/^Security$/m);
     });
 
-    it('Get-WinEvent -ListLog <journal précis inexistant> -ErrorAction Stop ne lève jamais d\'erreur (aucun journal Microsoft-Windows-*/Operational n\'existe réellement)', async () => {
+    it('Get-WinEvent -ListLog <journal précis inexistant> nomme le journal que la machine n\'a pas', async () => {
       const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-      const out = await run(ps(pc), 'Get-WinEvent -ListLog "Microsoft-Windows-Sysmon/Operational" -ErrorAction Stop');
-      expect(out).not.toMatch(/error|exception/i);
+      const out = await run(ps(pc), 'Get-WinEvent -ListLog "Microsoft-Windows-Sysmon/Operational"');
+      expect(out).toContain('There is not an event log on the localhost computer that matches "Microsoft-Windows-Sysmon/Operational".');
     });
   });
 
@@ -99,7 +96,6 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
         '$Filter = @{',
         "  LogName   = 'Security'",
         '  Id        = @(4624, 4625, 4634, 4647)',
-        '  MaxEvents = 100',
         '}',
         '$Events = Get-WinEvent -FilterHashtable $Filter',
         '$Events | Group-Object Id | Select-Object Name, Count',

@@ -1777,6 +1777,9 @@ class WindowsEventLogAdapter implements IEventLogProvider {
   listLogs() {
     return this.log.getAllLogsStructured();
   }
+  getLogStatus(logName: string) { return this.log.getLogStatus(logName); }
+  providers() { return this.log.getProvidersStructured(); }
+  readExportedEntries(path: string) { return this.log.readExportedEntries(path); }
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[] {
     const raw = this.log.getEntriesStructured(logName, opts ?? {});
     if (!raw) return [];

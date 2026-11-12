@@ -85,6 +85,7 @@ export interface WinCommandContext {
     exportLog?: (logName: string, destination: string, overwrite: boolean) => string | null;
     /** `wevtutil qe /lf:` — relit un fichier exporté. */
     readExportedLog?: (path: string) => string | null;
+    readExportedEntries?: (path: string) => { channel: string; entries: import('./PSEventLogProvider').EventLogEntry[] } | null;
     /** `wevtutil al` — rend `null` en cas de succès, le refus sinon. */
     archiveExportedLog?: (path: string) => string | null;
     /** `wevtutil cl` — vide réellement le journal. */

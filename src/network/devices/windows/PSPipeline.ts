@@ -18,6 +18,7 @@
 import { renderTable, type TableColumn, padToWidth } from '../shells/cli/TextTable';
 import { testConnectionView } from './TestConnectionViews';
 import { registeredDisplay } from '@/powershell/runtime/PSExpansion';
+import { eventDefaultView } from './eventlog/EventViews';
 import { formatDouble } from '@/powershell/runtime/dotnetNumber';
 import { formatTimeSpan, isTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 
@@ -735,6 +736,8 @@ export function formatList(objects: PSObject[], args: string): string {
  */
 export function formatDefault(objects: PSObject[]): string {
   if (objects.length === 0) return '';
+  const events = eventDefaultView(objects);
+  if (events !== null) return events;
   const matchInfo = matchInfoView(objects);
   if (matchInfo !== null) return matchInfo;
   const testConnection = testConnectionView(objects);

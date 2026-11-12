@@ -181,7 +181,7 @@ Set-Acl -Path "C:\Windows\System32\monservice.exe" -AclObject $acl
       await pc.executeCommand('sc config MonServiceSecurise obj= "LocalSystem"');
 
       const out = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4657 } | Select-Object -First 1',
+        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4657 } | Select-Object -First 1 | Format-List *',
       );
       expect(out).toContain('MonServiceSecurise');
       expect(out).toContain('svc-monservice');
@@ -201,7 +201,7 @@ Set-Acl -Path "C:\Windows\System32\monservice.exe" -AclObject $acl
 `);
 
       const out = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4670 } | Select-Object -First 1',
+        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4670 } | Select-Object -First 1 | Format-List *',
       );
       expect(out).toContain('monservice.exe');
     });
@@ -278,7 +278,7 @@ Write-EventLog -LogName Security -Source "remediation" -EventId 5002 -EntryType 
         'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 5001 -or $_.Id -eq 5002 }',
       );
       const driftOut = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4670 }',
+        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4670 } | Format-List *',
       );
       // Remediation events are distinguishable from drift events by EventId.
       expect(remediationOut).not.toContain('FullControl');

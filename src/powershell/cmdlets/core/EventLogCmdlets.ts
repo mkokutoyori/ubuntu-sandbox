@@ -14,11 +14,14 @@ import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IEventLogProvider, EventLogEntryInfo } from '@/powershell/providers/PSProviders';
-import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { psValueToString, registerPSDisplayFormatter } from '@/powershell/runtime/PSExpansion';
+import { wildcardMatches } from '@/powershell/runtime/PSWildcard';
+import { channelType, isolationOf } from '@/network/devices/windows/eventlog/ChannelFacts';
+import { parseEventHashtable } from '@/network/devices/windows/eventlog/WinEventHashFilter';
 import { describeEvent } from '@/network/devices/windows/eventlog/EventDescriptor';
 import { renderEventXml } from '@/network/devices/windows/eventlog/EventXml';
 import {
-  parseEventXPath, parseEventQueryList, type XPathChannelQuery,
+  parseEventXPath, parseEventQueryList, type XPathPredicate,
 } from '@/network/devices/windows/WinEventXPath';
 
 function requireEventLog(ctx: CmdletContext): IEventLogProvider {
@@ -198,135 +201,218 @@ export class LimitEventLogCmdlet implements ICmdlet {
 
 // ── Get-WinEvent (modern API — same data behind it for the simulator) ─────
 
-function hashtableGet(h: Record<string, PSValue>, key: string): PSValue {
-  if (key in h) return h[key];
-  const found = Object.keys(h).find(k => k.toLowerCase() === key.toLowerCase());
-  return found !== undefined ? h[found] : undefined;
+const LOCAL_COMPUTER = 'localhost';
+const EVENT_LOG_LINK_TYPE = 'System.Diagnostics.Eventing.Reader.EventLogLink';
+const CLASSIC_EXCLUDED = new Set(['setup', 'forwardedevents']);
+
+registerPSDisplayFormatter(EVENT_LOG_LINK_TYPE, (record) => String(record.LogName ?? ''));
+
+function patternsOf(value: PSValue): string[] {
+  return (Array.isArray(value) ? value : [value]).map((item) => psValueToString(item));
 }
+
+function logConfiguration(status: NonNullable<ReturnType<NonNullable<IEventLogProvider['getLogStatus']>>>): Record<string, PSValue> {
+  const type = channelType(status.logName);
+  const written = status.lastWriteTime ?? status.created;
+  return {
+    FileSize: status.fileSize,
+    IsLogFull: false,
+    LastAccessTime: written,
+    LastWriteTime: written,
+    OldestRecordNumber: status.oldestRecordNumber,
+    RecordCount: status.numberOfLogRecords,
+    LogName: status.logName,
+    LogType: type === 'Admin' ? 'Administrative' : type === 'Analytic' ? 'Analytical' : type,
+    LogIsolation: isolationOf(status.logName, status.isolation),
+    IsEnabled: status.enabled,
+    IsClassicLog: !status.logName.includes('/') && !CLASSIC_EXCLUDED.has(status.logName.toLowerCase()),
+    SecurityDescriptor: status.channelAccess,
+    LogFilePath: status.fileName,
+    MaximumSizeInBytes: status.maxSizeKB * 1024,
+    LogMode: status.autoBackup ? 'AutoBackup' : status.overflow === 'DoNotOverwrite' ? 'Retain' : 'Circular',
+    OwningProviderName: null,
+    ProviderNames: [],
+    ProviderLevel: status.levelFilter === null ? null : Number(status.levelFilter),
+    ProviderKeywords: status.keywordsFilter === null ? null : status.keywordsFilter,
+    ProviderBufferSize: 64,
+    ProviderMinimumNumberOfBuffers: 0,
+    ProviderMaximumNumberOfBuffers: 64,
+    ProviderLatency: 1000,
+    ProviderControlGuid: null,
+  } as Record<string, PSValue>;
+}
+
+function providerMetadata(name: string, logNames: readonly string[]): Record<string, PSValue> {
+  const guid = describeEvent({ source: name, eventId: 0, entryType: 'Information' }).providerGuid;
+  return {
+    Name: name,
+    Id: guid === null ? null : guid.replace(/[{}]/g, '').toLowerCase(),
+    MessageFilePath: null,
+    ResourceFilePath: null,
+    ParameterFilePath: null,
+    HelpLink: null,
+    DisplayName: name,
+    LogLinks: logNames.map((logName) => ({ __type: EVENT_LOG_LINK_TYPE, LogName: logName, IsImported: false, DisplayName: logName })) as PSValue,
+    Levels: [],
+    Opcodes: [],
+    Keywords: [],
+    Tasks: [],
+    Events: [],
+  } as Record<string, PSValue>;
+}
+
+function matchingNames(ctx: CmdletContext, kind: 'log' | 'provider', patterns: readonly string[], names: readonly string[]): string[] | null {
+  const selected: string[] = [];
+  for (const pattern of patterns) {
+    const matched = names.filter((name) => wildcardMatches(pattern, name));
+    if (matched.length === 0) {
+      ctx.emitError(`There is not an event ${kind} on the ${LOCAL_COMPUTER} computer that matches "${pattern}".`);
+      continue;
+    }
+    for (const name of matched) if (!selected.includes(name)) selected.push(name);
+  }
+  return selected.length === 0 ? null : selected;
+}
+
+type QueryEvent = EventLogEntryInfo & { channel: string };
 
 export class GetWinEventCmdlet implements ICmdlet {
   readonly name = 'get-winevent';
   readonly displayName = 'Get-WinEvent';
   readonly aliases = [] as const;
-  readonly parameters = ['LogName', 'FilterHashtable', 'FilterXml', 'FilterXPath', 'MaxEvents', 'ListLog', 'ListProvider'] as const;
+  readonly parameters = ['LogName', 'ListLog', 'ProviderName', 'ListProvider', 'Path', 'FilterXml', 'FilterXPath', 'FilterHashtable', 'ComputerName', 'MaxEvents', 'Oldest', 'Force'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
-    if (ctx.named['listlog'] !== undefined || ctx.named['listprovider'] !== undefined) {
-      return log.listLogs().map(l => ({
-        LogName:   l.logName,
-        RecordCount: l.entries,
-        MaximumSizeInBytes: l.maxSizeKB * 1024,
-      } as Record<string, PSValue>)) as PSValue;
-    }
+    const maxEvents = this.maxEvents(ctx);
+    if (maxEvents === null) return null;
 
-    // `-FilterXml` et `-FilterXPath` partagent l'évaluateur XPath de
-    // `wevtutil qe /q:` — un seul langage de filtre pour les deux
-    // surfaces, écrit une fois. Sans ce partage, les deux commandes
-    // finiraient par ne pas comprendre les mêmes requêtes.
+    if (ctx.named['listlog'] !== undefined) return this.listLogs(ctx, log, patternsOf(ctx.named['listlog']));
+    if (ctx.named['listprovider'] !== undefined) return this.listProviders(ctx, log, patternsOf(ctx.named['listprovider']));
+
+    const oldest = ctx.named['oldest'] === true;
     const xmlFilter = ctx.named['filterxml'];
     if (xmlFilter !== undefined && xmlFilter !== null) {
-      return this.byXml(ctx, log, psValueToString(xmlFilter));
+      const parsed = parseEventQueryList(psValueToString(xmlFilter));
+      if (parsed.error) { ctx.emitError(parsed.error); return null; }
+      return this.emitQueries(ctx, log, parsed.queries.map((q) => ({ channels: [q.path], predicate: q.predicate })), maxEvents, oldest);
     }
     const xpathFilter = ctx.named['filterxpath'];
     if (xpathFilter !== undefined && xpathFilter !== null) {
       const channel = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
-      if (!channel) {
-        ctx.emitError('Get-WinEvent : -FilterXPath requires -LogName.');
-        return null;
-      }
+      if (!channel) { ctx.emitError('-FilterXPath requires -LogName.'); return null; }
       const parsed = parseEventXPath(psValueToString(xpathFilter));
-      if (!parsed.predicate) {
-        ctx.emitError(`Get-WinEvent : ${parsed.error ?? 'The specified query is invalid.'}`);
-        return null;
-      }
-      return this.emit(ctx, log, [{ path: channel, predicate: parsed.predicate }]);
+      if (!parsed.predicate) { ctx.emitError(parsed.error ?? 'The specified query is invalid.'); return null; }
+      return this.emitQueries(ctx, log, [{ channels: patternsOf(channel), predicate: parsed.predicate }], maxEvents, oldest);
     }
 
     const filter = ctx.named['filterhashtable'];
-    let logName: string;
-    let ids: number[] | null = null;
-    let startTime: Date | null = null;
-    let endTime: Date | null = null;
-    let filterMaxEvents: number | undefined;
-
-    if (filter !== undefined && filter !== null && typeof filter === 'object' && !Array.isArray(filter) && !(filter instanceof Date)) {
-      const f = filter as Record<string, PSValue>;
-      logName = psValueToString(hashtableGet(f, 'LogName') ?? '');
-      const idVal = hashtableGet(f, 'Id');
-      if (idVal !== undefined) ids = (Array.isArray(idVal) ? idVal : [idVal]).map(v => Number(v));
-      const st = hashtableGet(f, 'StartTime');
-      if (st instanceof Date) startTime = st;
-      const et = hashtableGet(f, 'EndTime');
-      if (et instanceof Date) endTime = et;
-      const me = hashtableGet(f, 'MaxEvents');
-      if (me !== undefined) filterMaxEvents = Number(me);
-    } else {
-      logName = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
+    if (filter !== undefined && filter !== null) {
+      const tables = (Array.isArray(filter) ? filter : [filter]).filter((item): item is Record<string, PSValue> => typeof item === 'object' && item !== null && !Array.isArray(item) && !(item instanceof Date));
+      const queries: Array<{ channels: string[]; predicate: XPathPredicate; providers?: string[]; paths?: string[] }> = [];
+      for (const table of tables) {
+        const built = parseEventHashtable(table);
+        if ('error' in built) { ctx.emitError(built.error); return null; }
+        queries.push({ channels: [...built.query.logPatterns], predicate: built.query.predicate, providers: [...built.query.providerPatterns], paths: [...built.query.paths] });
+      }
+      return this.emitQueries(ctx, log, queries, maxEvents, oldest);
     }
-    if (!logName) { ctx.emitError('Get-WinEvent requires -LogName, -FilterHashtable, or -ListLog'); return null; }
 
-    const max = ctx.named['maxevents'] !== undefined ? Number(ctx.named['maxevents']) : filterMaxEvents;
-    let entries = log.getEntries(logName, {});
-    if (ids) entries = entries.filter(e => ids!.includes(e.eventId));
-    if (startTime) entries = entries.filter(e => e.timeGenerated >= startTime!);
-    if (endTime) entries = entries.filter(e => e.timeGenerated <= endTime!);
-    if (max !== undefined) entries = entries.slice(0, max);
-
-    if (entries.length === 0) {
-      ctx.emitError('No events were found that match the specified selection criteria.');
-      return [];
+    const paths = ctx.named['path'];
+    if (paths !== undefined && paths !== null) {
+      return this.emitQueries(ctx, log, [{ channels: [], predicate: () => true, paths: patternsOf(paths) }], maxEvents, oldest);
     }
-    // MachineName (docs/PRD-Wecutil.md §2.1 P4): the real source machine
-    // for an entry received via Windows Event Forwarding
-    // (`data.MachineName`, set by `WindowsPC.receiveForwardedEvent`), or
-    // this device's own hostname for every other (non-forwarded) log —
-    // a real Get-WinEvent always exposes this property, not just on
-    // ForwardedEvents.
-    const localHostname = ctx.providers.network?.getHostname() ?? '';
-    return entries.map(e => winEventObject(e, logName, localHostname)) as PSValue;
-  }
-
-  /** `-FilterXml` : un `<QueryList>` complet, canal(aux) compris. */
-  private byXml(ctx: CmdletContext, log: IEventLogProvider, xml: string): PSValue {
-    const parsed = parseEventQueryList(xml);
-    if (parsed.error) {
-      ctx.emitError(`Get-WinEvent : ${parsed.error}`);
+    const providerNames = ctx.named['providername'];
+    if (providerNames !== undefined && providerNames !== null) {
+      return this.emitQueries(ctx, log, [{ channels: [], predicate: () => true, providers: patternsOf(providerNames) }], maxEvents, oldest);
+    }
+    const logName = ctx.named['logname'] ?? ctx.positional[0];
+    if (logName === undefined || logName === null || psValueToString(logName) === '') {
+      ctx.emitError('A valid log name must be specified: use -LogName, -ListLog, -ProviderName, -Path, -FilterHashtable, -FilterXPath or -FilterXml.');
       return null;
     }
-    return this.emit(ctx, log, parsed.queries);
+    return this.emitQueries(ctx, log, [{ channels: patternsOf(logName), predicate: () => true }], maxEvents, oldest);
   }
 
-  /**
-   * Rend les événements retenus par une ou plusieurs requêtes de canal.
-   *
-   * Un canal inconnu est signalé plutôt qu'ignoré : une requête portant
-   * sur un journal qui n'existe pas doit le dire, sinon elle rend zéro
-   * événement et laisse croire que le filtre n'a rien trouvé.
-   */
-  private emit(
-    ctx: CmdletContext, log: IEventLogProvider, queries: XPathChannelQuery[],
+  private maxEvents(ctx: CmdletContext): number | undefined | null {
+    const raw = ctx.named['maxevents'];
+    if (raw === undefined) return undefined;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 1) {
+      ctx.emitError(`Cannot validate argument on parameter 'MaxEvents'. The ${psValueToString(raw)} argument is less than the minimum allowed range of 1. Supply an argument that is greater than or equal to 1 and then try the command again.`);
+      return null;
+    }
+    return value;
+  }
+
+  private listLogs(ctx: CmdletContext, log: IEventLogProvider, patterns: string[]): PSValue {
+    const names = matchingNames(ctx, 'log', patterns, log.listLogs().map((entry) => entry.logName));
+    if (names === null) return null;
+    const rows: Array<Record<string, PSValue>> = [];
+    for (const name of names) {
+      const status = log.getLogStatus?.(name);
+      if (status) rows.push(logConfiguration(status));
+    }
+    return rows as PSValue;
+  }
+
+  private listProviders(ctx: CmdletContext, log: IEventLogProvider, patterns: string[]): PSValue {
+    const providers = log.providers?.() ?? [];
+    const names = matchingNames(ctx, 'provider', patterns, providers.map((provider) => provider.name));
+    if (names === null) return null;
+    return providers.filter((provider) => names.includes(provider.name)).map((provider) => providerMetadata(provider.name, provider.logNames)) as PSValue;
+  }
+
+  private emitQueries(
+    ctx: CmdletContext, log: IEventLogProvider,
+    queries: ReadonlyArray<{ channels: string[]; predicate: XPathPredicate; providers?: string[]; paths?: string[] }>,
+    maxEvents: number | undefined, oldest: boolean,
   ): PSValue {
     const now = simulationNowMs();
-    const localHostname = ctx.providers.network?.getHostname() ?? '';
-    const max = ctx.named['maxevents'] !== undefined ? Number(ctx.named['maxevents']) : undefined;
-    const known = new Set((log.listLogs() ?? []).map((l) => l.logName.toLowerCase()));
+    const machine = ctx.providers.network?.getHostname() ?? '';
+    const logs = log.listLogs().map((entry) => entry.logName);
+    const providerCatalog = log.providers?.() ?? [];
+    const events: QueryEvent[] = [];
+    let searched = false;
 
-    const rows: Array<Record<string, PSValue>> = [];
-    for (const q of queries) {
-      if (!known.has(q.path.toLowerCase())) {
-        ctx.emitError(`Get-WinEvent : There is not an event log on the localhost computer that matches "${q.path}".`);
-        return null;
+    for (const query of queries) {
+      let channels: string[] = [];
+      if (query.channels.length > 0) {
+        channels = matchingNames(ctx, 'log', query.channels, logs) ?? [];
       }
-      for (const e of log.getEntries(q.path, {})) {
-        if (!q.predicate(e, now)) continue;
-        rows.push(winEventObject(e, q.path, localHostname));
+      let providerPatterns = query.providers ?? [];
+      if (providerPatterns.length > 0) {
+        const matched = matchingNames(ctx, 'provider', providerPatterns, providerCatalog.map((provider) => provider.name));
+        if (matched === null) continue;
+        const writes = new Set(providerCatalog.filter((provider) => matched.includes(provider.name)).flatMap((provider) => provider.logNames));
+        if (query.channels.length === 0) channels = logs.filter((name) => writes.has(name));
+        else {
+          channels = channels.filter((name) => writes.has(name));
+          if (channels.length === 0) { ctx.emitError('The specified providers do not write events to any of the specified logs.'); continue; }
+        }
+        providerPatterns = matched;
+      }
+      const wanted = (entry: EventLogEntryInfo): boolean =>
+        (providerPatterns.length === 0 || providerPatterns.some((pattern) => wildcardMatches(pattern, entry.source))) && query.predicate(entry, now);
+      for (const name of channels) {
+        searched = true;
+        for (const entry of log.getEntries(name, {})) if (wanted(entry)) events.push({ ...entry, channel: name });
+      }
+      for (const path of query.paths ?? []) {
+        const exported = log.readExportedEntries?.(path);
+        if (exported) searched = true;
+        if (!exported) { ctx.emitError(`The ${path} path does not appear to be a valid log file path. Specify a valid file system path.`); continue; }
+        for (const entry of [...exported.entries].reverse()) if (wanted(entry)) events.push({ ...entry, channel: exported.channel });
       }
     }
-    if (rows.length === 0) {
-      ctx.emitError('No events were found that match the specified selection criteria.');
+
+    if (events.length === 0) {
+      if (searched) ctx.emitError('No events were found that match the specified selection criteria.');
       return [];
     }
-    return (max !== undefined ? rows.slice(0, max) : rows) as PSValue;
+    const ordered = events.sort((left, right) => right.timeGenerated.getTime() - left.timeGenerated.getTime() || right.index - left.index);
+    if (oldest) ordered.reverse();
+    const limited = maxEvents === undefined ? ordered : ordered.slice(0, maxEvents);
+    return limited.map((event) => winEventObject(event, event.channel, machine)) as PSValue;
   }
 }
