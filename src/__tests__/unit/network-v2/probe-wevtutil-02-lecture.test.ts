@@ -91,11 +91,11 @@ describe('Scénario 2 — `gl` rend la configuration réelle', () => {
 
   it('le nom de fichier échappe le séparateur de canal', async () => {
     const dc = new WindowsServer('DC01');
-    // Windows écrit `Microsoft-Windows-PowerShell%4Operational.evtx` :
+    // Windows écrit `PowerShellCore%4Operational.evtx` :
     // la barre oblique du nom de canal ne peut pas rester dans un nom de
     // fichier.
     expect(field(String(await dc.executeCmdCommand(
-      'wevtutil gl Microsoft-Windows-PowerShell/Operational')), 'logFileName'))
-      .toContain('Microsoft-Windows-PowerShell%4Operational.evtx');
+      'wevtutil gl PowerShellCore/Operational')), 'logFileName'))
+      .toContain('PowerShellCore%4Operational.evtx');
   });
 });
