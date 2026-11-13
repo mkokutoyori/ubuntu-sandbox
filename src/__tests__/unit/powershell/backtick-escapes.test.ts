@@ -74,7 +74,7 @@ describe("apostrophe doublée — l'échappement des chaînes simples", () => {
     // Le cas qui l'a révélé : un filtre d'événement porte lui-même des
     // apostrophes, et c'est la seule façon de le citer sans guillemets.
     const out = await run(createShell(),
-      "Get-WinEvent -LogName System -FilterXPath '*[System[Provider[@Name=''Disk'']]]' | Select-Object -ExpandProperty Id");
+      "Get-WinEvent -LogName System -FilterXPath '*[System[Provider[@Name=''Service Control Manager'']]]' | Select-Object -ExpandProperty Id");
     expect(out).not.toMatch(/No events were found/i);
     expect(out.trim()).toMatch(/^\d+$/m);
   });

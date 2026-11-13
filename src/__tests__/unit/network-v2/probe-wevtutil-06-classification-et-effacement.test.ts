@@ -239,12 +239,12 @@ describe('qe /e /bm /sbm', () => {
 
   it('/sbm puis /bm: la seconde requête reprend après le dernier événement lu', async () => {
     const dc = new WindowsServer('DC01');
-    await wevtutil(dc, 'qe Application /c:2 /f:text /sbm:C:\\bm.xml');
+    await wevtutil(dc, 'qe Application /c:1 /f:text /sbm:C:\\bm.xml');
     expect(String(dc.getFileSystem().readFile('C:\\bm.xml').content)).toMatch(/<Bookmark Channel='Application' RecordId='\d+' IsCurrent='true'\/>/);
     const first = await wevtutil(dc, 'qe Application /f:text');
     const resumed = await wevtutil(dc, 'qe Application /f:text /bm:C:\\bm.xml');
     expect([...resumed.matchAll(/Event\[/g)].length).toBeLessThan([...first.matchAll(/Event\[/g)].length);
-    expect([...resumed.matchAll(/Event\[/g)].length).toBe(4);
+    expect([...resumed.matchAll(/Event\[/g)].length).toBe([...first.matchAll(/Event\[/g)].length - 1);
   });
 });
 

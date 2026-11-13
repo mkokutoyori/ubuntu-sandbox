@@ -109,25 +109,18 @@ function buildSystemLog(next: () => number): EventLogEntry[] {
   return [
     entry(next, 'Information', 'Microsoft-Windows-Kernel-General', 12, 'The operating system started at system time 2024-01-15T08:00:00.', 7),
     entry(next, 'Information', 'Microsoft-Windows-Kernel-Boot', 20, 'The last shutdown\'s success status was true.', 7),
-    entry(next, 'Warning',     'Microsoft-Windows-Time-Service', 36, 'The time service has not synchronized the system time for 86400 seconds.', 5),
     entry(next, 'Information', 'Service Control Manager', 7036, 'The Windows Update service entered the running state.', 4),
     entry(next, 'Information', 'Service Control Manager', 7036, 'The DHCP Client service entered the running state.', 3),
-    entry(next, 'Error',       'Disk', 7, 'The device, \\Device\\Harddisk0\\DR0, has a bad block.', 2),
     entry(next, 'Information', 'Microsoft-Windows-Winlogon', 7001, 'User Logon Notification for Customer Experience Improvement Program.', 1),
     entry(next, 'Information', 'Microsoft-Windows-Kernel-General', 1, 'The system uptime is 86400 seconds.', 0, 12),
-    entry(next, 'Warning',     'Microsoft-Windows-Power-Troubleshooter', 1, 'The system has returned from a low power state.', 0, 6),
     entry(next, 'Information', 'EventLog', 6005, 'The Event log service was started.', 0, 2),
   ];
 }
 
 function buildApplicationLog(next: () => number): EventLogEntry[] {
   return [
-    entry(next, 'Information', 'Windows Error Reporting', 1001, 'Fault bucket 0, type 0 — Event Name: APPCRASH.', 14),
     entry(next, 'Information', 'MsiInstaller', 11707, 'Product: Microsoft Visual C++ Redistributable — Installation completed successfully.', 10),
-    entry(next, 'Warning',     'Application Error', 1000, 'Faulting application name: explorer.exe.', 7),
     entry(next, 'Information', 'SecurityCenter', 1, 'The Windows Security Center Service has started.', 5),
-    entry(next, 'Error',       'Application Hang', 1002, 'The program svchost.exe stopped interacting with Windows.', 3),
-    entry(next, 'Information', '.NET Runtime', 1026, '.NET Runtime version 4.0.30319 — Application crashed.', 1),
   ];
 }
 
