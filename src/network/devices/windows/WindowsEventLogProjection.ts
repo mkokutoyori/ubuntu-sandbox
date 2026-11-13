@@ -12,12 +12,13 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
-  WindowsServiceEventPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
+  WindowsServiceEventPayload, WindowsServiceControlSentPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
   WindowsServiceCreatedPayload, WindowsServiceStartTypeChangedPayload,
 } from './events';
 
 /** SCM event ID for a service state transition (System log). */
 const SCM_STATE_CHANGE = 7036;
+const SCM_CONTROL_SENT = 7035;
 /** SCM event ID for an unexpected service termination (System log). */
 const SCM_UNEXPECTED_TERMINATION = 7034;
 /** SCM event ID announcing the corrective action about to be taken (System log). */
@@ -57,6 +58,7 @@ export class WindowsEventLogProjection {
     private readonly auditPolicy?: WindowsAuditPolicy,
   ) {
     this.subscriptions.push(
+      bus.subscribe('windows.service.control-sent', (e) => this.onControlSent(e.payload)),
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.crashed', (e) => this.onServiceCrashed(e.payload)),
@@ -173,6 +175,14 @@ export class WindowsEventLogProjection {
   dispose(): void {
     for (const off of this.subscriptions) off();
     this.subscriptions.length = 0;
+  }
+
+  private onControlSent(p: WindowsServiceControlSentPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System', 'Service Control Manager', SCM_CONTROL_SENT, 'Information',
+      `The ${p.displayName} service was successfully sent a ${p.control} control.`,
+    );
   }
 
   private onService(p: WindowsServiceEventPayload): void {

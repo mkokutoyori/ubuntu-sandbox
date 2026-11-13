@@ -44,7 +44,7 @@ describe('Scénario 1 — une requête, deux surfaces, le même résultat', () =
     ['par EventID', 'Security', '*[System[EventID=4624]]'],
     ['par un « ou »', 'Security', '*[System[(EventID=4624 or EventID=4625)]]'],
     ['par niveau', 'System', '*[System[(Level=2 or Level=3)]]'],
-    ['par fournisseur', 'System', "*[System[Provider[@Name='Disk']]]"],
+    ['par fournisseur', 'System', "*[System[Provider[@Name='Service Control Manager']]]"],
     ['sans filtre', 'Application', '*'],
   ] as const) {
     it(nom, async () => {

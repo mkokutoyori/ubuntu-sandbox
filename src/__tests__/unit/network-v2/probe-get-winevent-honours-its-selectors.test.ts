@@ -56,8 +56,12 @@ describe('Get-WinEvent selectors', () => {
   });
 
   it('Level keeps only the listed levels', async () => {
-    const out = await machine.ps('Get-WinEvent -FilterHashtable @{LogName="System"; Level=2} | ForEach-Object { $_.LevelDisplayName } | Select-Object -Unique');
-    expect(out.trim()).toBe('Error');
+    await machine.ps('New-EventLog -LogName Application -Source MonAppli');
+    await machine.ps('Write-EventLog -LogName Application -Source MonAppli -EventId 1001 -EntryType Warning -Message "sauvegarde incomplete"');
+    const warnings = await machine.ps('Get-WinEvent -FilterHashtable @{LogName="Application"; Level=3} | ForEach-Object { $_.LevelDisplayName } | Select-Object -Unique');
+    const information = await machine.ps('Get-WinEvent -FilterHashtable @{LogName="Application"; Level=4} | ForEach-Object { $_.LevelDisplayName } | Select-Object -Unique');
+    expect(warnings.trim()).toBe('Warning');
+    expect(information.trim()).toBe('Information');
   });
 
   it('Keywords selects audit failures and audit successes apart', async () => {

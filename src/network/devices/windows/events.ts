@@ -30,6 +30,12 @@ export interface WindowsServiceEventPayload extends WindowsDeviceRef {
   running: boolean;
 }
 
+export interface WindowsServiceControlSentPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  control: 'start' | 'stop';
+}
+
 /** A service's hosting process died out from under it (not a graceful stop). */
 export interface WindowsServiceStartTypeChangedPayload extends WindowsDeviceRef {
   serviceName: string;
@@ -219,6 +225,7 @@ export interface WindowsPortProxyEventPayload extends WindowsDeviceRef {
 // ─── Discriminated union ────────────────────────────────────────────────
 
 export type WindowsDomainEvent =
+  | { topic: 'windows.service.control-sent'; payload: WindowsServiceControlSentPayload }
   | { topic: 'windows.service.started'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.stopped'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.crashed'; payload: WindowsServiceCrashedPayload }
