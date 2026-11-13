@@ -19,6 +19,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { PSLexer }  from '@/powershell/lexer/PSLexer';
+import { makePSCredentialFromSecret } from '@/powershell/credential/PSCredential';
 import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
@@ -221,6 +222,10 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     // [regex]::Split(input, pattern) → string[]
     split:   (input: PSValue, pattern: PSValue) =>
       String(input).split(new RegExp(String(pattern))) as PSValue[],
+  } as Record<string, PSValue>,
+
+  pscredential: {
+    new: (userName: PSValue, secret: PSValue) => makePSCredentialFromSecret(String(userName ?? ''), secret) as unknown as PSValue,
   } as Record<string, PSValue>,
 
   guid: {
@@ -2397,7 +2402,7 @@ export class PSRuntime {
       return ((initial?: PSValue) => this.newGenericList(kind, genericStatic[1] ?? genericStatic[2],
         Array.isArray(initial) ? initial : [])) as unknown as PSValue;
     }
-    const typeObj = STATIC_TYPES[tname]
+    const typeObj = STATIC_TYPES[tname === 'system.management.automation.pscredential' ? 'pscredential' : tname]
       // Generic list fallback: List[T] for any T
       ?? (tname.match(/^(system\.collections\.generic\.list|collections\.generic\.list)\[.+\]$/)
           ? STATIC_TYPES['list'] : undefined)

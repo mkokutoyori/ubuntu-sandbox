@@ -32,6 +32,13 @@ export function makePSCredential(userName: string, password: string): PSCredenti
   };
 }
 
+export function makePSCredentialFromSecret(userName: string, secret: unknown): PSCredentialValue {
+  const held = typeof secret === 'object' && secret !== null && 'SecureString' in secret
+    ? (secret as { SecureString: unknown }).SecureString
+    : secret;
+  return makePSCredential(userName, held === undefined || held === null ? '' : String(held));
+}
+
 export function isPSCredential(value: unknown): value is PSCredentialValue {
   return typeof value === 'object' && value !== null
     && (value as Record<string, unknown>).PSTypeName === PS_CREDENTIAL_TYPE_NAME;

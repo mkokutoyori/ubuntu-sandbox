@@ -17,7 +17,7 @@ import {
   matchExecutionPolicyScope, storedPolicy, writeExecutionPolicy,
 } from '@/powershell/executionPolicy';
 import { namedCredential } from './RemotingCmdlets';
-import { makePSCredential } from '@/powershell/credential/PSCredential';
+import { makePSCredentialFromSecret } from '@/powershell/credential/PSCredential';
 import { wildcardMatches, wildcardToRegex, hasWildcard } from '@/powershell/runtime/PSWildcard';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { renderCmdletHelp, helpTopicNotFound, HELP_SYSTEM_TOPIC } from '@/powershell/help/renderHelp';
@@ -74,11 +74,7 @@ export class NewObjectCmdlet implements ICmdlet {
     }
     if (tname.includes('pscredential')) {
       const args = newObjectCtorArgs(ctx);
-      const secret = args[1] as { SecureString?: unknown } | undefined;
-      const password = secret && typeof secret === 'object' && 'SecureString' in secret
-        ? psValueToString(secret.SecureString as PSValue)
-        : psValueToString(args[1] ?? '');
-      return makePSCredential(psValueToString(args[0] ?? ''), password) as unknown as PSValue;
+      return makePSCredentialFromSecret(psValueToString(args[0] ?? ''), args[1]) as unknown as PSValue;
     }
     if (tname.includes('activedirectoryschedule')) {
       // `Set-ADReplicationSiteLink -ReplicationSchedule` accepts one of these — no
