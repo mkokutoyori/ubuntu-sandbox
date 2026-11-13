@@ -27,6 +27,7 @@ export interface XPathEvent {
   entryType: string;
   timeGenerated: Date;
   data?: Record<string, string>;
+  userSid?: string;
 }
 
 export type XPathPredicate = (e: XPathEvent, now: number) => boolean;

@@ -1793,6 +1793,7 @@ class WindowsEventLogAdapter implements IEventLogProvider {
       category: e.category,
       message: e.message,
       data: e.data,
+      ...(e.userSid === undefined ? {} : { userSid: e.userSid }),
     }));
   }
   writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string {

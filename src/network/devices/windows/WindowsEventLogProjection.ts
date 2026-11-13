@@ -45,6 +45,7 @@ export interface WindowsEventLogSink {
     entryType: 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit',
     message: string,
     data?: Record<string, string>,
+    userSid?: string,
   ): string;
 }
 
@@ -56,6 +57,7 @@ export class WindowsEventLogProjection {
     private readonly sink: WindowsEventLogSink,
     private readonly deviceId: string,
     private readonly auditPolicy?: WindowsAuditPolicy,
+    private readonly requesterSid?: () => string | undefined,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.service.control-sent', (e) => this.onControlSent(e.payload)),
@@ -182,6 +184,7 @@ export class WindowsEventLogProjection {
     this.sink.writeEventLog(
       'System', 'Service Control Manager', SCM_CONTROL_SENT, 'Information',
       `The ${p.displayName} service was successfully sent a ${p.control} control.`,
+      undefined, this.requesterSid?.(),
     );
   }
 
@@ -205,6 +208,7 @@ export class WindowsEventLogProjection {
       'System', 'Service Control Manager', SCM_START_TYPE_CHANGED, 'Information',
       `The start type of the ${p.displayName} service was changed from ${from} to ${to}.`,
       { param1: p.displayName, param2: from, param3: to },
+      this.requesterSid?.(),
     );
   }
 
@@ -243,6 +247,7 @@ export class WindowsEventLogProjection {
         StartType: START_TYPE_WORDS[p.startType] ?? p.startType,
         AccountName: p.account,
       },
+      this.requesterSid?.(),
     );
   }
 

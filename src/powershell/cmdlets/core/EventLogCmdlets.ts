@@ -56,6 +56,7 @@ function winEventObject(e: EventLogEntryInfo, logName: string, machine: string):
     TimeCreated: e.timeGenerated,
     Message: e.message,
     RecordId: e.index,
+    UserId: e.userSid === undefined ? null : { Value: e.userSid } as unknown as PSValue,
     MachineName: e.data?.MachineName ?? machine,
     Properties: Object.values(e.data ?? {}) as PSValue,
     ToXml: () => xml,

@@ -971,7 +971,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
     this.eventLog.attachForwarder((logName, entry) => this.tryForwardMatchingEvent(logName, entry));
-    this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
+    this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy, () => this.userMgr.getUser(this.userMgr.currentUser)?.sid);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.getTcpStack(), this.procMgr);
     this.servicePortProjection.declareEndpoint({

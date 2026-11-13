@@ -130,6 +130,7 @@ export interface EventLogEntryInfo {
   category: string;
   message: string;
   data?: Record<string, string>;
+  userSid?: string;
 }
 
 export type { NetAdapterEntry };
