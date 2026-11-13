@@ -4922,15 +4922,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.userMgr.recordGroupEnumeration(kind, target, this.procMgr.getProcessesByName(image)[0]?.pid ?? 0, processName);
   }
 
-  setSystemTime(epochMs: number): void {
+  setSystemTime(epochMs: number, processName = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'): void {
     const previousMs = this.clockPort.wall();
     this.clockPort.set(epochMs);
-    const host = this.procMgr.getProcessesByName('pwsh.exe')[0] ?? this.procMgr.getProcessesByName('powershell.exe')[0];
+    const image = processName.slice(processName.lastIndexOf('\\') + 1);
+    const host = this.procMgr.getProcessesByName(image)[0]
+      ?? (image === 'pwsh.exe' ? this.procMgr.getProcessesByName('powershell.exe')[0] : undefined);
     this.getBus().publish({
       topic: 'windows.system.time-changed',
       payload: {
         deviceId: this.id, previousMs, newMs: this.clockPort.wall(), actor: this.userMgr.currentUser,
-        processId: host?.pid ?? 0, processName: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+        processId: host?.pid ?? 0, processName,
       },
     });
   }
@@ -5220,12 +5222,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return WinSys.cmdChcp(args);
   }
 
+  private cmdClock(): WinSys.SystemClockControl {
+    return { isAdmin: this.userMgr.isCurrentUserAdmin(), set: (epochMs) => this.setSystemTime(epochMs, 'C:\\Windows\\System32\\cmd.exe') };
+  }
+
   private cmdDate(args: string[]): string {
-    return WinSys.cmdDate(args, this.identity.timezone, this.simulatedDate().getTime());
+    return WinSys.cmdDate(args, this.identity.timezone, this.simulatedDate().getTime(), this.cmdClock());
   }
 
   private cmdTime(args: string[]): string {
-    return WinSys.cmdTime(args, this.identity.timezone, this.simulatedDate().getTime());
+    return WinSys.cmdTime(args, this.identity.timezone, this.simulatedDate().getTime(), this.cmdClock());
   }
 
   private cmdStart(args: string[]): string {
