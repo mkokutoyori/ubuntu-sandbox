@@ -2872,14 +2872,14 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     task.author ??= `${this.pc.getHostname()}\\${this.pc.getCurrentUser()}`;
     task.runAsUser ??= this.pc.getCurrentUser();
     this.store().set(task.taskName.toLowerCase(), task);
-    this.pc.announceTaskRegistered(task.taskName, task.command ?? '');
+    this.pc.announceTaskRegistered(task);
     return `\\${task.taskName}`;
   }
   unregisterTask(name: string): string {
     const task = this.store().get(name.toLowerCase());
     if (!task) return `Cannot find scheduled task '${name}'.`;
     this.store().delete(name.toLowerCase());
-    this.pc.announceTaskDeleted(task.taskName, task.command ?? '');
+    this.pc.announceTaskDeleted(task);
     return '';
   }
   updateTask(name: string, patch: Partial<ScheduledTaskInfo>): string {
@@ -2888,7 +2888,7 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     const wasDisabled = task.state === 'Disabled';
     Object.assign(task, patch);
     const isDisabled = task.state === 'Disabled';
-    if (wasDisabled !== isDisabled) this.pc.announceTaskStateChange(task.taskName, task.command ?? '', !isDisabled);
+    if (wasDisabled !== isDisabled) this.pc.announceTaskStateChange(task, !isDisabled);
     return '';
   }
   runTask(name: string): string {

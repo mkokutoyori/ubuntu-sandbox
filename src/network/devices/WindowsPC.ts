@@ -179,6 +179,7 @@ import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
 import { cmdWhoami } from './windows/WinWhoami';
 import { cmdNetUser, cmdNetLocalgroup, type NetUserContext } from './windows/WinNetUser';
+import { renderTaskDefinition } from './windows/ScheduledTaskDefinition';
 import { cmdIcacls } from './windows/WinIcacls';
 import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
@@ -761,10 +762,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /** 4698 — `Register-ScheduledTask` laisse désormais une trace. */
-  auditScheduledTaskCreated(taskName: string, command: string): void {
+  auditScheduledTaskCreated(task: WinSys.WinScheduledTask): void {
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
     this.securityAudit().scheduledTaskCreated(
-      taskName, command, this.userMgr.currentUser || 'Administrator');
+      task.taskName, renderTaskDefinition(task, this.simulatedDate()), this.userMgr.currentUser || 'Administrator');
   }
 
   /**
@@ -4829,9 +4830,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       scheduledTasks: this.scheduledTasks,
       now: () => this.simulatedDate(),
       elevationContext: () => this.resolveElevationForCurrentUser(),
-      onTaskRegistered: (t) => this.announceTaskRegistered(t.taskName, t.command ?? ''),
-      onTaskDeleted: (task) => this.announceTaskDeleted(task.taskName, task.command ?? ''),
-      onTaskStateChanged: (task, enabled) => this.announceTaskStateChange(task.taskName, task.command ?? '', enabled),
+      onTaskRegistered: (t) => this.announceTaskRegistered(t),
+      onTaskDeleted: (task) => this.announceTaskDeleted(task),
+      onTaskStateChanged: (task, enabled) => this.announceTaskStateChange(task, enabled),
       runTaskNow: (t) => this.runScheduledTaskNow(t),
     };
   }
@@ -4851,22 +4852,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       eventId, 'Information', message, data);
   }
 
-  announceTaskRegistered(taskName: string, command: string): void {
-    this.logTaskRegistered(taskName);
-    this.auditScheduledTaskCreated(taskName, command);
+  announceTaskRegistered(task: WinSys.WinScheduledTask): void {
+    this.logTaskRegistered(task.taskName);
+    this.auditScheduledTaskCreated(task);
   }
 
-  announceTaskDeleted(taskName: string, command: string): void {
-    this.logTaskDeleted(taskName);
+  announceTaskDeleted(task: WinSys.WinScheduledTask): void {
+    this.logTaskDeleted(task.taskName);
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
-    this.securityAudit().scheduledTaskDeleted(taskName, command, this.userMgr.currentUser || 'Administrator');
+    this.securityAudit().scheduledTaskDeleted(task.taskName, renderTaskDefinition(task, this.simulatedDate()), this.userMgr.currentUser || 'Administrator');
   }
 
-  announceTaskStateChange(taskName: string, command: string, enabled: boolean): void {
+  announceTaskStateChange(task: WinSys.WinScheduledTask, enabled: boolean): void {
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
     const actor = this.userMgr.currentUser || 'Administrator';
-    if (enabled) this.securityAudit().scheduledTaskEnabled(taskName, command, actor);
-    else this.securityAudit().scheduledTaskDisabled(taskName, command, actor);
+    const content = renderTaskDefinition(task, this.simulatedDate());
+    if (enabled) this.securityAudit().scheduledTaskEnabled(task.taskName, content, actor);
+    else this.securityAudit().scheduledTaskDisabled(task.taskName, content, actor);
   }
 
   private logTaskRegistered(taskName: string): void {
