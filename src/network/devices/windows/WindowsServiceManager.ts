@@ -237,6 +237,13 @@ export class WindowsServiceManager {
     this.notifyWatchers(svc, prev);
   }
 
+  private publishControlSent(svc: WindowsService, control: 'start' | 'stop'): void {
+    this.bus?.publish({
+      topic: 'windows.service.control-sent',
+      payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, control },
+    });
+  }
+
   /** Publish a service-lifecycle event on the central bus. */
   private publishServiceState(svc: WindowsService, running: boolean): void {
     this.bus?.publish({
@@ -487,6 +494,7 @@ export class WindowsServiceManager {
     if (!svc) return `The specified service does not exist. [SC] OpenService FAILED 1060.`;
     if (svc.state === 'Running') return `An instance of the service is already running.`;
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
+    this.publishControlSent(svc, 'start');
     this.applyRunning(svc, true);
     return '';
   }
@@ -505,6 +513,7 @@ export class WindowsServiceManager {
       return `Cannot stop ${svc.displayName} because dependent services are running: ${depNames}.`;
     }
 
+    this.publishControlSent(svc, 'stop');
     this.applyRunning(svc, false);
     return '';
   }
