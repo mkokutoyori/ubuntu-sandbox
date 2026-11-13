@@ -1144,7 +1144,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return;
     }
     const clientHost = this.reverseLookupClient(socket.remoteIp);
-    this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
+    this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost, socket.remotePort);
   }
 
   private initDefaultSockets(): void {
@@ -1154,7 +1154,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private serveWinRm(socket: TcpSocket): void {
-    this.getWinRmServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, this.reverseLookupClient(socket.remoteIp));
+    this.getWinRmServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, this.reverseLookupClient(socket.remoteIp), socket.remotePort);
   }
 
   private serveKdc(socket: TcpSocket): void {
@@ -1563,7 +1563,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * as they do for any other TCP client on this device.
    */
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult {
-    return dialSmbShare({ tcpStack: this.getTcpStack(), targetIp, shareName, username, password });
+    return dialSmbShare({ tcpStack: this.getTcpStack(), targetIp, shareName, username, password, workstation: this.hostname });
   }
 
   /** Build a WinRmServerHandler ready to be hooked onto a TcpConnection (one per accept). */
@@ -1664,7 +1664,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     const authentication = this.winRmAuthentication(computerName, credential);
     if (authentication === null) return { ok: false, error: 'Access is denied.' };
-    return runWinRmRequest({ tcpStack: this.getTcpStack(), targetIp: target.toString(), request, ...authentication });
+    return runWinRmRequest({ tcpStack: this.getTcpStack(), targetIp: target.toString(), request, workstation: this.hostname, ...authentication });
   }
 
   private runRemoteTool(command: string, remote: RemoteTarget): string {
@@ -1940,7 +1940,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getKerberosTicketCache(): KerberosTicketCache { return this.kerberosTicketCache; }
 
   /** Domain-qualified credential check for inbound SMB/WinRM auth — real LDAP bind, not a topology shortcut. Returns null when unqualified/not domain-joined (caller should fall back to local auth). */
-  tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[] } | null {
+  tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[]; authoritative?: boolean; cause?: 'unknown-user' | 'bad-password' | 'disabled' } | null {
     // A domain controller holds the directory: it answers for its own
     // domain accounts itself, exactly as a real DC does, instead of
     // dialling out to find an authority it already is. A member machine
@@ -1953,8 +1953,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         || qualifier.toLowerCase() === ownDirectory.netbiosName.toLowerCase()
         || qualifier.toLowerCase() === ownDirectory.dnsName.toLowerCase();
       if (!known) return null;
-      if (!ownDirectory.getBindCheck().checkBind(sam, password)) return { ok: false, sam, groups: [] };
-      return { ok: true, sam, groups: ownDirectory.groupsForUser(sam).map(g => g.name) };
+      if (!ownDirectory.getBindCheck().checkBind(sam, password)) {
+        const account = ownDirectory.getUser(sam);
+        const cause = account === null ? 'unknown-user' : account.enabled ? 'bad-password' : 'disabled';
+        return { ok: false, sam, groups: [], authoritative: true, cause };
+      }
+      return { ok: true, sam, groups: ownDirectory.groupsForUser(sam).map(g => g.name), authoritative: true };
     }
     if (!this.domainMembership) return null;
     const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
@@ -2033,13 +2037,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * credentials all behave exactly as they do for any other TCP client.
    */
   dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
-    return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
+    return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password, workstation: this.hostname });
   }
 
   dialWinRmAsCurrentIdentity(computerName: string, targetIp: string): WinRmDialResult {
     const apReq = this.kerberosApReqFor(computerName.split('.')[0]);
     if (apReq === null) return { ok: false, error: 'Access is denied.' };
-    return dialWinRmWithTicket({ tcpStack: this.getTcpStack(), targetIp, apReq });
+    return dialWinRmWithTicket({ tcpStack: this.getTcpStack(), targetIp, apReq, workstation: this.hostname });
   }
 
   async openWinRmRunspace(computerName: string, credential?: { username: string; password: string }): Promise<WinRmRunspaceOpening> {
@@ -2048,7 +2052,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const authentication = this.winRmAuthentication(computerName, credential);
     if (authentication === null) return { ok: false, error: 'Access is denied.' };
     const targetIp = target.toString();
-    return WinRmRunspace.open({ tcpStack: this.getTcpStack(), targetIp, pathAlive: peerLiveness(this, targetIp), ...authentication });
+    return WinRmRunspace.open({ tcpStack: this.getTcpStack(), targetIp, pathAlive: peerLiveness(this, targetIp), workstation: this.hostname, ...authentication });
   }
 
   /**
@@ -4619,10 +4623,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       registry: this.registry,
       localDrives: () => this.fs.listDrives(),
       requestDfsReferral: (targetIp: string, path: string, username: string, password: string) =>
-        requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password }),
+        requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password, workstation: this.hostname }),
       resolveHostnameSync: (name: string) => this.resolveHostnameSync(name),
       requestShareEnum: (targetIp: string, username: string, password: string) =>
-        requestShareEnum({ tcpStack: this.getTcpStack(), targetIp, username, password }),
+        requestShareEnum({ tcpStack: this.getTcpStack(), targetIp, username, password, workstation: this.hostname }),
       registerHostInDomainDns: () => this.registerHostInDomainDns(),
       signedInIdentity: () => (this.domainSession
         ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}`
@@ -6206,6 +6210,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         // recognized form even though it's a valid Kerberos principal.
         username: `${this.hostname}$@${this.domainMembership.dnsName}`,
         password: this.domainMembership.machineSecret,
+        workstation: this.hostname,
         subscriptionId: sub.subscriptionId,
         sourceMachine: this.hostname,
         event: { eventId: entry.eventId, timeGenerated: entry.timeGenerated.toISOString(), message: entry.message, sourceLogName: logName },
