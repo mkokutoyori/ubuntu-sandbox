@@ -1801,6 +1801,8 @@ export interface IVpnProvider {
   disconnect(name: string): string;
 }
 
+import type { DirectoryAuditPort } from '@/network/devices/windows/DirectoryAuditPort';
+
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
   getLogStatus?(logName: string): {
@@ -1882,6 +1884,7 @@ export interface PSProviders {
   readonly jobs:           IJobProvider            | null;
   readonly users:          IUserProvider           | null;
   readonly eventLog:       IEventLogProvider       | null;
+  readonly directoryAudit?: DirectoryAuditPort     | null;
   readonly vpn:            IVpnProvider            | null;
   readonly scheduledTasks: IScheduledTaskProvider  | null;
   readonly disks:          IDiskProvider           | null;

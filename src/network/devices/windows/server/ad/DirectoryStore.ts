@@ -50,6 +50,8 @@ const UAC = {
   DONT_EXPIRE_PASSWORD: 0x10000,
 } as const;
 
+const WELL_KNOWN_USER_RIDS: Record<string, number> = { administrator: 500, guest: 501, krbtgt: 502 };
+
 /** Real AD groupType bit-flag values: a scope bit (2/4/8) plus the top SECURITY_ENABLED bit (0x80000000) when the group is a security group — a Distribution group carries the same scope bit without that top bit set (docs/PRD-Exchange.md §1.2 point 3/§2.1 P3-préalable). */
 
 function firstOf(values: string[] | undefined): string { return values?.[0] ?? ''; }
@@ -999,7 +1001,7 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  private nextObjectSid(): string { return `${this.domainSidPrefix}-${this.nextRid++}`; }
+  private nextObjectSid(wellKnownRid?: number): string { return `${this.domainSidPrefix}-${wellKnownRid ?? this.nextRid++}`; }
 
   private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean } & UserWriteOptions): DirOpResult {
     const enabled = opts.enabled ?? true;
@@ -1015,7 +1017,7 @@ export class DirectoryStore {
       name: [opts.commonName || sam],
       sAMAccountName: [sam],
       userPrincipalName: [`${sam}@${this.dnsName}`],
-      objectSid: [this.nextObjectSid()],
+      objectSid: [this.nextObjectSid(WELL_KNOWN_USER_RIDS[sam.toLowerCase()])],
       userAccountControl: [String(uac)],
       userPassword: [opts.password],
       displayName: opts.fullName ? [opts.fullName] : [],
@@ -1602,6 +1604,7 @@ export class DirectoryStore {
       name: [cn],
       sAMAccountName: [sam],
       groupType: [String(groupTypeValue(scope, category))],
+      objectSid: [this.nextObjectSid()],
     };
     for (const [ldap, value] of Object.entries(opts.attributes ?? {})) {
       if (value !== '') attributes[ldap] = [value];
@@ -1625,6 +1628,11 @@ export class DirectoryStore {
     return entry ? this.projectGroup(entry) : null;
   }
 
+  getGroupSid(sam: string): string | null {
+    const entry = this.findGroupEntry(sam);
+    return entry === null ? null : firstOf(entry.attributes.get('objectsid')) || null;
+  }
+
   listGroups(): AdGroup[] {
     this.expireMemberships();
     return this.listGroupEntries().map(e => this.projectGroup(e));
@@ -1633,7 +1641,7 @@ export class DirectoryStore {
   private projectGroup(entry: DirectoryEntry): AdGroup {
     const groupType = Number(firstOf(entry.attributes.get('grouptype')));
     const { scope, category } = groupTypeParts(groupType);
-    const known = new Set(['objectclass', 'cn', 'name', 'samaccountname', 'grouptype', 'member', 'memberof']);
+    const known = new Set(['objectclass', 'cn', 'name', 'samaccountname', 'grouptype', 'member', 'memberof', 'objectsid']);
     const properties: Record<string, string> = {};
     for (const spec of GROUP_PROPERTIES) {
       known.add(spec.ldap.toLowerCase());

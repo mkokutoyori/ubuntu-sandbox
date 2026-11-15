@@ -51,6 +51,10 @@ export const SECURITY_EVENT = {
   GROUP_MEMBER_ADDED_UNIVERSAL: 4756,
   GROUP_MEMBER_REMOVED_UNIVERSAL: 4757,
   GROUP_CREATED: 4731,
+  GROUP_CREATED_GLOBAL: 4727,
+  GROUP_CREATED_UNIVERSAL: 4754,
+  GROUP_DELETED_GLOBAL: 4730,
+  GROUP_DELETED_UNIVERSAL: 4758,
   GROUP_DELETED: 4734,
   PROCESS_CREATED: 4688,
   PROCESS_TERMINATED: 4689,
@@ -185,8 +189,7 @@ export class WindowsSecurityAudit {
 
   private targetFields(account: string): Record<string, string> {
     const leaf = account.slice(account.indexOf('\\') + 1);
-    const domain = account.includes('\\') ? account.slice(0, account.indexOf('\\')) : this.identity.machine;
-    return { TargetUserName: leaf, TargetDomainName: domain, TargetSid: this.identity.sidOf(account) };
+    return { TargetUserName: leaf, TargetDomainName: this.identity.domainOf(account), TargetSid: this.identity.sidOf(account) };
   }
 
   private accountEvent(eventId: number, name: string, actor: string, extra: Record<string, string> = {}): void {
@@ -239,15 +242,19 @@ export class WindowsSecurityAudit {
     return { TargetUserName: group, TargetDomainName: identity.domain, TargetSid: identity.sid };
   }
 
-  groupCreated(group: string, subjectUserName = 'Administrator'): void {
-    this.record(SECURITY_EVENT.GROUP_CREATED, 'SuccessAudit', {
+  groupCreated(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_CREATED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_CREATED_UNIVERSAL : SECURITY_EVENT.GROUP_CREATED;
+    this.record(eventId, 'SuccessAudit', {
       ...this.groupFields(group), ...this.subjectFields(subjectUserName),
       PrivilegeList: '-', SamAccountName: group, SidHistory: '-',
     });
   }
 
-  groupDeleted(group: string, subjectUserName = 'Administrator'): void {
-    this.record(SECURITY_EVENT.GROUP_DELETED, 'SuccessAudit', {
+  groupDeleted(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_DELETED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_DELETED_UNIVERSAL : SECURITY_EVENT.GROUP_DELETED;
+    this.record(eventId, 'SuccessAudit', {
       ...this.groupFields(group), ...this.subjectFields(subjectUserName), PrivilegeList: '-',
     });
   }

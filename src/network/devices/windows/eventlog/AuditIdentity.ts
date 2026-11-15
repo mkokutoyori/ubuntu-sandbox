@@ -32,10 +32,17 @@ export interface AuditSubject {
   readonly logonId: string;
 }
 
+export interface AuditDomainView {
+  readonly netbios: string;
+  accountSid(sam: string): string | undefined;
+  groupSid(name: string): string | undefined;
+}
+
 export interface AuditIdentity {
   readonly machine: string;
   subjectOf(actor: string): AuditSubject;
   sidOf(account: string): string;
+  domainOf(account: string): string;
   groupSidOf(group: string): { sid: string; domain: string };
   openSession(account: string, logonId: string): void;
 }
@@ -58,6 +65,7 @@ export function createAuditIdentity(
   machine: string,
   lookupSid: (account: string) => string | undefined = () => undefined,
   lookupGroupSid: (group: string) => string | undefined = () => undefined,
+  domainView: () => AuditDomainView | null = () => null,
 ): AuditIdentity {
   const sessions = new Map<string, string>();
   const syntheticRids = new Map<string, number>();
@@ -66,7 +74,14 @@ export function createAuditIdentity(
 
   const sidOf = (account: string): string => {
     const leaf = leafOf(account).toLowerCase();
-    return WELL_KNOWN_SIDS[leaf] ?? lookupSid(leafOf(account)) ?? synthetic(leaf);
+    return domainView()?.accountSid(leafOf(account)) ?? WELL_KNOWN_SIDS[leaf] ?? lookupSid(leafOf(account)) ?? synthetic(leaf);
+  };
+  const domainOf = (account: string): string => {
+    if (account.includes('\\')) return account.slice(0, account.indexOf('\\'));
+    const leaf = leafOf(account);
+    const view = domainView();
+    if (view !== null && view.accountSid(leaf) !== undefined) return view.netbios;
+    return WELL_KNOWN_DOMAINS[leaf.toLowerCase()] ?? machine;
   };
   const synthetic = (leaf: string): string => {
     let rid = syntheticRids.get(leaf);
@@ -80,13 +95,14 @@ export function createAuditIdentity(
   return {
     machine,
     sidOf,
+    domainOf,
     subjectOf(actor) {
       const leaf = leafOf(actor);
       const key = leaf.toLowerCase();
       if (key === 'system') {
-        return { sid: SYSTEM_SID, name: machineAccount, domain: 'WORKGROUP', logonId: SYSTEM_LOGON_ID };
+        return { sid: SYSTEM_SID, name: machineAccount, domain: domainView()?.netbios ?? 'WORKGROUP', logonId: SYSTEM_LOGON_ID };
       }
-      const domain = actor.includes('\\') ? actor.slice(0, actor.indexOf('\\')) : (WELL_KNOWN_DOMAINS[key] ?? machine);
+      const domain = domainOf(actor);
       let logonId = sessions.get(key);
       if (logonId === undefined) {
         logonId = nextLogonId();
@@ -97,6 +113,9 @@ export function createAuditIdentity(
     groupSidOf(group) {
       const builtin = BUILTIN_GROUP_SIDS[group.toLowerCase()];
       if (builtin !== undefined) return { sid: builtin, domain: 'Builtin' };
+      const view = domainView();
+      const directorySid = view?.groupSid(group);
+      if (view !== null && directorySid !== undefined) return { sid: directorySid, domain: view.netbios };
       return { sid: lookupGroupSid(group) ?? synthetic(`group:${group.toLowerCase()}`), domain: machine };
     },
     openSession(account, logonId) {

@@ -148,7 +148,7 @@ import {
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
-import { createAuditIdentity } from './windows/eventlog/AuditIdentity';
+import { createAuditIdentity, type AuditDomainView } from './windows/eventlog/AuditIdentity';
 import type { WindowsLogonDetails } from './windows/events';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
@@ -180,6 +180,7 @@ import { cmdWevtutil } from './windows/WinWevtutil';
 import { cmdWhoami } from './windows/WinWhoami';
 import { cmdNetUser, cmdNetLocalgroup, type NetUserContext } from './windows/WinNetUser';
 import { renderTaskDefinition } from './windows/ScheduledTaskDefinition';
+import type { DirectoryAuditPort } from './windows/DirectoryAuditPort';
 import { cmdIcacls } from './windows/WinIcacls';
 import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
@@ -749,6 +750,39 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * seule identité (SID de machine, nom NetBIOS, sessions ouvertes) pour
    * tous les événements qu'elle écrit.
    */
+  directoryAudit(): DirectoryAuditPort {
+    const accounts = (write: () => void): void => {
+      if (this.auditPolicy.isEnabled('User Account Management', 'success')) write();
+    };
+    const groups = (write: () => void): void => {
+      if (this.auditPolicy.isEnabled('Security Group Management', 'success')) write();
+    };
+    const audit = (): WindowsSecurityAudit => this.securityAudit();
+    return {
+      actor: () => this.userMgr.currentUser || 'Administrator',
+      accountCreated: (account, actor) => accounts(() => audit().accountCreated(account, actor)),
+      accountEnabled: (account, actor) => accounts(() => audit().accountEnabled(account, actor)),
+      accountDisabled: (account, actor) => accounts(() => audit().accountDisabled(account, actor)),
+      accountChanged: (account, actor) => accounts(() => audit().accountChanged(account, actor)),
+      accountDeleted: (account, actor) => accounts(() => audit().accountDeleted(account, actor)),
+      accountUnlocked: (account, actor) => accounts(() => audit().accountUnlocked(account, actor)),
+      passwordReset: (account, actor) => accounts(() => audit().passwordReset(account, actor)),
+      groupCreated: (group, scope, actor) => groups(() => audit().groupCreated(group, actor, scope)),
+      groupDeleted: (group, scope, actor) => groups(() => audit().groupDeleted(group, actor, scope)),
+      groupMemberAdded: (group, member, scope, actor) => groups(() => audit().groupMemberAdded(group, member, scope, actor)),
+      groupMemberRemoved: (group, member, scope, actor) => groups(() => audit().groupMemberRemoved(group, member, scope, actor)),
+    };
+  }
+
+  private auditDomainView(): AuditDomainView | null {
+    const store = this.getDirectoryStore();
+    if (store) {
+      return { netbios: store.netbiosName, accountSid: (sam) => store.getUser(sam)?.sid || undefined, groupSid: (name) => store.getGroupSid(name) ?? undefined };
+    }
+    const membership = this.domainMembership;
+    return membership === null ? null : { netbios: membership.netbiosName, accountSid: () => undefined, groupSid: () => undefined };
+  }
+
   securityAudit(): WindowsSecurityAudit {
     this.securityAuditInstance ??= new WindowsSecurityAudit(
       this.eventLog,
@@ -756,6 +790,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.hostname.toUpperCase(),
         (account) => this.userMgr.getUser(account)?.sid,
         (group) => this.userMgr.getGroup(group)?.sid,
+        () => this.auditDomainView(),
       ),
     );
     return this.securityAuditInstance;
