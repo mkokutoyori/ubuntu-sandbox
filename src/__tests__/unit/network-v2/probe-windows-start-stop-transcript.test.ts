@@ -121,4 +121,19 @@ describe('Start-Transcript and Stop-Transcript', () => {
     expect(await ps(`Start-Transcript -Path ${FILE} -Force`)).toBe(`Transcript started, output file is ${FILE}`);
     expect(await ps(`attrib ${FILE}`)).not.toMatch(/\bR\b/);
   });
+
+  it('disposing the shell without exit still writes the epilogue, with no exit line', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC2', 0, 0);
+    pc.setCurrentUser('Administrator');
+    const sub = PowerShellSubShell.create(pc).subShell;
+    const run = async (line: string): Promise<string> => (await sub.processLine(line)).output.join('\n').trim();
+    await run('New-Item -ItemType Directory -Path C:\\Temp -Force | Out-Null');
+    await run('Start-Transcript -Path C:\\Temp\\w.txt');
+    await run('Write-Output kept');
+    sub.dispose();
+    const text = pc.getFileSystem().readFile('C:\\Temp\\w.txt').content ?? '';
+    expect(text).toContain('PS> Write-Output kept');
+    expect(text).toMatch(/\*{22}\nPowerShell transcript end\nEnd time: \d{14}\n\*{22}\n$/);
+    expect(text).not.toContain('PS> exit');
+  });
 });

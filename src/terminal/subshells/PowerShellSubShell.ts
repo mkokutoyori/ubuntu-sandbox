@@ -191,7 +191,7 @@ export class PowerShellSubShell implements ISubShell {
     const afterFinalBacktick = /`\s+$/.test(command) ? command.slice(command.trimEnd().length) : '';
 
     if (trimmed.toLowerCase() === 'exit') {
-      if (this.device instanceof WindowsPC) this.device.endPowerShellHost();
+      if (this.device instanceof WindowsPC) this.device.endPowerShellHost(true);
       return { output: [], exit: true, prompt: this.getPrompt() };
     }
 
@@ -451,7 +451,7 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   dispose(): void {
-    // No resources to clean up
+    if (this.device instanceof WindowsPC) this.device.endPowerShellHost(false);
   }
 
   private async resolveEmbeddedReadHost(line: string): Promise<string | null> {

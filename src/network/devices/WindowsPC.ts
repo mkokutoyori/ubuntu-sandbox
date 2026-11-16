@@ -1013,15 +1013,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return `${header}PS> ${command}\n${output ? `${output}\n` : ''}`;
   }
 
-  endPowerShellHost(): void {
+  endPowerShellHost(typedExit: boolean): void {
+    const farewell = typedExit ? 'PS> exit\n' : '';
     const ended = this.simulatedDate();
     for (const session of this.explicitTranscripts.reverse()) {
-      this.appendToFile(session.path, `PS> exit\n${transcriptEpilogue(ended)}`);
+      this.appendToFile(session.path, `${farewell}${transcriptEpilogue(ended)}`);
     }
     this.explicitTranscripts = [];
     if (this.transcriptStartedAt !== null && isTranscriptionEnabled(this.powerShellPolicySource())) {
       const path = `${transcriptDirectory(this.powerShellPolicySource())}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
-      if (this.fs.readFile(path).ok) this.appendToFile(path, `PS> exit\n${transcriptEpilogue(ended)}`);
+      if (this.fs.readFile(path).ok) this.appendToFile(path, `${farewell}${transcriptEpilogue(ended)}`);
     }
     this.transcriptStartedAt = null;
   }

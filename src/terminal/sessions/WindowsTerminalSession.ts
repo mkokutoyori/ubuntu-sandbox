@@ -127,6 +127,8 @@ export class WindowsTerminalSession extends TerminalSession {
       this.shell = device.openShellSession();
       this.shell.inputReader = (prompt, preceding) => this.askCommandInput(prompt, preceding);
       this.registerTearDown(() => {
+        this.activeSubShell?.dispose();
+        for (const sub of this.subShellStack) sub.dispose();
         const s = this.shell;
         if (s && device instanceof WindowsPC) device.closeShellSession(s);
         this.shell = null;
