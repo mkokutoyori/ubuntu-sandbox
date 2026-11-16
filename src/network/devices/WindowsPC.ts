@@ -4868,6 +4868,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onTaskRegistered: (t) => this.announceTaskRegistered(t),
       onTaskDeleted: (task) => this.announceTaskDeleted(task),
       onTaskStateChanged: (task, enabled) => this.announceTaskStateChange(task, enabled),
+      onTaskUpdated: (task) => this.announceTaskUpdated(task),
+      endTask: (task) => this.endScheduledTask(task),
       runTaskNow: (t) => this.runScheduledTaskNow(t),
     };
   }
@@ -4898,7 +4900,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.securityAudit().scheduledTaskDeleted(task.taskName, renderTaskDefinition(task, this.simulatedDate()), this.userMgr.currentUser || 'Administrator');
   }
 
+  announceTaskUpdated(task: WinSys.WinScheduledTask): void {
+    this.taskEvent(140, `User "${this.taskUserContext()}"  updated Task Scheduler task "\\${task.taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${task.taskName}` });
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    this.securityAudit().scheduledTaskUpdated(task.taskName, renderTaskDefinition(task, this.simulatedDate()), this.userMgr.currentUser || 'Administrator');
+  }
+
   announceTaskStateChange(task: WinSys.WinScheduledTask, enabled: boolean): void {
+    if (enabled) this.taskEvent(140, `User "${this.taskUserContext()}"  updated Task Scheduler task "\\${task.taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${task.taskName}` });
+    else this.taskEvent(142, `User "${this.taskUserContext()}"  disabled Task Scheduler task "\\${task.taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${task.taskName}` });
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
     const actor = this.userMgr.currentUser || 'Administrator';
     const content = renderTaskDefinition(task, this.simulatedDate());
@@ -4906,35 +4919,68 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     else this.securityAudit().scheduledTaskDisabled(task.taskName, content, actor);
   }
 
+  private taskUserContext(): string {
+    return `${this.hostname}\\${this.userMgr.currentUser}`;
+  }
+
+  private newTaskInstanceId(): string {
+    return `{${'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    }).toUpperCase()}}`;
+  }
+
   private logTaskRegistered(taskName: string): void {
-    this.taskEvent(106, `User "${this.userMgr.currentUser}" registered Task Scheduler task "\\${taskName}"`,
-      { TaskName: `\\${taskName}`, UserContext: this.userMgr.currentUser });
+    this.taskEvent(106, `User "${this.taskUserContext()}"  registered Task Scheduler task "\\${taskName}"`,
+      { UserContext: this.taskUserContext(), TaskName: `\\${taskName}` });
   }
 
   private logTaskDeleted(taskName: string): void {
-    this.taskEvent(141, `User "${this.userMgr.currentUser}" deleted Task Scheduler task "\\${taskName}"`,
-      { TaskName: `\\${taskName}`, UserName: this.userMgr.currentUser });
+    this.taskEvent(141, `User "${this.taskUserContext()}"  deleted Task Scheduler task "\\${taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${taskName}` });
   }
 
-  /**
-   * Démarrer une tâche à la main — `schtasks /run` et
-   * `Start-ScheduledTask` passent tous deux par ici, pour que l'un ne
-   * puisse pas faire ce que l'autre ne fait pas.
-   */
   runScheduledTaskNow(task: WinSys.WinScheduledTask): void {
-    WinSys.runScheduledProgram(task, this.procMgr, this.simulatedDate());
+    const pid = WinSys.runScheduledProgram(task, this.procMgr, this.simulatedDate());
     this.runScheduledPowerShellScript(task.command);
-    if (task.command) this.logTaskRan(task.taskName, task.command);
+    if (task.command) this.logTaskRan(task, pid, 'user');
   }
 
-  /** 200 puis 201 : l'action démarre, l'action se termine. */
-  private logTaskRan(taskName: string, command: string): void {
-    this.taskEvent(200, `Task Scheduler launched action "${command}" in instance "\\${taskName}"`,
-      { TaskName: `\\${taskName}`, ActionName: command });
-    this.taskEvent(201, `Task Scheduler successfully completed task "\\${taskName}", action "${command}" with return code 0.`,
-      { TaskName: `\\${taskName}`, ActionName: command, ResultCode: '0' });
-    this.taskEvent(102, `Task Scheduler successfully finished "\\${taskName}" instance.`,
-      { TaskName: `\\${taskName}` });
+  endScheduledTask(task: WinSys.WinScheduledTask): boolean {
+    const instance = task.instance;
+    if (instance === undefined) return false;
+    task.instance = undefined;
+    this.procMgr.killProcess(instance.pid, true, true);
+    this.taskEvent(111, `Task Scheduler terminated "${instance.id}"  instance of the "\\${task.taskName}"  task.`,
+      { InstanceId: instance.id, TaskName: `\\${task.taskName}` });
+    return true;
+  }
+
+  private logTaskRan(task: WinSys.WinScheduledTask, pid: number | null, trigger: 'user' | 'time'): void {
+    const command = task.command ?? '';
+    const name = `\\${task.taskName}`;
+    const instanceId = this.newTaskInstanceId();
+    const user = this.taskUserContext();
+    if (pid !== null) task.instance = { id: instanceId, pid };
+    if (trigger === 'user') {
+      this.taskEvent(110, `Task Scheduler launched "${instanceId}"  instance of task "${name}"  for user "${user}" .`,
+        { InstanceId: instanceId, TaskName: name, UserContext: user });
+    } else {
+      this.taskEvent(107, `Task Scheduler launched "${instanceId}"  instance of task "${name}" due to a time trigger condition.`,
+        { InstanceId: instanceId, TaskName: name });
+    }
+    this.taskEvent(100, `Task Scheduler started "${instanceId}" instance of the "${name}" task for user "${user}".`,
+      { InstanceId: instanceId, TaskName: name, UserContext: user });
+    if (pid !== null) {
+      this.taskEvent(129, `Task Scheduler launch task "${name}" ; instance "${command}"  with process ID ${pid}.`,
+        { TaskName: name, Path: command, ProcessID: String(pid) });
+    }
+    this.taskEvent(200, `Task Scheduler launched action "${command}" in instance "${instanceId}" of task "${name}".`,
+      { ActionName: command, TaskInstanceId: instanceId, TaskName: name });
+    this.taskEvent(201, `Task Scheduler successfully completed task "${name}" ; instance "${instanceId}" ; action "${command}" with return code 0.`,
+      { TaskName: name, TaskInstanceId: instanceId, ActionName: command, ResultCode: '0' });
+    this.taskEvent(102, `Task Scheduler successfully finished "${instanceId}" instance of the "${name}" task for user "${user}".`,
+      { InstanceId: instanceId, TaskName: name, UserContext: user });
   }
 
   simulatedDate(): Date {
@@ -5030,9 +5076,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (task.state === 'Disabled') continue;
       let guard = 0;
       while (task.runAt && task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
-        WinSys.runScheduledProgram(task, this.procMgr, now);
+        const pid = WinSys.runScheduledProgram(task, this.procMgr, now);
         this.runScheduledPowerShellScript(task.command);
-        if (task.command) this.logTaskRan(task.taskName, task.command);
+        if (task.command) this.logTaskRan(task, pid, 'time');
         task.runAt = task.intervalMs
           ? likeDate(task.runAt, task.runAt.getTime() + task.intervalMs)
           : undefined;

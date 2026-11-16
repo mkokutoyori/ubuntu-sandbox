@@ -61,6 +61,7 @@ export const SECURITY_EVENT = {
   PRIVILEGED_SERVICE_CALLED: 4673,
   SCHEDULED_TASK_CREATED: 4698,
   SCHEDULED_TASK_DELETED: 4699,
+  SCHEDULED_TASK_UPDATED: 4702,
   SCHEDULED_TASK_ENABLED: 4700,
   SCHEDULED_TASK_DISABLED: 4701,
   OBJECT_ACCESSED: 4663,
@@ -537,6 +538,10 @@ export class WindowsSecurityAudit {
 
   scheduledTaskDeleted(taskName: string, command: string, deletedBy: string): void {
     this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_DELETED, 'A scheduled task was deleted.', taskName, command, deletedBy);
+  }
+
+  scheduledTaskUpdated(taskName: string, command: string, changedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_UPDATED, 'A scheduled task was updated.', taskName, command, changedBy);
   }
 
   scheduledTaskEnabled(taskName: string, command: string, changedBy: string): void {

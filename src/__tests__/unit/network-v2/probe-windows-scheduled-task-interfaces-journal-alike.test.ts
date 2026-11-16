@@ -51,7 +51,7 @@ describe('one task store, one trail', () => {
 
   it('Register-ScheduledTask writes 106 as schtasks does', async () => {
     await ps('Register-ScheduledTask -TaskName T3 -Action (New-ScheduledTaskAction -Execute calc.exe) -Trigger (New-ScheduledTaskTrigger -Daily -At 3am)');
-    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=106})[0].Message')).toBe('User "Administrator" registered Task Scheduler task "\\T3"');
+    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=106})[0].Message')).toBe('User "PC1\\Administrator"  registered Task Scheduler task "\\T3"');
   });
 
   it('Register-ScheduledTask still writes 4698', async () => {
@@ -62,13 +62,13 @@ describe('one task store, one trail', () => {
   it('schtasks /delete writes 141', async () => {
     await cmd('schtasks /create /tn T5 /tr calc.exe /sc daily /st 10:00');
     await cmd('schtasks /delete /tn T5 /f');
-    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "Administrator" deleted Task Scheduler task "\\T5"');
+    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "PC1\\Administrator"  deleted Task Scheduler task "\\T5"');
   });
 
   it('Unregister-ScheduledTask writes 141 as schtasks /delete does', async () => {
     await ps('Register-ScheduledTask -TaskName T6 -Action (New-ScheduledTaskAction -Execute calc.exe) -Trigger (New-ScheduledTaskTrigger -Daily -At 3am)');
     await ps('Unregister-ScheduledTask -TaskName T6 -Confirm:$false');
-    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "Administrator" deleted Task Scheduler task "\\T6"');
+    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "PC1\\Administrator"  deleted Task Scheduler task "\\T6"');
   });
 
   it('schtasks /delete writes 4699 with the task name', async () => {

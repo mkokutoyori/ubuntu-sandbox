@@ -57,6 +57,7 @@ export interface WinScheduledTask {
   startDate?: Date;
   days?: string;
   months?: string;
+  instance?: { readonly id: string; readonly pid: number };
 }
 
 export interface WinSystemContext {
@@ -123,6 +124,8 @@ export interface WinSystemContext {
   onTaskRegistered?(task: WinScheduledTask): void;
   onTaskDeleted?(task: WinScheduledTask): void;
   onTaskStateChanged?(task: WinScheduledTask, enabled: boolean): void;
+  onTaskUpdated?(task: WinScheduledTask): void;
+  endTask?(task: WinScheduledTask): boolean;
   /** Démarrage manuel — le même que celui de `Start-ScheduledTask`. */
   runTaskNow?(task: WinScheduledTask): void;
   now(): Date;
@@ -509,12 +512,14 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     if (tr !== undefined) task.command = tr;
     const st = flagVal('/st');
     if (st !== undefined) task.runAt = parseSchtasksTime(st, ctx.now());
+    if (tr !== undefined || st !== undefined) ctx.onTaskUpdated?.(task);
     return `SUCCESS: The parameters of scheduled task "${tn}" have been changed.`;
   }
   if (action === '/end') {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
     const task = ctx.scheduledTasks.get(tn.toLowerCase());
     if (!task) return 'ERROR: The system cannot find the file specified.';
+    if (ctx.endTask?.(task) !== true) return 'ERROR: There is no running instance of the task.';
     return `SUCCESS: The scheduled task "${tn}" has been terminated.`;
   }
   return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
@@ -524,20 +529,22 @@ export function runScheduledProgram(
   task: WinScheduledTask,
   pm: WinSystemProcessManager,
   now: Date,
-): void {
+): number | null {
   task.lastRunTime = now;
   task.lastResult = '0x0';
   // Une exécution ne réveille pas une tâche désactivée : désactiver coupe
   // les déclencheurs, et un `/run` manuel ne rend pas la tâche active.
   if (task.state !== 'Disabled') task.state = 'Ready';
-  if (!task.command) return;
+  if (!task.command) return null;
   const target = task.command.replace(/^["']|["']$/g, '');
   const leaf = target.split(/[\\/]/).pop() ?? target;
   const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
   const parent = pm.getAllProcesses().find(p => p.name.toLowerCase() === 'svchost.exe');
+  const before = new Set(pm.getAllProcesses().map(p => p.pid));
   pm.spawnProcess(imageName, parent?.pid ?? 1, 'NT AUTHORITY\\SYSTEM', {
     session: 'Services', sessionId: 0,
   });
+  return pm.getAllProcesses().find(p => !before.has(p.pid) && p.name.toLowerCase() === imageName.toLowerCase())?.pid ?? null;
 }
 
 /**

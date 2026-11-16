@@ -65,6 +65,7 @@ describe('Scénario 1 — désactiver veut dire quelque chose', () => {
   it('`/end` a son propre message, pas celui de `/change`', async () => {
     const { pc } = lab();
     await pc.executeCommand('schtasks /create /tn "T" /tr "C:\\a.exe" /sc daily /st 02:00');
+    await pc.executeCommand('schtasks /run /tn "T"');
     const out = await pc.executeCommand('schtasks /end /tn "T"');
     expect(out).toContain('has been terminated');
     expect(out).not.toContain('created/modified');

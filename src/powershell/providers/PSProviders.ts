@@ -1719,6 +1719,8 @@ export interface IScheduledTaskProvider {
   updateTask?(name: string, patch: Partial<ScheduledTaskInfo>): string;
   /** Run a task now, whatever its trigger says — `Start-ScheduledTask`. */
   runTask?(name: string): string;
+  /** End the running instance of a task — `Stop-ScheduledTask`. Rendered false when no instance runs. */
+  stopTask?(name: string): boolean;
 }
 
 export interface DiskInfo {

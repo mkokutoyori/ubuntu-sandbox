@@ -2890,6 +2890,7 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     Object.assign(task, patch);
     const isDisabled = task.state === 'Disabled';
     if (wasDisabled !== isDisabled) this.pc.announceTaskStateChange(task, !isDisabled);
+    if (Object.keys(patch).some((key) => key !== 'state')) this.pc.announceTaskUpdated(task);
     return '';
   }
   runTask(name: string): string {
@@ -2899,6 +2900,10 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     // même pour une tâche désactivée.
     (this.pc as unknown as { runScheduledTaskNow(t: ScheduledTaskInfo): void }).runScheduledTaskNow(task);
     return '';
+  }
+  stopTask(name: string): boolean {
+    const task = this.store().get(name.toLowerCase());
+    return task !== undefined && this.pc.endScheduledTask(task as unknown as Parameters<WindowsPC['endScheduledTask']>[0]);
   }
   now(): Date {
     return this.pc.simulatedDate();
