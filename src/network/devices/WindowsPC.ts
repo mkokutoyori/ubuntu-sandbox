@@ -148,7 +148,7 @@ import {
   loggedModuleNames, moduleIsLogged, pipelineExecutionDetailMessage,
 } from './windows/WinPowerShellLogging';
 import { psVersionTable, POWERSHELL_PROCESS_ID } from '@/powershell/runtime/PSEnvironment';
-import { moduleOfCommand, positionalParameterNames, pipelineParameterName, pipelinePropertyParameterNames } from './windows/PowerShellModuleExports';
+import { moduleOfCommand, positionalParameterNames, pipelineParameterName, pipelinePropertyParameterNames, canonicalCommandName } from './windows/PowerShellModuleExports';
 import type { PipelineAuditPort } from './windows/PipelineAuditPort';
 import type { TranscriptPort } from './windows/TranscriptPort';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
@@ -885,7 +885,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   pipelineAudit(): PipelineAuditPort {
     return {
-      commandInvoked: (command, parameters, positional, piped) => {
+      commandInvoked: (invoked, parameters, positional, piped) => {
+        const command = canonicalCommandName(invoked);
         const module = moduleOfCommand(command);
         if (module === null || !moduleIsLogged(loggedModuleNames(this.powerShellPolicySource()), module)) return;
         this.pipelineDetails.push(`CommandInvocation(${command}): "${command}"`);

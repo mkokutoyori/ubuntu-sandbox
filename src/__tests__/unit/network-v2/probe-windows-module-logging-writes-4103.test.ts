@@ -17,7 +17,7 @@
  * Positional arguments are bound to the parameter name of their position (Position attributes of the cmdlets, from documentation and memory: the C# files are not read here); a cmdlet
  * absent from the position table logs its named parameters only.
  *
- * VpnClient, CimCmdlets, International and Microsoft.WSMan.Management come from their Learn pages as well; the VpnClient case falls on the previous commit (1 of 22).
+ * VpnClient, CimCmdlets, International and Microsoft.WSMan.Management come from their Learn pages as well; the VpnClient case falls on the previous commit (1 of 22). The command name is written with the casing of the Learn page title (370 names; ForEach-Object was written Foreach-Object): that case falls on the previous commit too.
  * Pipeline cases: the logging case falls on the previous commit (1 of 19); the by-name case passes either way (vacuous there). By-property-name binding reads the "Value from pipeline
  * by property name" flags of the same pages (168 cmdlets): the property-name case falls on the previous commit (1 of 21), the absent-property case passes either way.
  * Values bound from the pipeline are logged under the parameter whose "Value from pipeline" is True on the Learn page (one parameter only; a cmdlet with several is skipped).
@@ -199,5 +199,13 @@ describe('module logging', () => {
     await enable(['VpnClient']);
     await ps('Get-VpnConnection');
     expect(await messages()).toContain('CommandInvocation(Get-VpnConnection)');
+  });
+
+  it('writes the command name with the casing of its definition (ForEach-Object, not Foreach-Object)', async () => {
+    await enable(['Microsoft.PowerShell.Core']);
+    await ps('1,2 | ForEach-Object { $_ }');
+    const text = await messages();
+    expect(text).toContain('CommandInvocation(ForEach-Object): "ForEach-Object"');
+    expect(text).not.toContain('Foreach-Object');
   });
 });
