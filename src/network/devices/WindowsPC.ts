@@ -148,7 +148,7 @@ import {
   loggedModuleNames, moduleIsLogged, pipelineExecutionDetailMessage,
 } from './windows/WinPowerShellLogging';
 import { psVersionTable, POWERSHELL_PROCESS_ID } from '@/powershell/runtime/PSEnvironment';
-import { moduleOfCommand } from './windows/PowerShellModuleExports';
+import { moduleOfCommand, positionalParameterNames } from './windows/PowerShellModuleExports';
 import type { PipelineAuditPort } from './windows/PipelineAuditPort';
 import type { TranscriptPort } from './windows/TranscriptPort';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
@@ -884,11 +884,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   pipelineAudit(): PipelineAuditPort {
     return {
-      commandInvoked: (command, parameters) => {
+      commandInvoked: (command, parameters, positional) => {
         const module = moduleOfCommand(command);
         if (module === null || !moduleIsLogged(loggedModuleNames(this.powerShellPolicySource()), module)) return;
         this.pipelineDetails.push(`CommandInvocation(${command}): "${command}"`);
-        for (const [name, value] of parameters) {
+        const bound = new Set(parameters.map(([name]) => name.toLowerCase()));
+        const free = positionalParameterNames(command).filter((name) => !bound.has(name.toLowerCase()));
+        const bindings = [...parameters, ...positional.slice(0, free.length).map((value, index): readonly [string, string] => [free[index], value])];
+        for (const [name, value] of bindings) {
           this.pipelineDetails.push(`ParameterBinding(${command}): name="${name}"; value="${value}"`);
         }
       },

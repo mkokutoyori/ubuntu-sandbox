@@ -50,3 +50,44 @@ const MODULE_OF_COMMAND: ReadonlyMap<string, string> = new Map(
 export function moduleOfCommand(command: string): string | null {
   return MODULE_OF_COMMAND.get(command.toLowerCase()) ?? null;
 }
+
+export const POSITIONAL_PARAMETERS: Readonly<Record<string, readonly string[]>> = {
+  'get-process': ['Name'],
+  'get-service': ['Name'],
+  'start-service': ['Name'],
+  'stop-service': ['Name'],
+  'restart-service': ['Name'],
+  'get-childitem': ['Path', 'Filter'],
+  'get-content': ['Path'],
+  'set-content': ['Path', 'Value'],
+  'add-content': ['Path', 'Value'],
+  'get-item': ['Path'],
+  'get-itemproperty': ['Path', 'Name'],
+  'set-itemproperty': ['Path', 'Name', 'Value'],
+  'new-item': ['Path'],
+  'remove-item': ['Path'],
+  'copy-item': ['Path', 'Destination'],
+  'move-item': ['Path', 'Destination'],
+  'test-path': ['Path'],
+  'set-location': ['Path'],
+  'get-date': ['Date'],
+  'get-acl': ['Path'],
+  'set-acl': ['Path', 'AclObject'],
+  'write-output': ['InputObject'],
+  'write-host': ['Object'],
+  'write-error': ['Message'],
+  'select-object': ['Property'],
+  'sort-object': ['Property'],
+  'group-object': ['Property'],
+  'measure-object': ['Property'],
+  'format-table': ['Property'],
+  'format-list': ['Property'],
+  'convertto-json': ['InputObject'],
+  'out-file': ['FilePath'],
+  'select-string': ['Pattern', 'Path'],
+  'get-winevent': ['LogName'],
+};
+
+export function positionalParameterNames(command: string): readonly string[] {
+  return POSITIONAL_PARAMETERS[command.toLowerCase()] ?? [];
+}

@@ -11,7 +11,10 @@
  *
  * Measured before the change: EnableModuleLogging was stored and never read (rule 6) and 4103 did not exist.
  *
- * Discrimination (git stash push -- src/network src/powershell): 6 of 9 cases fall on the base. Three pass either way: the cases that expect nothing (policy off,
+ * Positional arguments are bound to the parameter name of their position (Position attributes of the cmdlets, from documentation and memory: the C# files are not read here); a cmdlet
+ * absent from the position table logs its named parameters only.
+ *
+ * Discrimination (git stash push -- src/network src/powershell): the three positional cases fall on the base of the positional change (3 of 12), and 9 of 12 fall on a base with no 4103 at all. Three pass either way: the cases that expect nothing (policy off,
  * module not listed, user-defined function), vacuous on a base that never wrote 4103.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -95,5 +98,27 @@ describe('module logging', () => {
     await enable(['*']);
     await ps('function Get-Thing { 1 }; Get-Thing');
     expect(await messages()).not.toContain('Get-Thing');
+  });
+
+  it('binds a positional argument to the name of its position', async () => {
+    await enable(['*']);
+    await ps('Get-Process explorer');
+    expect(await messages()).toContain('ParameterBinding(Get-Process): name="Name"; value="explorer"');
+  });
+
+  it('binds several positional arguments in order', async () => {
+    await enable(['*']);
+    await ps('Copy-Item C:\\Windows\\win.ini C:\\Temp\\win.ini');
+    const text = await messages();
+    expect(text).toContain('ParameterBinding(Copy-Item): name="Path"; value="C:\\Windows\\win.ini"');
+    expect(text).toContain('ParameterBinding(Copy-Item): name="Destination"; value="C:\\Temp\\win.ini"');
+  });
+
+  it('does not bind a positional argument to a parameter already given by name', async () => {
+    await enable(['*']);
+    await ps('Get-ChildItem -Path C:\\ *.txt');
+    const text = await messages();
+    expect(text).toContain('name="Path"; value="C:\\"');
+    expect(text).toContain('name="Filter"; value="*.txt"');
   });
 });
