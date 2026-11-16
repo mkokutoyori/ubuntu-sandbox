@@ -4067,7 +4067,7 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
-    this.providers.pipelineAudit?.commandInvoked(cmdletDisplayName, boundParameterTexts(cmdlet, cmdletNamed), positional.map(positionalText));
+    this.providers.pipelineAudit?.commandInvoked(cmdletDisplayName, boundParameterTexts(cmdlet, cmdletNamed), positional.map(positionalText), pipeInput === null || pipeInput === undefined ? [] : (Array.isArray(pipeInput) ? pipeInput : [pipeInput]).map(positionalText));
     const perItem = this.pipelineItemsFor(cmdlet, cmdletNamed, pipeInput);
     const errorsBefore = this.errorsWritten;
     let result: PSValue;

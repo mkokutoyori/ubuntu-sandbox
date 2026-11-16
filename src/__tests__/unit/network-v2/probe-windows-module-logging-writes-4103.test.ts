@@ -17,7 +17,10 @@
  * Positional arguments are bound to the parameter name of their position (Position attributes of the cmdlets, from documentation and memory: the C# files are not read here); a cmdlet
  * absent from the position table logs its named parameters only.
  *
- * The last two cases fall on the commit that had the hand-written table (2 of 17): Get-NetIPAddress was absent from it, and it bound Get-WinEvent's first argument to LogName
+ * Pipeline cases: the logging case falls on the previous commit (1 of 19); the by-name case passes either way (vacuous there).
+ * Values bound from the pipeline are logged under the parameter whose "Value from pipeline" is True on the Learn page (one parameter only; a cmdlet with several is skipped).
+ *
+ * The last two cases of the positional block fall on the commit that had the hand-written table (2 of 17): Get-NetIPAddress was absent from it, and it bound Get-WinEvent's first argument to LogName
  * although the position is shared with FilterHashtable.
  *
  * Discrimination (git stash push -- src/network src/powershell): the three positional cases and the two other-module cases fall on the base of those changes (6 of 15), and 9 of 12 fall on a base with no 4103 at all. Three pass either way: the cases that expect nothing (policy off,
@@ -160,5 +163,21 @@ describe('module logging', () => {
     const text = await messages();
     expect(text).toContain('CommandInvocation(Get-WinEvent)');
     expect(text).not.toContain('value="System"');
+  });
+
+  it('logs a value bound from the pipeline, one line per item, under the parameter the page says takes the pipeline', async () => {
+    await enable(['*']);
+    await ps("'alpha','beta' | Write-Output");
+    const text = await messages();
+    expect(text).toContain('ParameterBinding(Write-Output): name="InputObject"; value="alpha"');
+    expect(text).toContain('ParameterBinding(Write-Output): name="InputObject"; value="beta"');
+  });
+
+  it('does not log a pipeline binding for a parameter given by name', async () => {
+    await enable(['*']);
+    await ps("'alpha' | Write-Output -InputObject direct");
+    const text = await messages();
+    expect(text).toContain('value="direct"');
+    expect(text).not.toContain('value="alpha"');
   });
 });
