@@ -191,6 +191,7 @@ export class PowerShellSubShell implements ISubShell {
     const afterFinalBacktick = /`\s+$/.test(command) ? command.slice(command.trimEnd().length) : '';
 
     if (trimmed.toLowerCase() === 'exit') {
+      if (this.device instanceof WindowsPC) this.device.endPowerShellHost();
       return { output: [], exit: true, prompt: this.getPrompt() };
     }
 

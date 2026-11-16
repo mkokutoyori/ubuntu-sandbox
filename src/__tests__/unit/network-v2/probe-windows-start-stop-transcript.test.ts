@@ -11,7 +11,7 @@
  * Measured before the change: neither cmdlet existed ("not recognized"), so a transcript could only be started by policy and never ended (no epilogue), and the
  * EnableInvocationHeader policy value was stored and never read (rule 6).
  *
- * Discrimination (git stash push -- src/network src/powershell): 9 of 10 cases fall on the base. The case that expects nothing after Stop-Transcript passes either way (vacuous
+ * Discrimination (git stash push -- src/network src/powershell): 11 of 12 cases fall on a base without the cmdlets (the exit and stacking cases alone fall on the previous commit). The case that expects nothing after Stop-Transcript passes either way (vacuous
  * on a base with no such cmdlet).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -91,5 +91,25 @@ describe('Start-Transcript and Stop-Transcript', () => {
     await ps('Write-Output marker');
     const text = await ps('Get-Content (Get-ChildItem C:\\Pol -Filter PowerShell_transcript*.txt | Select-Object -First 1).FullName -Raw');
     expect(text).toMatch(/\*{22}\nCommand start time: \d{14}\n\*{22}\nPS> Write-Output marker\n/);
+  });
+
+  it('leaving the host ends the policy transcript with the epilogue and the next session opens a new file', async () => {
+    const key = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\Transcription';
+    await ps(`New-Item -Path "${key}" -Force | Out-Null; Set-ItemProperty -Path "${key}" -Name EnableTranscripting -Value 1; Set-ItemProperty -Path "${key}" -Name OutputDirectory -Value "C:\\Pol"`);
+    await ps('Write-Output first');
+    await ps('exit');
+    const first = await ps('Get-Content (Get-ChildItem C:\\Pol -Filter PowerShell_transcript*.txt | Select-Object -First 1).FullName -Raw');
+    expect(first).toMatch(/PS> exit\n\*{22}\nPowerShell transcript end\nEnd time: \d{14}\n\*{22}$/);
+  });
+
+  it('transcripts stack: both record a command, Stop-Transcript ends the last one started', async () => {
+    await ps('Start-Transcript -Path C:\\Temp\\a.txt');
+    await ps('Start-Transcript -Path C:\\Temp\\b.txt');
+    await ps('Write-Output both');
+    expect(await ps('Stop-Transcript')).toBe('Transcript stopped, output file is C:\\Temp\\b.txt');
+    await ps('Write-Output onlya');
+    expect(await ps('Get-Content C:\\Temp\\a.txt -Raw')).toContain('PS> Write-Output onlya');
+    expect(await ps('Get-Content C:\\Temp\\b.txt -Raw')).not.toContain('onlya');
+    expect(await ps('Get-Content C:\\Temp\\b.txt -Raw')).toContain('both');
   });
 });

@@ -953,8 +953,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.transcriptLineHandled = false;
     if (handled) return;
     if (isTranscriptionEnabled(this.powerShellPolicySource())) this.appendTranscript(text, output);
-    if (this.explicitTranscript !== null) {
-      this.appendToFile(this.explicitTranscript.path, this.transcriptEntry(text, output, this.explicitTranscript.invocationHeader));
+    for (const session of this.explicitTranscripts) {
+      this.appendToFile(session.path, this.transcriptEntry(text, output, session.invocationHeader));
     }
   }
 
@@ -991,7 +991,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  private explicitTranscript: { path: string; invocationHeader: boolean } | null = null;
+  private explicitTranscripts: Array<{ path: string; invocationHeader: boolean }> = [];
   private transcriptLineHandled = false;
 
   private appendToFile(path: string, text: string): void {
@@ -1013,6 +1013,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return `${header}PS> ${command}\n${output ? `${output}\n` : ''}`;
   }
 
+  endPowerShellHost(): void {
+    const ended = this.simulatedDate();
+    for (const session of this.explicitTranscripts.reverse()) {
+      this.appendToFile(session.path, `PS> exit\n${transcriptEpilogue(ended)}`);
+    }
+    this.explicitTranscripts = [];
+    if (this.transcriptStartedAt !== null && isTranscriptionEnabled(this.powerShellPolicySource())) {
+      const path = `${transcriptDirectory(this.powerShellPolicySource())}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
+      if (this.fs.readFile(path).ok) this.appendToFile(path, `PS> exit\n${transcriptEpilogue(ended)}`);
+    }
+    this.transcriptStartedAt = null;
+  }
+
   transcriptPort(): TranscriptPort {
     return {
       start: (options) => {
@@ -1028,15 +1041,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           this.fs.mkdirp(path.slice(0, path.lastIndexOf('\\')));
           this.fs.createFile(path, header);
         }
-        this.explicitTranscript = { path, invocationHeader: options.includeInvocationHeader };
+        this.explicitTranscripts.push({ path, invocationHeader: options.includeInvocationHeader });
         this.transcriptLineHandled = true;
         return { path };
       },
       stop: () => {
-        const session = this.explicitTranscript;
-        if (session === null) return { error: 'The host is not currently transcribing.' };
+        const session = this.explicitTranscripts.pop();
+        if (session === undefined) return { error: 'The host is not currently transcribing.' };
         this.appendToFile(session.path, `PS> Stop-Transcript\n${transcriptEpilogue(this.simulatedDate())}`);
-        this.explicitTranscript = null;
         this.transcriptLineHandled = true;
         return { path: session.path };
       },
