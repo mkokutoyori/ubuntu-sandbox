@@ -151,7 +151,7 @@ import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { createAuditIdentity, type AuditDomainView } from './windows/eventlog/AuditIdentity';
 import type { WindowsLogonDetails } from './windows/events';
-import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
+import { WindowsSecurityAuditProjection, type FirewallStartState } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
@@ -1030,6 +1030,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       bus, this.securityAudit(), this.id, this.auditPolicy,
       () => this.isCommandLineAuditEnabled(),
       (account) => this.userMgr.isAdmin(account),
+      () => this.firewallStartState(),
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
@@ -1171,6 +1172,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private _processSocketReaperOff: (() => void) | null = null;
   private _portProxyChangesOff: (() => void) | null = null;
+
+  private firewallStartState(): FirewallStartState {
+    const flag = (value: string): 'Enabled' | 'Disabled' => (value === 'True' ? 'Enabled' : 'Disabled');
+    return {
+      profiles: [...this.firewallProfiles.values()].map((row) => ({
+        profile: row.name,
+        operationMode: row.enabled === 'True' ? 'On' : 'Off',
+        multicastFlows: flag(row.allowUnicastResponseToMulticast),
+        logDropped: flag(row.logBlocked),
+        logSuccessful: flag(row.logAllowed),
+      })),
+      rules: [...this.firewallRules.values()]
+        .filter((rule) => rule.enabled && (rule.profile === 'Any' || rule.profile === 'Public'))
+        .map((rule) => ({ ruleId: rule.name, ruleName: rule.displayName })),
+    };
+  }
 
   announceFirewallRuleChange(change: 'added' | 'modified' | 'deleted', rule: NetFirewallRuleEntry): void {
     this.getBus().publish({

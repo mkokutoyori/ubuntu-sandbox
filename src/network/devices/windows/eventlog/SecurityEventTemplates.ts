@@ -204,6 +204,24 @@ function firewallRule(title: string, heading: string): (d: EventFields) => strin
   ].join('\n\n');
 }
 
+function firewallPolicyActive(d: EventFields): string {
+  return [
+    'The following policy was active when the Windows Firewall started.',
+    `Group Policy Applied:\t${field(d, 'GroupPolicyApplied')}\nProfile Used:\t${field(d, 'Profile')}`,
+    `Operational mode:\t${field(d, 'OperationMode')}\nAllow Remote Administration:\t${field(d, 'RemoteAdminEnabled')}`
+      + `\nAllow Unicast Responses to Multicast/Broadcast Traffic:\t${field(d, 'MulticastFlowsEnabled')}`,
+    `Security Logging:\n\tLog Dropped Packets:\t${field(d, 'LogDroppedPacketsEnabled')}\n\tLog Successful Connections:\t${field(d, 'LogSuccessfulConnectionsEnabled')}`,
+  ].join('\n\n');
+}
+
+function firewallRuleListed(d: EventFields): string {
+  return [
+    'A rule was listed when the Windows Firewall started.',
+    `Profile used:\t${field(d, 'ProfileUsed')}`,
+    `Rule:\n\tRule ID:\t${field(d, 'RuleId')}\n\tRule Name:\t${field(d, 'RuleName')}`,
+  ].join('\n\n');
+}
+
 function firewallSettingChanged(d: EventFields): string {
   return [
     'A Windows Firewall setting has changed.',
@@ -277,6 +295,8 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4738: accountChanged,
   4740: accountLockedOut,
   4767: accountChange('A user account was unlocked.'),
+  4944: firewallPolicyActive,
+  4945: firewallRuleListed,
   4946: firewallRule('A change has been made to Windows Firewall exception list. A rule was added.', 'Added Rule:'),
   4947: firewallRule('A change has been made to Windows Firewall exception list. A rule was modified.', 'Modified Rule:'),
   4948: firewallRule('A change has been made to Windows Firewall exception list. A rule was deleted.', 'Deleted Rule:'),

@@ -31,6 +31,14 @@ export interface SecurityEventSink {
 }
 
 /** Well-known Windows Security-log Event IDs (see Microsoft documentation). */
+export interface FirewallStartProfile {
+  profile: string;
+  operationMode: 'On' | 'Off';
+  multicastFlows: 'Enabled' | 'Disabled';
+  logDropped: 'Enabled' | 'Disabled';
+  logSuccessful: 'Enabled' | 'Disabled';
+}
+
 export const SECURITY_EVENT = {
   LOGON_SUCCESS: 4624,
   LOGON_FAILURE: 4625,
@@ -74,6 +82,8 @@ export const SECURITY_EVENT = {
   USER_GROUPS_ENUMERATED: 4798,
   GROUP_MEMBERS_ENUMERATED: 4799,
   AUDIT_POLICY_CHANGED: 4719,
+  FIREWALL_POLICY_ACTIVE: 4944,
+  FIREWALL_RULE_LISTED: 4945,
   FIREWALL_RULE_ADDED: 4946,
   FIREWALL_RULE_MODIFIED: 4947,
   FIREWALL_RULE_DELETED: 4948,
@@ -672,6 +682,19 @@ export class WindowsSecurityAudit {
     const eventId = change === 'added' ? SECURITY_EVENT.FIREWALL_RULE_ADDED
       : change === 'modified' ? SECURITY_EVENT.FIREWALL_RULE_MODIFIED : SECURITY_EVENT.FIREWALL_RULE_DELETED;
     this.record(eventId, 'SuccessAudit', { ProfileChanged: profile, RuleId: ruleId, RuleName: ruleName });
+  }
+
+  firewallStarted(profiles: ReadonlyArray<FirewallStartProfile>, rules: ReadonlyArray<{ ruleId: string; ruleName: string }>): void {
+    for (const p of profiles) {
+      this.record(SECURITY_EVENT.FIREWALL_POLICY_ACTIVE, 'SuccessAudit', {
+        GroupPolicyApplied: 'No', Profile: p.profile, OperationMode: p.operationMode,
+        RemoteAdminEnabled: 'Disabled', MulticastFlowsEnabled: p.multicastFlows,
+        LogDroppedPacketsEnabled: p.logDropped, LogSuccessfulConnectionsEnabled: p.logSuccessful,
+      });
+    }
+    for (const r of rules) {
+      this.record(SECURITY_EVENT.FIREWALL_RULE_LISTED, 'SuccessAudit', { ProfileUsed: 'Public', RuleId: r.ruleId, RuleName: r.ruleName });
+    }
   }
 
   firewallSettingChanged(profile: string, setting: string, value: string): void {
