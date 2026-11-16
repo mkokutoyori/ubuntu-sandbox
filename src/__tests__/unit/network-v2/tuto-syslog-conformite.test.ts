@@ -402,7 +402,7 @@ describe('partie 5 : l\'Event Log Windows', () => {
 
   it('`Get-EventLog` et `wevtutil` repondent aussi', async () => {
     const w = poste();
-    expect(await w.executeCommand('powershell Get-EventLog -LogName Security -Newest 2'))
+    expect(await w.executeCommand('powershell Get-WinEvent -FilterHashtable @{LogName="Security"} -MaxEvents 2'))
       .toContain('Security');
     expect(await w.executeCommand('wevtutil qe Security /c:2')).toContain('Log Name: Security');
   }, 30_000);

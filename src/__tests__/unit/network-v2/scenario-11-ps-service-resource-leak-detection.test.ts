@@ -82,14 +82,14 @@ foreach ($svcName in $targets) {
   $trend = if ($deltas.Count -gt 0) { ($deltas | Select-Object -Last 10 | Measure-Object -Average).Average } else { 0 }
 
   if ($growthAbsoluteMB -gt 50 -and $growthRelative -gt 0.10) {
-    Write-EventLog -LogName Application -Source "ResourceMonitor" -EventId 6001 -EntryType Warning -Message "Service $svcName (PID $procId): croissance memoire anormale. Baseline=$baseline Mo, Courant=$($sample.WorkingSetMB) Mo, Delta=$growthAbsoluteMB Mo, Tendance=$trend Mo/echantillon."
+    eventcreate /l Application /so ResourceMonitor /id 1 /t WARNING /d "Service $svcName (PID $procId): croissance memoire anormale. Baseline=$baseline Mo, Courant=$($sample.WorkingSetMB) Mo, Delta=$growthAbsoluteMB Mo, Tendance=$trend Mo/echantillon." | Out-Null
   }
 
   if ($growthAbsoluteMB -gt 200 -or $sample.CpuPercent -gt 90) {
-    Write-EventLog -LogName Application -Source "ResourceMonitor" -EventId 6002 -EntryType Error -Message "Service $svcName (PID $procId): seuil critique depasse. Courant=$($sample.WorkingSetMB) Mo, CPU=$($sample.CpuPercent) pourcent."
+    eventcreate /l Application /so ResourceMonitor /id 2 /t ERROR /d "Service $svcName (PID $procId): seuil critique depasse. Courant=$($sample.WorkingSetMB) Mo, CPU=$($sample.CpuPercent) pourcent." | Out-Null
     Get-Process -Id $procId | Export-Csv -Path "C:\PerfLogs\dump-pre-restart-$svcName-$(Get-Date -Format 'yyyyMMddHHmmss').csv" -NoTypeInformation
     Restart-Service -Name $svcName -Force
-    Write-EventLog -LogName Application -Source "ResourceMonitor" -EventId 6003 -Message "Redemarrage automatique declenche suite a depassement critique"
+    eventcreate /l Application /so ResourceMonitor /id 3 /t INFORMATION /d "Redemarrage automatique declenche suite a depassement critique" | Out-Null
   }
 }
 `;
@@ -184,7 +184,7 @@ describe('Scénario 4 — Analyse de la consommation de ressources et détection
 
       const ps = createPS(pc);
       const alerts = await ps.execute(
-        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 6001 }',
+        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 1 }',
       );
       expect(alerts).toContain('ServiceFuite');
       expect(alerts).not.toContain('ServiceNominal');
@@ -222,7 +222,7 @@ describe('Scénario 4 — Analyse de la consommation de ressources et détection
   });
 
   describe('Alerte critique, redémarrage automatique et dump pré-incident', () => {
-    it('EventId 6002 + Restart-Service + EventId 6003 avec justification, capture pré-restart', async () => {
+    it('EventId 2 + Restart-Service + EventId 3 avec justification, capture pré-restart', async () => {
       const pc = createPC();
       await buildServices(pc);
 
@@ -238,14 +238,14 @@ describe('Scénario 4 — Analyse de la consommation de ressources et détection
 
       const ps = createPS(pc);
 
-      const warn = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 6001 } | Select-Object -First 1');
+      const warn = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 1 } | Select-Object -First 1');
       expect(warn).toContain('ServiceFuite');
 
-      const critical = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 6002 } | Select-Object -First 1');
+      const critical = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 2 } | Select-Object -First 1');
       expect(critical).toContain('ServiceFuite');
       expect(critical).toMatch(/PID\s*\d+/);
 
-      const restartLog = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 6003 } | Select-Object -First 1');
+      const restartLog = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 3 } | Select-Object -First 1');
       expect(restartLog).toContain('Redemarrage automatique declenche suite a depassement critique');
 
       const pidAfter = await getServicePid(pc, 'ServiceFuite');
@@ -263,7 +263,7 @@ describe('Scénario 4 — Analyse de la consommation de ressources et détection
   });
 
   describe('Corrélation avec les événements système (REDS)', () => {
-    it("le script détecte la dérive sans qu'un signal REDS natif (2004/2013) ne soit jamais requis", async () => {
+    it("le script détecte la dérive sans qu'un signal REDS natif (4/2013) ne soit jamais requis", async () => {
       const pc = createPC();
       await buildServices(pc);
       pc.getProcessManager().setLeakProfile(await getServicePid(pc, 'ServiceFuite'), {
@@ -273,10 +273,10 @@ describe('Scénario 4 — Analyse de la consommation de ressources et détection
       for (let i = 0; i < 10; i++) pc.advanceTime(30_000);
 
       const ps = createPS(pc);
-      const ownAlert = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 6001 } | Select-Object -First 1');
+      const ownAlert = await ps.execute('Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 1 } | Select-Object -First 1');
       expect(ownAlert).toContain('ServiceFuite');
 
-      const reds = await ps.execute('Get-WinEvent -LogName System | Where-Object { $_.Id -in @(2004, 2013) }');
+      const reds = await ps.execute('Get-WinEvent -LogName System | Where-Object { $_.Id -in @(4, 2013) }');
       expect(reds.trim()).toBe('');
     });
   });

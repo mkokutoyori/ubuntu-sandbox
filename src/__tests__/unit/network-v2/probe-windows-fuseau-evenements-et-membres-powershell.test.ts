@@ -93,7 +93,7 @@ describe('eventcreate writes the journal that Get-EventLog and wevtutil read', (
     const { cmd, ps } = lab();
     const out = await cmd('eventcreate /t information /id 100 /d "backup finished"');
     expect(out.trim()).toBe("SUCCESS: An event of type 'information' was created in the 'APPLICATION' log with 'EventCreate' as the source.");
-    const listed = await ps('Get-EventLog -LogName Application -Source EventCreate | Format-List Message, EventID');
+    const listed = await ps('Get-WinEvent -FilterHashtable @{LogName="Application";ProviderName="EventCreate"} | Format-List Message, Id');
     expect(listed).toContain('backup finished');
     expect(listed).toContain('100');
     expect(await cmd('wevtutil qe Application /c:1 /rd:true /f:text')).toContain('backup finished');
@@ -103,7 +103,7 @@ describe('eventcreate writes the journal that Get-EventLog and wevtutil read', (
     const { cmd, ps } = lab();
     const out = await cmd('eventcreate /l System /so Private /t ERROR /id 900 /d "audit complete"');
     expect(out).toContain("'ERROR' was created in the 'System' log with 'Private' as the source");
-    const listed = await ps('Get-EventLog -LogName System -Source Private | Format-List EntryType, EventID, Message');
+    const listed = await ps('Get-WinEvent -FilterHashtable @{LogName="System";ProviderName="Private"} | Format-List LevelDisplayName, Id, Message');
     expect(listed).toContain('Error');
     expect(listed).toContain('900');
     expect(listed).toContain('audit complete');
@@ -115,7 +115,7 @@ describe('eventcreate writes the journal that Get-EventLog and wevtutil read', (
       expect(await cmd(`eventcreate /t information /id ${id} /d "x"`)).toContain("ERROR: Invalid Argument/Option - '/ID'.");
     }
     expect((await cmd('echo %errorlevel%')).trim()).toBe('1');
-    expect(await ps('Get-EventLog -LogName Application -Source EventCreate')).not.toContain('Message');
+    expect(await ps('Get-WinEvent -FilterHashtable @{LogName="Application";ProviderName="EventCreate"} -ErrorAction SilentlyContinue')).not.toContain('Message');
   });
 
   it('refuses a missing description and an unknown log', async () => {
@@ -127,12 +127,12 @@ describe('eventcreate writes the journal that Get-EventLog and wevtutil read', (
   it('refuses the remote options it cannot honour rather than writing locally', async () => {
     const { cmd, ps } = lab();
     expect(await cmd('eventcreate /s other-pc /t information /id 5 /d "remote"')).toContain("Invalid Argument/Option - '/S'");
-    expect(await ps('Get-EventLog -LogName Application -Source EventCreate')).not.toContain('remote');
+    expect(await ps('Get-WinEvent -FilterHashtable @{LogName="Application";ProviderName="EventCreate"} -ErrorAction SilentlyContinue')).not.toContain('remote');
   });
 
-  it('Write-EventLog refuses an unknown log instead of swallowing it', async () => {
+  it('Write-EventLog is not a PowerShell 7 cmdlet', async () => {
     const { ps } = lab();
-    expect(await ps('Write-EventLog -LogName Nothing -Source X -EventId 1 -Message m')).toContain('Cannot open log');
+    expect(await ps('Write-EventLog -LogName Application -Source X -EventId 1 -Message m')).toMatch(/not recognized/);
   });
 });
 

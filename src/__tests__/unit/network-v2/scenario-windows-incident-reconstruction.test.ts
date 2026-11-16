@@ -76,10 +76,10 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
       expect(out).not.toMatch(/No events were found/i);
     });
 
-    it('Phase 6 : Clear-EventLog Application laisse un 104 dans le journal System (Microsoft-Windows-Eventlog) avec le compte et le journal effacé', async () => {
+    it('Phase 6 : wevtutil cl Application laisse un 104 dans le journal System (Microsoft-Windows-Eventlog) avec le compte et le journal effacé', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
-      await run(sh, 'Clear-EventLog -LogName Application');
+      await run(sh, 'wevtutil cl Application');
 
       const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 104; StartTime = (Get-Date).AddHours(-2) } | ForEach-Object { $x = [xml]$_.ToXml(); ($x.Event.UserData.LogFileCleared.Channel) + ' ' + $_.ProviderName }");
       expect(out).toContain('Application Microsoft-Windows-Eventlog');
@@ -88,7 +88,7 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
     it('Phase 6 : effacer le journal Security laisse un 1102 dans Security lui-même, avec le compte', async () => {
       const dc = new WindowsServer('DC01');
       const sh = ps(dc);
-      await run(sh, 'Clear-EventLog -LogName Security');
+      await run(sh, 'wevtutil cl Security');
 
       const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 1102 } | ForEach-Object { $_.Message }");
       expect(out).toContain('The audit log was cleared.');
@@ -122,7 +122,7 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
         '$Trigger = New-ScheduledTaskTrigger -Daily -At "3:00AM"',
         'Register-ScheduledTask -TaskName "SystemUpdate" -Action $Action -Trigger $Trigger -RunLevel Highest',
       ].join('\n'));
-      await run(sh, 'Clear-EventLog -LogName Application');
+      await run(sh, 'wevtutil cl Application');
 
       const out = await run(sh, [
         '$Connexion = (Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = @(4624, 4625, 4648); StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',

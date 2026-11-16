@@ -6,14 +6,14 @@
  * en réponse à une dégradation détectée — libération du bail, purge du cache
  * DNS, renouvellement forcé, vérification post-renouvellement — et journalise
  * chaque étape dans l'Observateur d'événements Windows (source personnalisée
- * "NetRemediationScript", EventIds 1001-1006) pour une traçabilité complète.
+ * "NetRemediationScript", EventIds 1-6) pour une traçabilité complète.
  *
  * Points vérifiés :
  *   - disparition de l'ancienne adresse / apparition d'une nouvelle DHCP
  *     (PrefixOrigin Dhcp) après remédiation
  *   - Get-DnsClientCache non vide avant purge, vide après Clear-DnsClientCache
  *   - source d'événements créée via New-EventLog, un événement par étape avec
- *     un EventId distinct, événement de clôture succès (1005) vs échec (1006)
+ *     un EventId distinct, événement de clôture succès (5) vs échec (6)
  *   - vérification post-remédiation (Resolve-DnsName + Test-NetConnection gw)
  *   - Try/Catch autour des étapes critiques, code de retour exploitable
  *   - idempotence : deux exécutions successives sur un poste sain sans effet
@@ -83,28 +83,26 @@ const REMEDIATION_SCRIPT = String.raw`
 function Invoke-NetRemediation {
   param([string]$Interface = 'Ethernet 0', [string]$Reference = 'appserver')
   $src = 'NetRemediationScript'
-  if (-not (Get-EventLog -List | Where-Object { $_.Log -eq 'Application' })) { }
-  New-EventLog -LogName Application -Source $src -ErrorAction SilentlyContinue
-  Write-EventLog -LogName Application -Source $src -EventId 1001 -EntryType Information -Message "Debut remediation sur $Interface"
+  eventcreate /l Application /so $src /id 1 /t INFORMATION /d "Debut remediation sur $Interface" | Out-Null
   try {
     Invoke-Expression "ipconfig /release" | Out-Null
-    Write-EventLog -LogName Application -Source $src -EventId 1002 -EntryType Information -Message "Bail libere"
+    eventcreate /l Application /so $src /id 2 /t INFORMATION /d "Bail libere" | Out-Null
 
     Clear-DnsClientCache
-    Write-EventLog -LogName Application -Source $src -EventId 1003 -EntryType Information -Message "Cache DNS purge"
+    eventcreate /l Application /so $src /id 3 /t INFORMATION /d "Cache DNS purge" | Out-Null
 
     Invoke-Expression "ipconfig /renew" | Out-Null
-    Write-EventLog -LogName Application -Source $src -EventId 1004 -EntryType Information -Message "Bail renouvele"
+    eventcreate /l Application /so $src /id 4 /t INFORMATION /d "Bail renouvele" | Out-Null
 
     $addr = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq $Interface -and $_.PrefixOrigin -eq 'Dhcp' }
     if (-not $addr) { throw "Aucune adresse DHCP apres renouvellement" }
     $r = Resolve-DnsName $Reference -ErrorAction Stop
     if (-not $r) { throw "Resolution DNS toujours defaillante" }
 
-    Write-EventLog -LogName Application -Source $src -EventId 1005 -EntryType Information -Message "Remediation reussie, adresse $($addr.IPAddress)"
+    eventcreate /l Application /so $src /id 5 /t INFORMATION /d "Remediation reussie, adresse $($addr.IPAddress)" | Out-Null
     return 0
   } catch {
-    Write-EventLog -LogName Application -Source $src -EventId 1006 -EntryType Error -Message "Echec remediation: $_"
+    eventcreate /l Application /so $src /id 6 /t ERROR /d "Echec remediation: $_" | Out-Null
     return 1
   }
 }
@@ -147,14 +145,13 @@ describe('Scénario 5 — phase de remédiation réseau', () => {
 // ─── Journalisation dans l'Observateur d'événements ─────────────────────────
 
 describe('Scénario 5 — journalisation dans l\'Observateur d\'événements', () => {
-  it('New-EventLog crée la source personnalisée sans erreur', async () => {
+  it('eventcreate crée la source personnalisée sans erreur', async () => {
     const { win } = await buildLab();
     const ps = psShell(win);
 
-    const out = await ps('New-EventLog -LogName Application -Source "NetRemediationScript"; "created"');
+    const out = await ps('eventcreate /l Application /so NetRemediationScript /id 1 /t INFORMATION /d "created"');
 
-    expect(out).toContain('created');
-    expect(out).not.toMatch(/not recognized|CommandNotFound/i);
+    expect(out).toContain("'NetRemediationScript' as the source");
   }, 20000);
 
   it('chaque étape écrit un événement avec un EventId distinct récupérable en objet structuré', async () => {
@@ -164,30 +161,30 @@ describe('Scénario 5 — journalisation dans l\'Observateur d\'événements', (
 
     await ps(`${REMEDIATION_SCRIPT}\nInvoke-NetRemediation | Out-Null`);
 
-    const ids = await ps("(Get-EventLog -LogName Application -Source NetRemediationScript | Select-Object -ExpandProperty EventID) -join ','");
+    const ids = await ps("(Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='NetRemediationScript'} | Select-Object -ExpandProperty Id) -join ','");
 
-    expect(ids).toContain('1001');
-    expect(ids).toContain('1002');
-    expect(ids).toContain('1003');
-    expect(ids).toContain('1004');
-    expect(ids).toContain('1005');
+    expect(ids).toContain('1');
+    expect(ids).toContain('2');
+    expect(ids).toContain('3');
+    expect(ids).toContain('4');
+    expect(ids).toContain('5');
   }, 30000);
 
-  it('l\'événement de clôture succès porte EventId 1005 et EntryType Information', async () => {
+  it('l\'événement de clôture succès porte EventId 5 et EntryType Information', async () => {
     const { win } = await buildLab();
     await win.executeCommand('ipconfig /renew');
     const ps = psShell(win);
 
     await ps(`${REMEDIATION_SCRIPT}\nInvoke-NetRemediation | Out-Null`);
 
-    const out = await ps("Get-EventLog -LogName Application -Source NetRemediationScript | Where-Object { $_.EventID -eq 1005 } | Format-List EventID,EntryType,Message");
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='NetRemediationScript'} | Where-Object { $_.Id -eq 5 } | Format-List Id,LevelDisplayName,Message");
 
-    expect(out).toMatch(/EventID\s*:\s*1005/);
-    expect(out).toMatch(/EntryType\s*:\s*Information/);
+    expect(out).toMatch(/Id\s*:\s*5/);
+    expect(out).toMatch(/LevelDisplayName\s*:\s*Information/);
     expect(out).toMatch(/reussie/);
   }, 30000);
 
-  it('un échec de remédiation journalise EventId 1006 en EntryType Error', async () => {
+  it('un échec de remédiation journalise EventId 6 en EntryType Error', async () => {
     // Aucun serveur DHCP joignable : le renouvellement retombe en APIPA →
     // la remédiation détecte l'absence d'adresse DHCP et journalise l'échec.
     const win = new WindowsPC('windows-pc', 'FAILPC');
@@ -197,9 +194,9 @@ describe('Scénario 5 — journalisation dans l\'Observateur d\'événements', (
     const code = await ps(`${REMEDIATION_SCRIPT}\nInvoke-NetRemediation`);
     expect(code.trim().split('\n').pop()).toBe('1');
 
-    const out = await ps("Get-EventLog -LogName Application -Source NetRemediationScript | Where-Object { $_.EventID -eq 1006 } | Format-List EventID,EntryType");
-    expect(out).toMatch(/EventID\s*:\s*1006/);
-    expect(out).toMatch(/EntryType\s*:\s*Error/);
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='NetRemediationScript'} | Where-Object { $_.Id -eq 6 } | Format-List Id,LevelDisplayName");
+    expect(out).toMatch(/Id\s*:\s*6/);
+    expect(out).toMatch(/LevelDisplayName\s*:\s*Error/);
   }, 30000);
 });
 

@@ -129,7 +129,7 @@ describe('Scénario 1 — installation et promotion d\'un contrôleur de domaine
 
     it('le journal "Directory Service" contient un événement de fin de démarrage AD DS (EventID 1004)', async () => {
       const dc = await promotedDc();
-      const out = await run(ps(dc), 'Get-EventLog -LogName "Directory Service" -Newest 10');
+      const out = await run(ps(dc), 'Get-WinEvent -FilterHashtable @{LogName="Directory Service"} -MaxEvents 10');
       expect(out).toMatch(/1004/);
       expect(out).toMatch(/startup complete/i);
     });

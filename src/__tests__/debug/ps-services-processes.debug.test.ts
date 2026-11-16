@@ -120,10 +120,10 @@ describe('debug — PowerShell services & processes', () => {
       'Get-Service | ForEach-Object { [pscustomobject]@{ N=$_.Name; S=$_.Status } } | Sort-Object N | Select-Object -First 5',
 
       // ── 6. event log probes ───────────────────────────────────────
-      { section: 'event logs', cmd: 'Get-EventLog -List -ErrorAction SilentlyContinue' },
-      'Get-EventLog -LogName System -Newest 5 -ErrorAction SilentlyContinue',
-      'Get-EventLog -LogName Application -Newest 5 -ErrorAction SilentlyContinue',
-      'Get-EventLog -LogName Security -Newest 5 -ErrorAction SilentlyContinue',
+      { section: 'event logs', cmd: 'Get-WinEvent -ListLog * -ErrorAction SilentlyContinue' },
+      'Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyContinue',
+      'Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction SilentlyContinue',
+      'Get-WinEvent -LogName Security -MaxEvents 5 -ErrorAction SilentlyContinue',
       'Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyContinue',
       'Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction SilentlyContinue',
       'Get-WinEvent -ListLog * -ErrorAction SilentlyContinue | Select-Object -First 5',

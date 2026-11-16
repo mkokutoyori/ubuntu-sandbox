@@ -1796,14 +1796,6 @@ class WindowsEventLogAdapter implements IEventLogProvider {
       ...(e.userSid === undefined ? {} : { userSid: e.userSid }),
     }));
   }
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string {
-    return this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
-  }
-  clearLog(logName: string): string {
-    return this.log.clearEventLog(logName);
-  }
-  newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }
-  limitLog(logName: string): void { this.log.limitEventLog(logName); }
 }
 
 // ── Network adapter ────────────────────────────────────────────────────────

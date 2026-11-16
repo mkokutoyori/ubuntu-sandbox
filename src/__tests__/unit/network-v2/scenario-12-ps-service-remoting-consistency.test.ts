@@ -68,7 +68,7 @@ Invoke-Command -ComputerName $machinesEnEcart -Credential "${OPERATOR}" -Argumen
   param($AdminMachine)
   Set-Service -Name "${SERVICE_NAME}" -StartupType Automatic
   Start-Service -Name "${SERVICE_NAME}"
-  Write-EventLog -LogName Application -Source "CentralAdmin" -EventId 7001 -EntryType Information -Message "Remediation applied by $AdminMachine"
+  eventcreate /l Application /so CentralAdmin /id 701 /t INFORMATION /d "Remediation applied by $AdminMachine" | Out-Null
 }
 $machinesEnEcart -join ','
 `;
@@ -205,20 +205,20 @@ $drift
   });
 
   describe('Journalisation centralisée', () => {
-    it('EventId 7001 (Application, source CentralAdmin) apparaît UNIQUEMENT sur la machine corrigée, nommant la machine admin', async () => {
+    it('EventId 701 (Application, source CentralAdmin) apparaît UNIQUEMENT sur la machine corrigée, nommant la machine admin', async () => {
       const { psAdmin, psWin1, psWin2 } = await buildScenario();
 
       await psAdmin.execute(REMEDIATION_SCRIPT);
 
       const win2Log = await psWin2.execute(
-        `Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 7001 } | Select-Object -First 1`,
+        `Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 701 } | Select-Object -First 1`,
       );
-      expect(win2Log).toContain('7001');
+      expect(win2Log).toContain('701');
       expect(win2Log).toContain('ADMIN-PC');
       expect(win2Log.toLowerCase()).toContain('remediation applied by');
 
       const win1Log = await psWin1.execute(
-        `Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 7001 }`,
+        `Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 701 }`,
       );
       expect(win1Log.trim()).toBe('');
     });

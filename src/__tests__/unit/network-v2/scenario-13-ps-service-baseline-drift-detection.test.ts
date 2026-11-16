@@ -148,7 +148,7 @@ $storedHash -eq $actualHash
   });
 
   describe('Neutralisation et journalisation de l\'incident', () => {
-    it('neutralise sans supprimer le binaire et journalise EventId 8001 avec attribution complète', async () => {
+    it('neutralise sans supprimer le binaire et journalise EventId 1 avec attribution complète', async () => {
       const pc = createPC();
       const ps = await buildBaseline(pc);
 
@@ -178,12 +178,12 @@ $storedHash -eq $actualHash
       expect(pc.getFileSystem().exists('C:\\Users\\Public\\svc32.exe')).toBe(true);
 
       await ps.execute(
-        'Write-EventLog -LogName Application -Source "SecurityAudit" -EventId 8001 -EntryType Error ' +
-        '-Message "Service non declare neutralise: WinUpdateHelper, Binaire=C:\\Users\\Public\\svc32.exe, Compte=LocalSystem, Action=Neutralise sans suppression"',
+        'eventcreate /l Application /so SecurityAudit /id 1 /t ERROR ' +
+        '/d "Service non declare neutralise: WinUpdateHelper, Binaire=C:\\Users\\Public\\svc32.exe, Compte=LocalSystem, Action=Neutralise sans suppression" | Out-Null',
       );
 
       const incidentEvt = await ps.execute(
-        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 8001 } | Select-Object -First 1',
+        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 1 } | Select-Object -First 1',
       );
       expect(incidentEvt).toContain('WinUpdateHelper');
       expect(incidentEvt).toContain('Neutralise sans suppression');

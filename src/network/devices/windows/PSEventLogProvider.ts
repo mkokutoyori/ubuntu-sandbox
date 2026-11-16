@@ -1,13 +1,9 @@
 /**
  * PSEventLogProvider — In-memory Windows Event Log simulation.
  *
- * Supports:
- *   - Get-EventLog -List / -LogName / -Newest / -EntryType / -Source
- *   - Write-EventLog (adds entries to the store)
- *   - Clear-EventLog (empties a log)
- *   - New-EventLog (registers a source)
- *   - Get-WinEvent -LogName / -MaxEvents / -ListLog
- *   - Limit-EventLog (silently accepted)
+ * Read by Get-WinEvent and wevtutil, written by eventcreate and the audit
+ * projections, cleared by wevtutil cl. The *-EventLog cmdlets of Windows
+ * PowerShell 5.1 do not exist in PowerShell 7.
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -241,22 +237,6 @@ export class PSEventLogProvider {
     });
   }
 
-  // ─── Get-EventLog ─────────────────────────────────────────────────
-
-  getEventLogList(): string {
-    const lines: string[] = [
-      '',
-      '  Max(K) Retain OverflowAction        Entries Log',
-      '  ------ ------ --------------        ------- ---',
-    ];
-    for (const [, meta] of this.logs) {
-      const entries = padToWidth(String(meta.entries.length), 7, 'right');
-      const maxK = padToWidth(String(meta.maxSizeKB), 7, 'right');
-      lines.push(`${maxK}      0 ${padToWidth(meta.overflow, 22)}${entries} ${meta.logName}`);
-    }
-    return lines.join('\n') + '\n';
-  }
-
   /**
    * Structured accessor used by the new ICmdlet path. Same filtering as
    * getEventLog() but returns the raw entries instead of a formatted string.
@@ -372,43 +352,6 @@ export class PSEventLogProvider {
     if (cfg.levelFilter !== undefined) meta.levelFilter = cfg.levelFilter === '0' ? undefined : cfg.levelFilter;
     if (cfg.keywordsFilter !== undefined) meta.keywordsFilter = cfg.keywordsFilter;
     return null;
-  }
-
-  getEventLog(logName: string, opts: { newest?: number; entryType?: string; source?: string }): string {
-    const key = logName.toLowerCase();
-    const meta = this.logs.get(key);
-    if (!meta) return `Get-EventLog : Cannot open log "${logName}". The log name "${logName}" does not exist on this computer.`;
-
-    let entries = [...meta.entries].reverse(); // newest first
-
-    if (opts.entryType) {
-      const et = opts.entryType.toLowerCase();
-      entries = entries.filter(e => e.entryType.toLowerCase() === et);
-    }
-    if (opts.source) {
-      const src = opts.source.toLowerCase();
-      entries = entries.filter(e => e.source.toLowerCase().includes(src));
-    }
-    if (opts.newest !== undefined) {
-      entries = entries.slice(0, opts.newest);
-    }
-
-    if (entries.length === 0) return '';
-
-    const lines: string[] = [
-      '',
-      '   Index Time          EntryType   Source                 InstanceID Message',
-      '   ----- ----          ---------   ------                 ---------- -------',
-    ];
-    for (const e of entries) {
-      const time = this.formatTime(e.timeGenerated);
-      const type = padToWidth(e.entryType.substring(0, 11), 11);
-      const source = padToWidth(e.source.substring(0, 22), 22);
-      const id = padToWidth(String(e.eventId), 10, 'right');
-      const msg = e.message.substring(0, 40) + (e.message.length > 40 ? '...' : '');
-      lines.push(`${padToWidth(String(e.index), 7, 'right')} ${time} ${type} ${source} ${id} ${msg}`);
-    }
-    return lines.join('\n') + '\n';
   }
 
   /**

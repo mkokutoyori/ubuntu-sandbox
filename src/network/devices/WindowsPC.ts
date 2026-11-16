@@ -4039,14 +4039,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.commandExitStatus = result.exitCode;
         return result.output;
       }
-      case 'eventcreate': {
-        const result = cmdEventcreate({
-          logNames: () => this.eventLog.getAllLogsStructured().map((log) => log.logName),
-          write: (log, source, id, type, description) => this.eventLog.writeEventLog(log, source, id, type, description),
-        }, args);
-        this.commandExitStatus = result.exitCode;
-        return result.output;
-      }
+      case 'eventcreate': return this.runEventcreate(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'fsutil':  return cmdFsutil(this.buildSystemContext(), args);
       case 'reg':     return this.cmdReg(args);
@@ -4800,6 +4793,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.commandExitStatus ?? commandExitCode(output);
   }
 
+  private runEventcreate(args: string[]): string {
+    const result = cmdEventcreate({
+      logNames: () => this.eventLog.getAllLogsStructured().map((log) => log.logName),
+      write: (log, source, id, type, description) => {
+        this.eventLog.newEventLog(log, source);
+        return this.eventLog.writeEventLog(log, source, id, type, description);
+      },
+    }, args);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
+  }
+
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     this.commandExitStatus = null;
@@ -4816,6 +4821,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'chcp') return this.cmdChcp(args);
     if (lower === 'date') return this.cmdDate(args);
     if (lower === 'time') return this.cmdTime(args);
+    if (lower === 'eventcreate' || lower === 'eventcreate.exe') return this.runEventcreate(args);
     if (lower === 'sc' || lower === 'sc.exe') {
       return cmdSc(
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser },

@@ -30,7 +30,7 @@ function createPS(pc: WindowsPC) {
 const NOTIFY_SCRIPT = String.raw`
 $evtLog = "Application"
 if (-not (Test-Path "C:\Scripts")) { New-Item -ItemType Directory -Path "C:\Scripts" | Out-Null }
-Write-EventLog -LogName $evtLog -Source "notify-failure" -EventId 9001 -EntryType Warning -Message "MonSuperService recovery notification script executed."
+eventcreate /l $evtLog /so notify-failure /id 1 /t WARNING /d "MonSuperService recovery notification script executed." | Out-Null
 `;
 
 async function setupServiceWithRecovery(pc: WindowsPC): Promise<{ execute: (l: string) => Promise<string> }> {
@@ -121,7 +121,7 @@ describe('Scénario 2 — Récupération automatique après échec et audit Powe
       pc.advanceTime(20_000);
 
       const appLog = await ps.execute(
-        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 9001 } | Select-Object -First 1',
+        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 1 } | Select-Object -First 1',
       );
       expect(appLog).toContain('notify-failure');
       expect(appLog).toContain('recovery notification script executed');
@@ -155,7 +155,7 @@ describe('Scénario 2 — Récupération automatique après échec et audit Powe
   });
 
   describe('Script PowerShell de surveillance temps réel (Register-WmiEvent)', () => {
-    it('détecte chaque transition d\'état sans polling et journalise EventId 4001', async () => {
+    it('détecte chaque transition d\'état sans polling et journalise EventId 1', async () => {
       const pc = createPC();
       const ps = await setupServiceWithRecovery(pc);
 
@@ -166,7 +166,7 @@ Register-WmiEvent -Query "SELECT * FROM __InstanceModificationEvent WITHIN 2 WHE
   $new  = $Event.SourceEventArgs.NewEvent.TargetInstance.State
   if ($new -eq "Stopped") { $Global:FailureRank = $Global:FailureRank + 1 }
   $msg = "MonSuperService transitioned from $prev to $new (rank $Global:FailureRank) at $(Get-Date)"
-  Write-EventLog -LogName System -Source "wmi-monitor" -EventId 4001 -EntryType Warning -Message $msg
+  eventcreate /l System /so wmi-monitor /id 1 /t WARNING /d $msg | Out-Null
 }
 `;
       await ps.execute(monitorScript);
@@ -175,7 +175,7 @@ Register-WmiEvent -Query "SELECT * FROM __InstanceModificationEvent WITHIN 2 WHE
       await pc.executeCommand(`taskkill /F /PID ${pidBefore}`);
 
       const out = await ps.execute(
-        'Get-WinEvent -LogName System | Where-Object { $_.Id -eq 4001 } | Select-Object -First 1',
+        'Get-WinEvent -LogName System | Where-Object { $_.Id -eq 1 } | Select-Object -First 1',
       );
       expect(out).toContain('MonSuperService');
       expect(out).toContain('rank 1');

@@ -1815,10 +1815,6 @@ export interface IEventLogProvider {
   providers?(): Array<{ name: string; logNames: string[] }>;
   readExportedEntries?(path: string): { channel: string; entries: EventLogEntryInfo[] } | null;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string;
-  clearLog(logName: string): string;
-  newLog(logName: string, source: string): string;
-  limitLog(logName: string, maxSizeKB: number): void;
 }
 
 // ─── PSProviders bag ────────────────────────────────────────────────────────
