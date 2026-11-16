@@ -4969,7 +4969,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const result = cmdEventcreate({
       logNames: () => this.eventLog.getAllLogsStructured().map((log) => log.logName),
       write: (log, source, id, type, description) => {
+        if (this.registry.isInstalledEventSource(log, source)) {
+          return 'Source parameter is used to identify custom applications/scripts only (not installed applications).';
+        }
         this.eventLog.newEventLog(log, source);
+        this.registry.markCustomEventSource(log, source, '%SystemRoot%\\System32\\EventCreate.exe');
         return this.eventLog.writeEventLog(log, source, id, type, description);
       },
     }, args);

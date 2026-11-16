@@ -729,6 +729,21 @@ export class PSRegistryProvider {
     this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
   }
 
+  private eventSourceKey(logName: string, source: string): RegistryKey | null {
+    return this.navigateTo({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
+  }
+
+  isInstalledEventSource(logName: string, source: string): boolean {
+    const key = this.eventSourceKey(logName, source);
+    return key !== null && !key.values.has('customsource');
+  }
+
+  markCustomEventSource(logName: string, source: string, messageFile: string): void {
+    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
+    if (!key.values.has('customsource')) seedValue(key, 'CustomSource', 1, 'DWord');
+    if (!key.values.has('eventmessagefile')) seedValue(key, 'EventMessageFile', messageFile, 'ExpandString');
+  }
+
   /**
    * The other half of `upsertServiceKey`: `sc delete` removes the key as
    * well as the service. Leaving it behind would have the SCM re-read a
