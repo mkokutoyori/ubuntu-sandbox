@@ -133,8 +133,8 @@ describe('a Windows machine prints its own time zone, not the one of the process
       expect(after).toMatch(/Next Run Time:\s+10\/09\/2026 03:00:00/);
       expect(after).toMatch(/Last Run Time:\s+10\/08\/2026 03:00:00/);
       const info = (await ps.processLine('Get-ScheduledTaskInfo -TaskName Daily3 | Format-List LastRunTime,NextRunTime')).output.join('\n');
-      expect(info).toMatch(/LastRunTime : 10\/8\/2026 3:00 AM/);
-      expect(info).toMatch(/NextRunTime : 10\/9\/2026 3:00 AM/);
+      expect(info).toMatch(/LastRunTime : 10\/8\/2026 3:00:00 AM/);
+      expect(info).toMatch(/NextRunTime : 10\/9\/2026 3:00:00 AM/);
     });
   });
 });

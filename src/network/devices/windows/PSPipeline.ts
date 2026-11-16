@@ -553,12 +553,17 @@ export function selectString(objects: PSObject[], args: string): PSObject[] {
 /**
  * Render a single property value the way real PowerShell does for the
  * default `Out-Default` / `Format-Table` / `Format-List` pipeline:
- *   - Date  → en-US short date + short time, e.g. "5/15/2026 11:10 AM"
+ *   - Date  → en-US general date, e.g. "5/15/2026 11:10:12 AM" (FileSystem rows drop the seconds)
  *   - bool  → "True" / "False"
  *   - null / undefined → "" (empty cell)
  *   - everything else → String(value)
  */
-export function renderPSCellValue(value: unknown): string {
+function isFileSystemRow(obj: PSObject): boolean {
+  const keys = new Set(Object.keys(obj).map((key) => key.toLowerCase()));
+  return keys.has('mode') && keys.has('lastwritetime') && keys.has('name');
+}
+
+export function renderPSCellValue(value: unknown, shortDates = false): string {
   if (value === null || value === undefined) return '';
   if (value === true) return 'True';
   if (value === false) return 'False';
@@ -570,11 +575,6 @@ export function renderPSCellValue(value: unknown): string {
     return `{${inner}}`;
   }
   if (value instanceof Date) {
-    // PowerShell short date + short time (en-US): "5/15/2026 11:10 AM".
-    // The format follows .NET's `{0:d} {0:t}` for en-US culture — single
-    // space between date and time, hour without leading zero. Column-level
-    // alignment is handled by the table formatter (padStart/padEnd), not by
-    // padding inside the rendered value.
     const m   = value.getMonth() + 1;
     const d   = value.getDate();
     const y   = value.getFullYear();
@@ -582,7 +582,8 @@ export function renderPSCellValue(value: unknown): string {
     const min = value.getMinutes();
     const tt  = h24 >= 12 ? 'PM' : 'AM';
     const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    return `${m}/${d}/${y} ${h12}:${String(min).padStart(2, '0')} ${tt}`;
+    const clock = `${h12}:${String(min).padStart(2, '0')}${shortDates ? '' : `:${String(value.getSeconds()).padStart(2, '0')}`}`;
+    return `${m}/${d}/${y} ${clock} ${tt}`;
   }
   // A `New-TimeSpan`/`Get-Date` subtraction result — render with real
   // .NET `TimeSpan.ToString()` formatting (`d.hh:mm:ss`) rather than the
@@ -663,7 +664,7 @@ export function formatTable(objects: PSObject[], args: string): string {
       const mode = modeKey ? String(obj[modeKey] ?? '') : '';
       if (mode.startsWith('d')) return { raw: null, text: '' };
     }
-    return { raw, text: renderPSCellValue(raw) };
+    return { raw, text: renderPSCellValue(raw, isFileSystemRow(obj)) };
   };
 
   const cells = objects.map(obj => columns.map(col => cellValue(obj, col)));
