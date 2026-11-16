@@ -8,7 +8,7 @@
  *
  * Measured before the change: a keyword was refused as an invalid address (so DefaultGateway/DNS rules, which real policies use, could not be written), and 4957 never existed.
  *
- * Discrimination (git stash push -- src/network src/powershell): 5 of 8 cases fall on the base. Three pass either way and are named: the WITNESS that a plain address still matches, the
+ * Discrimination (git stash push -- src/network src/powershell): 5 of 8 cases fall on the base (three of the four cases of the last block, ranges, masks and the 4/6 suffix, fall on the commit before them). Three pass either way and are named: the WITNESS that a plain address still matches, the
  * case that expects nothing while failure auditing is off (vacuous on a base that never wrote 4957), and the fail-closed case (the base cannot match a keyword either); the creation-time case falls on the previous commit, the plain-address creation case is vacuous there.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -94,5 +94,29 @@ describe('4957', () => {
     await pc.executeCommand('auditpol /set /subcategory:"MPSSVC Rule-Level Policy Change" /failure:enable');
     await pc.executeCommand('powershell -Command "New-NetFirewallRule -DisplayName Plain -Direction Outbound -Action Block -RemoteAddress 10.0.0.9 | Out-Null"');
     expect((await events(pc)).trim()).toBe('');
+  });
+});
+
+describe('other documented address forms', () => {
+  it('an IPv4 range is accepted and matches its bounds, not beyond', () => {
+    expect(parseAddressSpec('10.0.0.5-10.0.0.9')).toBe('10.0.0.5-10.0.0.9');
+    expect(addressSpecMatches('10.0.0.5-10.0.0.9', new IPAddress('10.0.0.9'))).toBe(true);
+    expect(addressSpecMatches('10.0.0.5-10.0.0.9', new IPAddress('10.0.0.10'))).toBe(false);
+  });
+
+  it('a reversed range is refused', () => {
+    expect(parseAddressSpec('10.0.0.9-10.0.0.5')).toBeNull();
+  });
+
+  it('a subnet by mask is read as its bit count, and a non-contiguous mask is refused', () => {
+    expect(parseAddressSpec('10.0.1.0/255.255.255.0')).toBe('10.0.1.0/24');
+    expect(addressSpecMatches(parseAddressSpec('10.0.1.0/255.255.255.0') ?? '', new IPAddress('10.0.1.200'))).toBe(true);
+    expect(parseAddressSpec('10.0.1.0/255.0.255.0')).toBeNull();
+  });
+
+  it('a keyword restricted to IPv4 resolves like the keyword, one restricted to IPv6 is empty', () => {
+    expect(parseAddressSpec('LocalSubnet4')).toBe('LocalSubnet4');
+    expect(addressSpecMatches('LocalSubnet4', new IPAddress('10.0.0.77'), sets)).toBe(true);
+    expect(addressSetIsEmpty('LocalSubnet6', sets)).toBe(true);
   });
 });

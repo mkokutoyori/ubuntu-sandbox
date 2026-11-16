@@ -100,8 +100,27 @@ export function parseAddressSpec(raw: string | readonly string[]): string | null
   if (tokens.length === 1 && tokens[0].toLowerCase() === ANY.toLowerCase()) return ANY;
   const kept: string[] = [];
   for (const token of tokens) {
-    const keyword = KEYWORD_NAMES[token.toLowerCase()];
-    if (keyword !== undefined) { kept.push(keyword); continue; }
+    const keywordMatch = /^([A-Za-z]+?)([46])?$/.exec(token);
+    const keyword = keywordMatch === null ? undefined : KEYWORD_NAMES[keywordMatch[1].toLowerCase()];
+    if (keyword !== undefined) { kept.push(`${keyword}${keywordMatch?.[2] ?? ''}`); continue; }
+    const range = /^([^-]+)-([^-]+)$/.exec(token);
+    if (range !== null) {
+      const low = IPAddress.tryParse(range[1]);
+      const high = IPAddress.tryParse(range[2]);
+      if (low === null || high === null || (low.toUint32() >>> 0) > (high.toUint32() >>> 0)) return null;
+      kept.push(`${low.toString()}-${high.toString()}`);
+      continue;
+    }
+    const maskedSubnet = /^([^/]+)\/(\d+\.\d+\.\d+\.\d+)$/.exec(token);
+    if (maskedSubnet !== null) {
+      const base = IPAddress.tryParse(maskedSubnet[1]);
+      const mask = IPAddress.tryParse(maskedSubnet[2]);
+      if (base === null || mask === null) return null;
+      const bits = (mask.toUint32() >>> 0).toString(2).padStart(32, '0');
+      if (!/^1*0*$/.test(bits)) return null;
+      kept.push(`${base.toString()}/${bits.indexOf('0') === -1 ? 32 : bits.indexOf('0')}`);
+      continue;
+    }
     const slash = token.indexOf('/');
     const network = slash === -1 ? token : token.slice(0, slash);
     const value = IPAddress.tryParse(network);
@@ -118,22 +137,30 @@ export function parseAddressSpec(raw: string | readonly string[]): string | null
 
 function expandAddressSpec(spec: string, sets: FirewallAddressSets | undefined): string[] {
   return spec.split(',').flatMap((part) => {
-    const set = ADDRESS_KEYWORDS[part.toLowerCase()];
+    const keyword = /^([A-Za-z]+?)([46])?$/.exec(part);
+    const set = keyword === null ? undefined : ADDRESS_KEYWORDS[keyword[1].toLowerCase()];
     if (set === undefined) return [part];
-    return sets === undefined ? [] : [...sets[set]()];
+    if (keyword?.[2] === '6' || sets === undefined) return [];
+    return [...sets[set]()];
   });
 }
 
 export function addressSetIsEmpty(spec: string, sets: FirewallAddressSets): boolean {
   if (spec === '' || spec === ANY) return false;
   const parts = spec.split(',');
-  return parts.some((part) => ADDRESS_KEYWORDS[part.toLowerCase()] !== undefined) && expandAddressSpec(spec, sets).length === 0;
+  return parts.some((part) => ADDRESS_KEYWORDS[part.toLowerCase().replace(/[46]$/, '')] !== undefined) && expandAddressSpec(spec, sets).length === 0;
 }
 
 export function addressSpecMatches(spec: string, address: IPAddress, sets?: FirewallAddressSets): boolean {
   if (spec === '' || spec === ANY) return true;
   const target = address.toUint32() >>> 0;
   return expandAddressSpec(spec, sets).some(part => {
+    const range = /^([^-]+)-([^-]+)$/.exec(part);
+    if (range !== null) {
+      const low = IPAddress.tryParse(range[1]);
+      const high = IPAddress.tryParse(range[2]);
+      return low !== null && high !== null && target >= (low.toUint32() >>> 0) && target <= (high.toUint32() >>> 0);
+    }
     const slash = part.indexOf('/');
     if (slash === -1) return part === address.toString();
     const network = IPAddress.tryParse(part.slice(0, slash));
