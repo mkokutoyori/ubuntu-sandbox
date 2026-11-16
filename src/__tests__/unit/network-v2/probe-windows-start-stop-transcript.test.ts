@@ -8,11 +8,16 @@
  * Start-Transcript documentation (-Path, -OutputDirectory, -Append, -Force, -NoClobber, -IncludeInvocationHeader, -UseMinimalHeader). The C# that lays the invocation header
  * around each command is not reachable from this session: it is written as the banner, "Command start time: <stamp>", the banner, from captured transcripts.
  *
+ * Layout confirmed by the PowerShell documentation of the repository (about transcripts, "Limitations of PowerShell transcripts"): the file holds the header, then the line
+ * "Transcript started, output file is <path>" printed by Start-Transcript itself, then the commands, then the epilogue; and by the plaso transcript parser (log2timeline/plaso,
+ * powershell_transcript.py), written against real Windows PowerShell transcripts: separator, "... transcript start", Start time, Username, RunAs User, Configuration Name, Machine, Host
+ * Application, Process ID, the version table, separator. Each command line is preceded by the prompt text, e.g. "PS C:\\Users\\x> Get-Date".
+ *
  * Measured before the change: neither cmdlet existed ("not recognized"), so a transcript could only be started by policy and never ended (no epilogue), and the
  * EnableInvocationHeader policy value was stored and never read (rule 6).
  *
- * Discrimination (git stash push -- src/network src/powershell): 12 of 13 cases fall on a base without the cmdlets (the exit, stacking and read-only cases alone fall on the previous commit). The case that expects nothing after Stop-Transcript passes either way (vacuous
- * on a base with no such cmdlet).
+ * Discrimination (git stash push -- src/network src/powershell src/terminal): 8 of 15 cases fall on the commit before the prompt and "Transcript started" change; the cmdlets, the policy
+ * invocation header, exit, dispose, stacking and read-only cases fell on a base without them. The case that expects nothing after Stop-Transcript passes either way (vacuous there).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -39,8 +44,8 @@ describe('Start-Transcript and Stop-Transcript', () => {
     await ps(`Start-Transcript -Path ${FILE}`);
     await ps('Write-Output marker');
     const text = await read();
-    expect(text).toContain('PS> Write-Output marker\nmarker');
-    expect(text).not.toContain('PS> Start-Transcript');
+    expect(text).toMatch(/PS [^\n]*> Write-Output marker\nmarker/);
+    expect(text).not.toMatch(/PS [^\n]*> Start-Transcript/);
   });
 
   it('opens with the prologue banner', async () => {
@@ -50,7 +55,7 @@ describe('Start-Transcript and Stop-Transcript', () => {
 
   it('-UseMinimalHeader writes the minimal prologue', async () => {
     await ps(`Start-Transcript -Path ${FILE} -UseMinimalHeader`);
-    expect(await read()).toMatch(/^\*{22}\nPowerShell transcript start\nStart time: \d{14}\n\*{22}$/);
+    expect(await read()).toMatch(/^\*{22}\nPowerShell transcript start\nStart time: \d{14}\n\*{22}\nTranscript started, output file is /);
   });
 
   it('Stop-Transcript writes the epilogue and says where the transcript is', async () => {
@@ -82,7 +87,7 @@ describe('Start-Transcript and Stop-Transcript', () => {
   it('-IncludeInvocationHeader puts a start time before each command', async () => {
     await ps(`Start-Transcript -Path ${FILE} -IncludeInvocationHeader`);
     await ps('Write-Output marker');
-    expect(await read()).toMatch(/\*{22}\nCommand start time: \d{14}\n\*{22}\nPS> Write-Output marker\n/);
+    expect(await read()).toMatch(/\*{22}\nCommand start time: \d{14}\n\*{22}\nPS [^\n]*> Write-Output marker\n/);
   });
 
   it('the EnableInvocationHeader policy puts the start time before each command of the policy transcript', async () => {
@@ -90,7 +95,7 @@ describe('Start-Transcript and Stop-Transcript', () => {
     await ps(`New-Item -Path "${key}" -Force | Out-Null; Set-ItemProperty -Path "${key}" -Name EnableTranscripting -Value 1; Set-ItemProperty -Path "${key}" -Name EnableInvocationHeader -Value 1; Set-ItemProperty -Path "${key}" -Name OutputDirectory -Value "C:\\Pol"`);
     await ps('Write-Output marker');
     const text = await ps('Get-Content (Get-ChildItem C:\\Pol -Filter PowerShell_transcript*.txt | Select-Object -First 1).FullName -Raw');
-    expect(text).toMatch(/\*{22}\nCommand start time: \d{14}\n\*{22}\nPS> Write-Output marker\n/);
+    expect(text).toMatch(/\*{22}\nCommand start time: \d{14}\n\*{22}\nPS [^\n]*> Write-Output marker\n/);
   });
 
   it('leaving the host ends the policy transcript with the epilogue and the next session opens a new file', async () => {
@@ -99,7 +104,7 @@ describe('Start-Transcript and Stop-Transcript', () => {
     await ps('Write-Output first');
     await ps('exit');
     const first = await ps('Get-Content (Get-ChildItem C:\\Pol -Filter PowerShell_transcript*.txt | Select-Object -First 1).FullName -Raw');
-    expect(first).toMatch(/PS> exit\n\*{22}\nPowerShell transcript end\nEnd time: \d{14}\n\*{22}$/);
+    expect(first).toMatch(/PS [^\n]*> exit\n\*{22}\nPowerShell transcript end\nEnd time: \d{14}\n\*{22}$/);
   });
 
   it('transcripts stack: both record a command, Stop-Transcript ends the last one started', async () => {
@@ -108,7 +113,7 @@ describe('Start-Transcript and Stop-Transcript', () => {
     await ps('Write-Output both');
     expect(await ps('Stop-Transcript')).toBe('Transcript stopped, output file is C:\\Temp\\b.txt');
     await ps('Write-Output onlya');
-    expect(await ps('Get-Content C:\\Temp\\a.txt -Raw')).toContain('PS> Write-Output onlya');
+    expect(await ps('Get-Content C:\\Temp\\a.txt -Raw')).toMatch(/PS [^\n]*> Write-Output onlya/);
     expect(await ps('Get-Content C:\\Temp\\b.txt -Raw')).not.toContain('onlya');
     expect(await ps('Get-Content C:\\Temp\\b.txt -Raw')).toContain('both');
   });
@@ -132,8 +137,16 @@ describe('Start-Transcript and Stop-Transcript', () => {
     await run('Write-Output kept');
     sub.dispose();
     const text = pc.getFileSystem().readFile('C:\\Temp\\w.txt').content ?? '';
-    expect(text).toContain('PS> Write-Output kept');
+    expect(text).toMatch(/PS [^\n]*> Write-Output kept/);
     expect(text).toMatch(/\*{22}\nPowerShell transcript end\nEnd time: \d{14}\n\*{22}\n$/);
-    expect(text).not.toContain('PS> exit');
+    expect(text).not.toMatch(/> exit/);
+  });
+
+  it('the file opens with the "Transcript started" line after the header and records the real prompt', async () => {
+    await ps(`Start-Transcript -Path ${FILE}`);
+    await ps('Write-Output marker');
+    const text = await read();
+    expect(text).toContain(`**********************\nTranscript started, output file is ${FILE}\n`);
+    expect(text).toMatch(/PS C:\\[^\n]*> Write-Output marker/);
   });
 });

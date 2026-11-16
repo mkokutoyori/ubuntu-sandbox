@@ -993,6 +993,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private explicitTranscripts: Array<{ path: string; invocationHeader: boolean }> = [];
+  private powerShellPrompt = 'PS> ';
+
+  notePowerShellPrompt(prompt: string): void {
+    this.powerShellPrompt = prompt;
+  }
   private transcriptLineHandled = false;
 
   private appendToFile(path: string, text: string): void {
@@ -1011,19 +1016,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private transcriptEntry(command: string, output: string, withInvocationHeader: boolean): string {
     const header = withInvocationHeader ? invocationHeader(this.simulatedDate()) : '';
-    return `${header}PS> ${command}\n${output ? `${output}\n` : ''}`;
+    return `${header}${this.powerShellPrompt}${command}\n${output ? `${output}\n` : ''}`;
   }
 
   endPowerShellHost(typedExit: boolean): void {
-    const farewell = typedExit ? 'PS> exit\n' : '';
     const ended = this.simulatedDate();
     for (const session of this.explicitTranscripts.reverse()) {
-      this.appendToFile(session.path, `${farewell}${transcriptEpilogue(ended)}`);
+      this.appendToFile(session.path, `${typedExit ? `${this.powerShellPrompt}exit\n` : ''}${transcriptEpilogue(ended)}`);
     }
     this.explicitTranscripts = [];
     if (this.transcriptStartedAt !== null && isTranscriptionEnabled(this.powerShellPolicySource())) {
       const path = `${transcriptDirectory(this.powerShellPolicySource())}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
-      if (this.fs.readFile(path).ok) this.appendToFile(path, `${farewell}${transcriptEpilogue(ended)}`);
+      if (this.fs.readFile(path).ok) this.appendToFile(path, `${typedExit ? `${this.powerShellPrompt}exit\n` : ''}${transcriptEpilogue(ended)}`);
     }
     this.transcriptStartedAt = null;
   }
@@ -1048,7 +1052,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const header = options.useMinimalHeader ? minimalTranscriptHeader(startedAt) : transcriptHeader(this.transcriptHeaderFields(startedAt));
         if (!(existing.ok && options.append)) {
           this.fs.mkdirp(path.slice(0, path.lastIndexOf('\\')));
-          this.fs.createFile(path, header);
+          this.fs.createFile(path, `${header}Transcript started, output file is ${path}\n`);
         }
         this.explicitTranscripts.push({ path, invocationHeader: options.includeInvocationHeader });
         this.transcriptLineHandled = true;
@@ -1057,7 +1061,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       stop: () => {
         const session = this.explicitTranscripts.pop();
         if (session === undefined) return { error: 'The host is not currently transcribing.' };
-        this.appendToFile(session.path, `PS> Stop-Transcript\n${transcriptEpilogue(this.simulatedDate())}`);
+        this.appendToFile(session.path, `${this.powerShellPrompt}Stop-Transcript\n${transcriptEpilogue(this.simulatedDate())}`);
         this.transcriptLineHandled = true;
         return { path: session.path };
       },

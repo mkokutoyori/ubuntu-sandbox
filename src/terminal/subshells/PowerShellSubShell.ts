@@ -238,6 +238,7 @@ export class PowerShellSubShell implements ISubShell {
     // attached. Inside the window, `device.getCwd()` and any
     // `device.executeCmdCommand(...)` delegation observe THIS terminal's
     // cwd / env (terminal_gap.md §7.x).
+    if (this.device instanceof WindowsPC) this.device.notePowerShellPrompt(this.getPrompt());
     const dispatch = async (): Promise<string | null> => this.dispatchCommand(effective + afterFinalBacktick);
 
     const result = (this.session && this.device instanceof WindowsPC)
