@@ -170,6 +170,7 @@ export interface RouteInfo {
 
 export interface IRemoteComputer {
   readonly hostname: string;
+  readonly eventLog?: IEventLogProvider;
   /** Genuinely execute the script block against the remote machine's OWN
    *  runtime (its own services/processes/registry/event log), returning
    *  whatever the block's pipeline produced. */

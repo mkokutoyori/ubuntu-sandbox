@@ -10,6 +10,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { ICmdlet } from '../ICmdlet';
+import { namedCredential } from './RemotingCmdlets';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -139,10 +140,34 @@ export class GetWinEventCmdlet implements ICmdlet {
   readonly name = 'get-winevent';
   readonly displayName = 'Get-WinEvent';
   readonly aliases = [] as const;
-  readonly parameters = ['LogName', 'ListLog', 'ProviderName', 'ListProvider', 'Path', 'FilterXml', 'FilterXPath', 'FilterHashtable', 'ComputerName', 'MaxEvents', 'Oldest', 'Force'] as const;
+  readonly parameters = ['LogName', 'ListLog', 'ProviderName', 'ListProvider', 'Path', 'FilterXml', 'FilterXPath', 'FilterHashtable', 'ComputerName', 'Credential', 'MaxEvents', 'Oldest', 'Force'] as const;
+
+  private targetMachine = '';
 
   execute(ctx: CmdletContext): PSValue {
-    const log = requireEventLog(ctx);
+    const target = this.target(ctx);
+    if (target === null) return null;
+    this.targetMachine = target.machine;
+    return this.query(ctx, target.log);
+  }
+
+  private target(ctx: CmdletContext): { log: IEventLogProvider; machine: string } | null {
+    const local = requireEventLog(ctx);
+    const localName = ctx.providers.network?.getHostname() ?? '';
+    const asked = ctx.named['computername'];
+    const name = asked === undefined || asked === null ? '' : psValueToString(Array.isArray(asked) ? asked[0] : asked);
+    if (name === '' || name === '.' || name.toLowerCase() === 'localhost' || name.toLowerCase() === localName.toLowerCase()) {
+      return { log: local, machine: localName };
+    }
+    const remote = ctx.providers.remoting?.resolveComputer(name, namedCredential(ctx, 'credential'));
+    if (!remote?.eventLog) {
+      ctx.emitError(`Get-WinEvent: Could not retrieve information about the ${name} provider. The RPC server is unavailable.`);
+      return null;
+    }
+    return { log: remote.eventLog, machine: remote.hostname };
+  }
+
+  private query(ctx: CmdletContext, log: IEventLogProvider): PSValue {
     const maxEvents = this.maxEvents(ctx);
     if (maxEvents === null) return null;
 
@@ -228,7 +253,7 @@ export class GetWinEventCmdlet implements ICmdlet {
     maxEvents: number | undefined, oldest: boolean,
   ): PSValue {
     const now = simulationNowMs();
-    const machine = ctx.providers.network?.getHostname() ?? '';
+    const machine = this.targetMachine;
     const logs = log.listLogs().map((entry) => entry.logName);
     const providerCatalog = log.providers?.() ?? [];
     const events: QueryEvent[] = [];

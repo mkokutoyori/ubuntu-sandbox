@@ -3849,6 +3849,7 @@ interface RemotableDevice {
   getHostname(): string;
   getPowerShellInterpreter(): { invokeRemote(block: PSScriptBlock, positionalArgs: PSValue[]): PSValue };
   winrm: { enabled: boolean };
+  eventLog?: PSEventLogProvider;
 }
 
 class WindowsCapabilityAdapter implements ICapabilityProvider {
@@ -3942,6 +3943,7 @@ class WindowsRemotingAdapter implements IRemotingProvider {
     const winrm = device.winrm;
     return {
       hostname,
+      eventLog: device.eventLog === undefined ? undefined : new WindowsEventLogAdapter(device.eventLog),
       invoke: (block, positionalArgs) => interp.invokeRemote(block, positionalArgs),
       isRemotingEnabled: () => winrm.enabled,
     };
