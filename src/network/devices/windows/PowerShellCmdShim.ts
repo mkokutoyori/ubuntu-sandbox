@@ -199,6 +199,9 @@ async function evalStatement(state: State, stmt: string, ctx: PsCmdShimContext):
   if (pipeIdx !== -1) {
     const head = stmt.slice(0, pipeIdx).trim();
     const tail = stmt.slice(pipeIdx + 1).trim();
+    if (ctx.runFullPs && !/^Select-String\s+\S+\s*$/i.test(tail) && (startsLikeExpression(head) || belongsToPowerShell(ctx, headWordOf(head)))) {
+      return String(await ctx.runFullPs(withShimVars(state, stmt))).replace(/\s+$/, '');
+    }
     const headOut = await evalStatement(state, head, ctx);
     return applyPipeFilter(headOut, tail);
   }
