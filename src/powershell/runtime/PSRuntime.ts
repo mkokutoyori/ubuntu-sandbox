@@ -486,6 +486,14 @@ function replaySafe(cmdlet: { readonly name: string; readonly nativeProgram?: tr
   return REPLAY_SAFE_NAMES.has(name) || REPLAY_SAFE_VERBS.has(name.split('-')[0]);
 }
 
+function boundParameterTexts(cmdlet: ICmdlet, named: Record<string, PSValue>): ReadonlyArray<readonly [string, string]> {
+  const canonical = new Map((cmdlet.parameters ?? []).map((name) => [name.toLowerCase(), name]));
+  return Object.entries(named).map(([key, value]): readonly [string, string] => {
+    const items = Array.isArray(value) ? value : [value];
+    return [canonical.get(key.toLowerCase()) ?? key, items.map(psValueToString).join(', ')];
+  });
+}
+
 export class PSRuntime {
   private readonly lexer: PSLexer;
   private readonly parser: PSParser;
@@ -4055,6 +4063,7 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
+    this.providers.pipelineAudit?.commandInvoked(cmdletDisplayName, boundParameterTexts(cmdlet, cmdletNamed));
     const perItem = this.pipelineItemsFor(cmdlet, cmdletNamed, pipeInput);
     const errorsBefore = this.errorsWritten;
     let result: PSValue;

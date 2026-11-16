@@ -97,6 +97,7 @@ const TASK_SCHEDULER_EVENTS: Record<number, { task: string; opcode?: { id: numbe
 };
 const POWERSHELL_PROVIDER = 'powershellcore';
 const SCRIPT_BLOCK_EVENT = 4104;
+const PIPELINE_EXECUTION_DETAIL_EVENT = 4103;
 const SCRIPT_BLOCK_INVOCATION: Record<number, { taskId: number; taskName: string }> = {
   4105: { taskId: 0x66, taskName: 'CommandStart' },
   4106: { taskId: 0x67, taskName: 'CommandStop' },
@@ -159,6 +160,14 @@ export function describeEvent(event: EventClassified): EventDescriptor {
     return {
       level: 5, levelName: 'Verbose', taskId: invocation.taskId, taskName: invocation.taskName, opcode: 0xf, opcodeName: 'Create',
       keywords: '0x1', keywordNames: ['Runspace'], version: 0, providerGuid: PROVIDER_GUIDS[provider],
+    };
+  }
+
+  if (provider === POWERSHELL_PROVIDER && event.eventId === PIPELINE_EXECUTION_DETAIL_EVENT) {
+    return {
+      level: 4, levelName: 'Information', taskId: 0x6a, taskName: 'Executing Pipeline', opcode: 0x14,
+      opcodeName: 'To be used when operation is just executing a method',
+      keywords: '0x0', keywordNames: [], version: 1, providerGuid: PROVIDER_GUIDS[provider],
     };
   }
 

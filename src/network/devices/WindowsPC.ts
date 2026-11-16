@@ -144,8 +144,11 @@ import {
   isScriptBlockLoggingEnabled, isScriptBlockInvocationLoggingEnabled, SCRIPT_BLOCK_INVOCATION_STARTED, SCRIPT_BLOCK_INVOCATION_COMPLETED,
   isTranscriptionEnabled, transcriptDirectory,
   transcriptFileName, transcriptHeader, scriptBlockId, type PowerShellPolicySource,
-  POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
+  POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED, PIPELINE_EXECUTION_DETAIL,
+  loggedModuleNames, moduleIsLogged, pipelineExecutionDetailMessage,
 } from './windows/WinPowerShellLogging';
+import { moduleOfCommand } from './windows/PowerShellModuleExports';
+import type { PipelineAuditPort } from './windows/PipelineAuditPort';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -872,7 +875,52 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * 4104 utile face à une obfuscation : un `-EncodedCommand` doit être
    * décodé pour tourner, et c'est la forme décodée qui atterrit ici.
    */
+  private pipelineDetails: string[] = [];
+  private pipelineSequence = 0;
+
+  pipelineAudit(): PipelineAuditPort {
+    return {
+      commandInvoked: (command, parameters) => {
+        const module = moduleOfCommand(command);
+        if (module === null || !moduleIsLogged(loggedModuleNames(this.powerShellPolicySource()), module)) return;
+        this.pipelineDetails.push(`CommandInvocation(${command}): "${command}"`);
+        for (const [name, value] of parameters) {
+          this.pipelineDetails.push(`ParameterBinding(${command}): name="${name}"; value="${value}"`);
+        }
+      },
+    };
+  }
+
+  private flushPipelineDetails(): void {
+    const details = this.pipelineDetails;
+    this.pipelineDetails = [];
+    if (details.length === 0) return;
+    const first = /^CommandInvocation\(([^)]*)\)/.exec(details[0])?.[1] ?? '';
+    const user = this.userMgr.currentUser || 'Administrator';
+    const context: ReadonlyArray<readonly [string, string]> = [
+      ['Severity', 'Informational'], ['Host Name', 'ConsoleHost'], ['Host Version', '7.6.0'],
+      ['Host ID', this.powerShellHostId()], ['Host Application', 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'],
+      ['Engine Version', '7.6.0'], ['Runspace ID', this.powerShellRunspaceId()], ['Pipeline ID', this.newTaskInstanceId().slice(1, -1).toLowerCase()],
+      ['Command Name', first], ['Command Type', 'Cmdlet'], ['Script Name', ''], ['Command Path', ''],
+      ['Sequence Number', String(++this.pipelineSequence)],
+      ['User', `${this.getEnvVars().get('USERDOMAIN') ?? this.getHostname().toUpperCase()}\\${user}`],
+      ['Connected User', ''], ['Shell ID', 'Microsoft.PowerShell'],
+    ];
+    this.eventLog.writeEventLog(
+      POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, PIPELINE_EXECUTION_DETAIL, 'Information',
+      pipelineExecutionDetailMessage(details, context),
+      { Payload: details.map((line) => `${line}\n`).join(''), ContextInfo: context.map(([label, value]) => `${label} = ${value}`).join('\n'), UserData: '' });
+  }
+
+  private hostId: string | null = null;
+
+  private powerShellHostId(): string {
+    this.hostId ??= this.newTaskInstanceId().slice(1, -1).toLowerCase();
+    return this.hostId;
+  }
+
   recordPowerShellExecution(scriptBlock: string, output: string): void {
+    this.flushPipelineDetails();
     const text = scriptBlock.trim();
     if (!text) return;
     if (isScriptBlockLoggingEnabled(this.powerShellPolicySource())) {

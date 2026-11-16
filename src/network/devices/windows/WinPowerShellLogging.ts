@@ -26,6 +26,7 @@ export const TRANSCRIPTION_KEY =
 export const POWERSHELL_OPERATIONAL_LOG = 'PowerShellCore/Operational';
 export const POWERSHELL_PROVIDER = 'PowerShellCore';
 export const SCRIPT_BLOCK_LOGGED = 4104;
+export const PIPELINE_EXECUTION_DETAIL = 4103;
 export const SCRIPT_BLOCK_INVOCATION_STARTED = 4105;
 export const SCRIPT_BLOCK_INVOCATION_COMPLETED = 4106;
 
@@ -66,11 +67,12 @@ export interface PowerShellPolicySource {
 
 export const SYSTEM_CONFIG_PATH = 'C:\\Program Files\\PowerShell\\7\\powershell.config.json';
 
-type PolicySection = 'ScriptBlockLogging' | 'Transcription';
+type PolicySection = 'ScriptBlockLogging' | 'Transcription' | 'ModuleLogging';
 
 const SECTION_SETTINGS: Record<PolicySection, readonly string[]> = {
   ScriptBlockLogging: ['EnableScriptBlockLogging', 'EnableScriptBlockInvocationLogging'],
   Transcription: ['EnableTranscripting', 'EnableInvocationHeader', 'OutputDirectory'],
+  ModuleLogging: ['EnableModuleLogging', 'ModuleNames'],
 };
 
 const CORE_POLICY_ROOT = 'SOFTWARE\\Policies\\Microsoft\\PowerShellCore';
@@ -82,17 +84,26 @@ function hasAnySetting(values: Record<string, unknown>, section: PolicySection):
   return SECTION_SETTINGS[section].some((name) => present.has(name.toLowerCase()));
 }
 
-function registryPolicy(source: PowerShellPolicySource, section: PolicySection): Record<string, unknown> | null {
+interface RegistryPolicy {
+  readonly path: string;
+  readonly values: Record<string, unknown>;
+}
+
+function registryPolicyAt(source: PowerShellPolicySource, section: PolicySection): RegistryPolicy | null {
   for (const hive of ['HKLM', 'HKCU']) {
-    const core = source.registry.getItemPropertyValues(`${hive}\\${CORE_POLICY_ROOT}\\${section}`);
+    const corePath = `${hive}\\${CORE_POLICY_ROOT}\\${section}`;
+    const core = source.registry.getItemPropertyValues(corePath);
     if (core === null || core === undefined) continue;
-    const useWindowsPolicy = Number(readPolicyValue(source.registry, `${hive}\\${CORE_POLICY_ROOT}\\${section}`, FALLBACK_VALUE)) === 1;
-    const values = useWindowsPolicy
-      ? source.registry.getItemPropertyValues(`${hive}\\${WINDOWS_POWERSHELL_POLICY_ROOT}\\${section}`)
-      : core;
-    if (values !== null && values !== undefined && hasAnySetting(values, section)) return values;
+    const useWindowsPolicy = Number(readPolicyValue(source.registry, corePath, FALLBACK_VALUE)) === 1;
+    const path = useWindowsPolicy ? `${hive}\\${WINDOWS_POWERSHELL_POLICY_ROOT}\\${section}` : corePath;
+    const values = useWindowsPolicy ? source.registry.getItemPropertyValues(path) : core;
+    if (values !== null && values !== undefined && hasAnySetting(values, section)) return { path, values };
   }
   return null;
+}
+
+function registryPolicy(source: PowerShellPolicySource, section: PolicySection): Record<string, unknown> | null {
+  return registryPolicyAt(source, section)?.values ?? null;
 }
 
 function configFilePolicy(source: PowerShellPolicySource, section: PolicySection): Record<string, unknown> | null {
@@ -126,6 +137,29 @@ export function isScriptBlockLoggingEnabled(source: PowerShellPolicySource): boo
 
 export function isScriptBlockInvocationLoggingEnabled(source: PowerShellPolicySource): boolean {
   return enabledWhenOne(policyValue(source, 'ScriptBlockLogging', 'EnableScriptBlockInvocationLogging'));
+}
+
+export function loggedModuleNames(source: PowerShellPolicySource): readonly string[] {
+  if (!enabledWhenOne(policyValue(source, 'ModuleLogging', 'EnableModuleLogging'))) return [];
+  const registry = registryPolicyAt(source, 'ModuleLogging');
+  if (registry !== null) return Object.keys(source.registry.getItemPropertyValues(`${registry.path}\\ModuleNames`) ?? {});
+  const listed = policyValue(source, 'ModuleLogging', 'ModuleNames');
+  return Array.isArray(listed) ? listed.map(String) : [];
+}
+
+export function moduleIsLogged(names: readonly string[], moduleName: string): boolean {
+  return names.some((name) => {
+    if (name.toLowerCase() === moduleName.toLowerCase()) return true;
+    if (!/[*?[]/.test(name)) return false;
+    const pattern = name.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+    return new RegExp(`^${pattern}$`, 'i').test(moduleName);
+  });
+}
+
+export function pipelineExecutionDetailMessage(details: readonly string[], context: readonly (readonly [string, string])[]): string {
+  const payload = details.map((line) => `${line}\n`).join('');
+  const contextInfo = context.map(([label, value]) => `${label} = ${value}\n`).join('');
+  return `${payload}\nContext:\n${contextInfo}User Data:\n`;
 }
 
 export function isTranscriptionEnabled(source: PowerShellPolicySource): boolean {
