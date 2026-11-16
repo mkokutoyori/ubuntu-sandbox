@@ -11,7 +11,7 @@
  * Measured before the change: neither cmdlet existed ("not recognized"), so a transcript could only be started by policy and never ended (no epilogue), and the
  * EnableInvocationHeader policy value was stored and never read (rule 6).
  *
- * Discrimination (git stash push -- src/network src/powershell): 11 of 12 cases fall on a base without the cmdlets (the exit and stacking cases alone fall on the previous commit). The case that expects nothing after Stop-Transcript passes either way (vacuous
+ * Discrimination (git stash push -- src/network src/powershell): 12 of 13 cases fall on a base without the cmdlets (the exit, stacking and read-only cases alone fall on the previous commit). The case that expects nothing after Stop-Transcript passes either way (vacuous
  * on a base with no such cmdlet).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -111,5 +111,14 @@ describe('Start-Transcript and Stop-Transcript', () => {
     expect(await ps('Get-Content C:\\Temp\\a.txt -Raw')).toContain('PS> Write-Output onlya');
     expect(await ps('Get-Content C:\\Temp\\b.txt -Raw')).not.toContain('onlya');
     expect(await ps('Get-Content C:\\Temp\\b.txt -Raw')).toContain('both');
+  });
+
+  it('a read-only file is refused without -Force, and -Force clears the attribute', async () => {
+    await ps("New-Item -ItemType Directory -Path C:\\Temp -Force | Out-Null");
+    await ps(`Set-Content ${FILE} old`);
+    await ps(`attrib +r ${FILE}`);
+    expect(await ps(`Start-Transcript -Path ${FILE}`)).toContain(`File ${FILE} is read-only. Cannot write to this file. "Start-Transcript -Force" will clear the read-only attribute.`);
+    expect(await ps(`Start-Transcript -Path ${FILE} -Force`)).toBe(`Transcript started, output file is ${FILE}`);
+    expect(await ps(`attrib ${FILE}`)).not.toMatch(/\bR\b/);
   });
 });

@@ -1036,6 +1036,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         if (existing.ok && !options.append && options.noClobber) {
           return { error: `File ${path} already exists and NoClobber was specified.` };
         }
+        const entry = this.fs.resolve(path);
+        if (entry?.type === 'file' && entry.attributes.has('readonly') && !options.append) {
+          if (!options.force) {
+            return { error: `File ${path} is read-only. Cannot write to this file. "Start-Transcript -Force" will clear the read-only attribute.` };
+          }
+          entry.attributes.delete('readonly');
+        }
         const header = options.useMinimalHeader ? minimalTranscriptHeader(startedAt) : transcriptHeader(this.transcriptHeaderFields(startedAt));
         if (!(existing.ok && options.append)) {
           this.fs.mkdirp(path.slice(0, path.lastIndexOf('\\')));
