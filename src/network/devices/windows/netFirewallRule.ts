@@ -75,6 +75,22 @@ export function portSpecMatches(spec: string, port: number): boolean {
   });
 }
 
+export interface FirewallAddressSets {
+  dns(): readonly string[];
+  dhcp(): readonly string[];
+  wins(): readonly string[];
+  defaultGateway(): readonly string[];
+  localSubnets(): readonly string[];
+}
+
+const ADDRESS_KEYWORDS: Readonly<Record<string, keyof FirewallAddressSets>> = {
+  localsubnet: 'localSubnets', dns: 'dns', dhcp: 'dhcp', wins: 'wins', defaultgateway: 'defaultGateway',
+};
+
+const KEYWORD_NAMES: Readonly<Record<string, string>> = {
+  localsubnet: 'LocalSubnet', dns: 'DNS', dhcp: 'DHCP', wins: 'WINS', defaultgateway: 'DefaultGateway',
+};
+
 export function parseAddressSpec(raw: string | readonly string[]): string | null {
   const tokens = (Array.isArray(raw) ? raw : [String(raw)])
     .flatMap(part => String(part).split(','))
@@ -84,6 +100,8 @@ export function parseAddressSpec(raw: string | readonly string[]): string | null
   if (tokens.length === 1 && tokens[0].toLowerCase() === ANY.toLowerCase()) return ANY;
   const kept: string[] = [];
   for (const token of tokens) {
+    const keyword = KEYWORD_NAMES[token.toLowerCase()];
+    if (keyword !== undefined) { kept.push(keyword); continue; }
     const slash = token.indexOf('/');
     const network = slash === -1 ? token : token.slice(0, slash);
     const value = IPAddress.tryParse(network);
@@ -98,10 +116,24 @@ export function parseAddressSpec(raw: string | readonly string[]): string | null
   return kept.join(',');
 }
 
-export function addressSpecMatches(spec: string, address: IPAddress): boolean {
+function expandAddressSpec(spec: string, sets: FirewallAddressSets | undefined): string[] {
+  return spec.split(',').flatMap((part) => {
+    const set = ADDRESS_KEYWORDS[part.toLowerCase()];
+    if (set === undefined) return [part];
+    return sets === undefined ? [] : [...sets[set]()];
+  });
+}
+
+export function addressSetIsEmpty(spec: string, sets: FirewallAddressSets): boolean {
+  if (spec === '' || spec === ANY) return false;
+  const parts = spec.split(',');
+  return parts.some((part) => ADDRESS_KEYWORDS[part.toLowerCase()] !== undefined) && expandAddressSpec(spec, sets).length === 0;
+}
+
+export function addressSpecMatches(spec: string, address: IPAddress, sets?: FirewallAddressSets): boolean {
   if (spec === '' || spec === ANY) return true;
   const target = address.toUint32() >>> 0;
-  return spec.split(',').some(part => {
+  return expandAddressSpec(spec, sets).some(part => {
     const slash = part.indexOf('/');
     if (slash === -1) return part === address.toString();
     const network = IPAddress.tryParse(part.slice(0, slash));
@@ -264,14 +296,14 @@ export interface FirewallPacketFacts {
   profile: NetFirewallProfile;
 }
 
-export function firewallRuleMatches(rule: NetFirewallRuleEntry, packet: FirewallPacketFacts): boolean {
+export function firewallRuleMatches(rule: NetFirewallRuleEntry, packet: FirewallPacketFacts, sets?: FirewallAddressSets): boolean {
   if (!rule.enabled) return false;
   if (rule.direction !== packet.direction) return false;
   const wanted = protocolNumberOf(rule.protocol);
   if (wanted !== null && wanted !== packet.protocolNumber) return false;
   if (rule.profile !== ANY && rule.profile !== packet.profile) return false;
-  if (!addressSpecMatches(rule.localAddress, packet.localAddress)) return false;
-  if (!addressSpecMatches(rule.remoteAddress, packet.remoteAddress)) return false;
+  if (!addressSpecMatches(rule.localAddress, packet.localAddress, sets)) return false;
+  if (!addressSpecMatches(rule.remoteAddress, packet.remoteAddress, sets)) return false;
   if (!portSpecMatches(rule.localPort, packet.localPort)) return false;
   if (!portSpecMatches(rule.remotePort, packet.remotePort)) return false;
   return true;

@@ -222,6 +222,14 @@ function firewallRuleListed(d: EventFields): string {
   ].join('\n\n');
 }
 
+function firewallRuleNotApplied(d: EventFields): string {
+  return [
+    'Windows Firewall did not apply the following rule:',
+    `Rule Information:\n\tID:\t${field(d, 'RuleId')}\n\tName:\t${field(d, 'RuleName')}`,
+    `Error Information:\n\tReason:\t${field(d, 'RuleAttr')} resolved to an empty set.`,
+  ].join('\n\n');
+}
+
 function firewallSettingChanged(d: EventFields): string {
   return [
     'A Windows Firewall setting has changed.',
@@ -297,6 +305,7 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4767: accountChange('A user account was unlocked.'),
   4944: firewallPolicyActive,
   4945: firewallRuleListed,
+  4957: firewallRuleNotApplied,
   4946: firewallRule('A change has been made to Windows Firewall exception list. A rule was added.', 'Added Rule:'),
   4947: firewallRule('A change has been made to Windows Firewall exception list. A rule was modified.', 'Modified Rule:'),
   4948: firewallRule('A change has been made to Windows Firewall exception list. A rule was deleted.', 'Deleted Rule:'),

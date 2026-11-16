@@ -320,7 +320,7 @@ import type { NetIPAddressEntry } from './windows/netIpAddress';
 import type { NetRouteEntry } from './windows/netRoute';
 import {
   type FirewallPacketFacts, type NetFirewallRuleEntry,
-  firewallRuleMatches, seedBuiltInFirewallRules,
+  firewallRuleMatches, seedBuiltInFirewallRules, addressSetIsEmpty, type FirewallAddressSets,
 } from './windows/netFirewallRule';
 import {
   type FirewallProfileName, type NetFirewallProfileRow,
@@ -1302,6 +1302,30 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _processSocketReaperOff: (() => void) | null = null;
   private _portProxyChangesOff: (() => void) | null = null;
 
+  private firewallAddressSets(): FirewallAddressSets {
+    const ports = [...this.getPorts()];
+    const unique = (values: ReadonlyArray<string | null>): string[] => [...new Set(values.filter((value): value is string => value !== null && value !== ''))];
+    return {
+      dns: () => unique(ports.flatMap((port) => this.effectiveDnsServers(port.getName()))),
+      dhcp: () => unique(ports.map((port) => this.getDhcpServer(port.getName()))),
+      wins: () => [],
+      defaultGateway: () => unique([this.getDefaultGatewayString()]),
+      localSubnets: () => unique(ports.map((port) => {
+        const address = port.getIPAddress();
+        const mask = port.getSubnetMask();
+        return address === null || mask === null ? null : `${address.networkAddress(mask)}/${mask.toCIDR()}`;
+      })),
+    };
+  }
+
+  private emptyAddressSetRules(): ReadonlyArray<{ ruleId: string; ruleName: string; attribute: string }> {
+    const sets = this.firewallAddressSets();
+    return [...this.firewallRules.values()].filter((rule) => rule.enabled).flatMap((rule) => [
+      ...(addressSetIsEmpty(rule.localAddress, sets) ? [{ ruleId: rule.name, ruleName: rule.displayName, attribute: 'Local Address' }] : []),
+      ...(addressSetIsEmpty(rule.remoteAddress, sets) ? [{ ruleId: rule.name, ruleName: rule.displayName, attribute: 'Remote Address' }] : []),
+    ]);
+  }
+
   private firewallStartState(): FirewallStartState {
     const flag = (value: string): 'Enabled' | 'Disabled' => (value === 'True' ? 'Enabled' : 'Disabled');
     return {
@@ -1315,6 +1339,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       rules: [...this.firewallRules.values()]
         .filter((rule) => rule.enabled && (rule.profile === 'Any' || rule.profile === 'Public'))
         .map((rule) => ({ ruleId: rule.name, ruleName: rule.displayName })),
+      unappliedRules: this.emptyAddressSetRules(),
     };
   }
 
@@ -7434,7 +7459,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!firewallIsOn(profile)) return 'accept';
     const facts = this.firewallFactsFor(portName, ipPkt, direction);
     if (rulesApplyTo(profile, facts.direction)) {
-      const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts));
+      const sets = this.firewallAddressSets();
+      const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts, sets));
       for (const rule of matching) {
         if (rule.action !== 'Block') continue;
         this.publishFirewallDrop(ipPkt, facts, rule.name, rule.protocol);

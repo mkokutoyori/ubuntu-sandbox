@@ -84,6 +84,7 @@ export const SECURITY_EVENT = {
   AUDIT_POLICY_CHANGED: 4719,
   FIREWALL_POLICY_ACTIVE: 4944,
   FIREWALL_RULE_LISTED: 4945,
+  FIREWALL_RULE_NOT_APPLIED: 4957,
   FIREWALL_RULE_ADDED: 4946,
   FIREWALL_RULE_MODIFIED: 4947,
   FIREWALL_RULE_DELETED: 4948,
@@ -684,7 +685,11 @@ export class WindowsSecurityAudit {
     this.record(eventId, 'SuccessAudit', { ProfileChanged: profile, RuleId: ruleId, RuleName: ruleName });
   }
 
-  firewallStarted(profiles: ReadonlyArray<FirewallStartProfile>, rules: ReadonlyArray<{ ruleId: string; ruleName: string }>): void {
+  firewallStarted(
+    profiles: ReadonlyArray<FirewallStartProfile>,
+    rules: ReadonlyArray<{ ruleId: string; ruleName: string }>,
+    unapplied: ReadonlyArray<{ ruleId: string; ruleName: string; attribute: string }>,
+  ): void {
     for (const p of profiles) {
       this.record(SECURITY_EVENT.FIREWALL_POLICY_ACTIVE, 'SuccessAudit', {
         GroupPolicyApplied: 'No', Profile: p.profile, OperationMode: p.operationMode,
@@ -694,6 +699,9 @@ export class WindowsSecurityAudit {
     }
     for (const r of rules) {
       this.record(SECURITY_EVENT.FIREWALL_RULE_LISTED, 'SuccessAudit', { ProfileUsed: 'Public', RuleId: r.ruleId, RuleName: r.ruleName });
+    }
+    for (const r of unapplied) {
+      this.record(SECURITY_EVENT.FIREWALL_RULE_NOT_APPLIED, 'FailureAudit', { RuleId: r.ruleId, RuleName: r.ruleName, RuleAttr: r.attribute });
     }
   }
 

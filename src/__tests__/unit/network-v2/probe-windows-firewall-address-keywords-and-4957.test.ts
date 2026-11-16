@@ -1,0 +1,80 @@
+/**
+ * Probe: firewall address keywords are evaluated, and a rule whose set is empty is reported by 4957.
+ *
+ * References (rule 8): New-NetFirewallRule documentation (PowerShell 7.6 / Microsoft Learn): -LocalAddress and -RemoteAddress accept, besides addresses, the keywords
+ * LocalSubnet, DNS, DHCP, WINS and DefaultGateway (and Internet, Intranet, IntranetRemoteAccess, Ply2Renderers, not modelled: they stay refused, as an invalid value).
+ * Microsoft "event-4957" page and the Microsoft-Windows-Security-Auditing manifest dump: "Windows Firewall did not apply the following rule: ... Reason: {RuleAttr} resolved to
+ * an empty set.", Audit Failure keyword, subcategory "MPSSVC Rule-Level Policy Change". The attribute label ("Remote Address") follows the page's "Local Port" example.
+ *
+ * Measured before the change: a keyword was refused as an invalid address (so DefaultGateway/DNS rules, which real policies use, could not be written), and 4957 never existed.
+ *
+ * Discrimination (git stash push -- src/network src/powershell): 5 of 8 cases fall on the base. Three pass either way and are named: the WITNESS that a plain address still matches, the
+ * case that expects nothing while failure auditing is off (vacuous on a base that never wrote 4957), and the fail-closed case (the base cannot match a keyword either).
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { IPAddress } from '@/network/core/types';
+import { parseAddressSpec, addressSpecMatches, addressSetIsEmpty, type FirewallAddressSets } from '@/network/devices/windows/netFirewallRule';
+
+beforeEach(() => { EquipmentRegistry.resetInstance(); });
+
+const sets: FirewallAddressSets = {
+  dns: () => ['10.0.0.53'], dhcp: () => [], wins: () => [], defaultGateway: () => ['10.0.0.254'], localSubnets: () => ['10.0.0.0/24'],
+};
+
+async function lab(failureAudit: boolean): Promise<WindowsPC> {
+  const pc = new WindowsPC('windows-pc', 'win1', 0, 0);
+  pc.powerOn();
+  pc.setCurrentUser('Administrator');
+  if (failureAudit) await pc.executeCommand('auditpol /set /subcategory:"MPSSVC Rule-Level Policy Change" /failure:enable');
+  await pc.executeCommand('powershell -Command "New-NetFirewallRule -DisplayName NoWins -Direction Outbound -Action Block -RemoteAddress WINS | Out-Null; Restart-Service mpssvc"');
+  return pc;
+}
+
+const events = (pc: WindowsPC, extra = ''): Promise<string> =>
+  pc.executeCommand(`powershell -Command "Get-WinEvent -FilterHashtable @{LogName='Security';Id=4957} -ErrorAction SilentlyContinue ${extra}"`);
+
+describe('address keywords', () => {
+  it('are accepted', () => {
+    expect(parseAddressSpec('DefaultGateway')).toBe('DefaultGateway');
+    expect(parseAddressSpec(['dns', '10.0.0.9'])).toBe('DNS,10.0.0.9');
+  });
+
+  it('DefaultGateway matches the gateway only', () => {
+    expect(addressSpecMatches('DefaultGateway', new IPAddress('10.0.0.254'), sets)).toBe(true);
+    expect(addressSpecMatches('DefaultGateway', new IPAddress('10.0.0.9'), sets)).toBe(false);
+  });
+
+  it('LocalSubnet matches inside the subnet and not outside', () => {
+    expect(addressSpecMatches('LocalSubnet', new IPAddress('10.0.0.77'), sets)).toBe(true);
+    expect(addressSpecMatches('LocalSubnet', new IPAddress('10.0.1.77'), sets)).toBe(false);
+  });
+
+  it('fails closed when the sets are not known', () => {
+    expect(addressSpecMatches('DNS', new IPAddress('10.0.0.53'))).toBe(false);
+  });
+
+  it('WITNESS: a plain address still matches', () => {
+    expect(addressSpecMatches('10.0.0.9,10.0.1.0/24', new IPAddress('10.0.1.5'), sets)).toBe(true);
+  });
+});
+
+describe('4957', () => {
+  it('an empty set is detected, a plain address and a non-empty set are not', () => {
+    expect(addressSetIsEmpty('WINS', sets)).toBe(true);
+    expect(addressSetIsEmpty('DHCP,10.0.0.1', sets)).toBe(false);
+    expect(addressSetIsEmpty('DNS', sets)).toBe(false);
+  });
+
+  it('the service start writes 4957 for a rule whose set is empty, as an audit failure', async () => {
+    const out = await events(await lab(true), '| ForEach-Object { "$($_.Id) $($_.Message)" }');
+    expect(out).toContain('Windows Firewall did not apply the following rule:');
+    expect(out).toContain('Remote Address resolved to an empty set.');
+    expect(out).toMatch(/Name:\tNoWins/);
+  });
+
+  it('writes nothing while failure auditing is off', async () => {
+    expect((await events(await lab(false))).trim()).toBe('');
+  });
+});

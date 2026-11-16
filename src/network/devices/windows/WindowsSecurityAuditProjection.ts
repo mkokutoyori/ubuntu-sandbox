@@ -37,6 +37,7 @@ import type {
 export interface FirewallStartState {
   profiles: ReadonlyArray<FirewallStartProfile>;
   rules: ReadonlyArray<{ ruleId: string; ruleName: string }>;
+  unappliedRules: ReadonlyArray<{ ruleId: string; ruleName: string; attribute: string }>;
 }
 
 export class WindowsSecurityAuditProjection {
@@ -89,9 +90,11 @@ export class WindowsSecurityAuditProjection {
 
   private onServiceStarted(p: WindowsServiceEventPayload): void {
     if (p.deviceId !== this.deviceId || p.serviceName.toLowerCase() !== 'mpssvc' || !this.firewallStartState) return;
-    if (!this.gated('MPSSVC Rule-Level Policy Change', 'success')) return;
+    const succeeded = this.gated('MPSSVC Rule-Level Policy Change', 'success');
+    const failed = this.gated('MPSSVC Rule-Level Policy Change', 'failure');
+    if (!succeeded && !failed) return;
     const state = this.firewallStartState();
-    this.audit.firewallStarted(state.profiles, state.rules);
+    this.audit.firewallStarted(succeeded ? state.profiles : [], succeeded ? state.rules : [], failed ? state.unappliedRules : []);
   }
 
   private onFirewallRuleChanged(p: WindowsFirewallRuleChangedPayload): void {
