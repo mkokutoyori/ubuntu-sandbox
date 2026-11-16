@@ -486,6 +486,17 @@ function replaySafe(cmdlet: { readonly name: string; readonly nativeProgram?: tr
   return REPLAY_SAFE_NAMES.has(name) || REPLAY_SAFE_VERBS.has(name.split('-')[0]);
 }
 
+function pipedItemOf(value: PSValue): { text: string; properties: Record<string, string> } {
+  const properties: Record<string, string> = {};
+  if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+    for (const [key, member] of Object.entries(value as Record<string, PSValue>)) {
+      if (typeof member === 'function' || (member !== null && typeof member === 'object')) continue;
+      properties[key] = psValueToString(member);
+    }
+  }
+  return { text: positionalText(value), properties };
+}
+
 function positionalText(value: PSValue): string {
   return (Array.isArray(value) ? value : [value]).map(psValueToString).join(', ');
 }
@@ -4067,7 +4078,7 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
-    this.providers.pipelineAudit?.commandInvoked(cmdletDisplayName, boundParameterTexts(cmdlet, cmdletNamed), positional.map(positionalText), pipeInput === null || pipeInput === undefined ? [] : (Array.isArray(pipeInput) ? pipeInput : [pipeInput]).map(positionalText));
+    this.providers.pipelineAudit?.commandInvoked(cmdletDisplayName, boundParameterTexts(cmdlet, cmdletNamed), positional.map(positionalText), pipeInput === null || pipeInput === undefined ? [] : (Array.isArray(pipeInput) ? pipeInput : [pipeInput]).map(pipedItemOf));
     const perItem = this.pipelineItemsFor(cmdlet, cmdletNamed, pipeInput);
     const errorsBefore = this.errorsWritten;
     let result: PSValue;

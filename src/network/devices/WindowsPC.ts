@@ -148,7 +148,7 @@ import {
   loggedModuleNames, moduleIsLogged, pipelineExecutionDetailMessage,
 } from './windows/WinPowerShellLogging';
 import { psVersionTable, POWERSHELL_PROCESS_ID } from '@/powershell/runtime/PSEnvironment';
-import { moduleOfCommand, positionalParameterNames, pipelineParameterName } from './windows/PowerShellModuleExports';
+import { moduleOfCommand, positionalParameterNames, pipelineParameterName, pipelinePropertyParameterNames } from './windows/PowerShellModuleExports';
 import type { PipelineAuditPort } from './windows/PipelineAuditPort';
 import type { TranscriptPort } from './windows/TranscriptPort';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
@@ -896,8 +896,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           this.pipelineDetails.push(`ParameterBinding(${command}): name="${name}"; value="${value}"`);
         }
         const pipeName = pipelineParameterName(command);
-        if (pipeName !== null && !bound.has(pipeName.toLowerCase()) && !bindings.some(([name]) => name.toLowerCase() === pipeName.toLowerCase())) {
-          for (const value of piped) this.pipelineDetails.push(`ParameterBinding(${command}): name="${pipeName}"; value="${value}"`);
+        const given = new Set([...bound, ...bindings.map(([name]) => name.toLowerCase())]);
+        const byProperty = pipelinePropertyParameterNames(command).filter((name) => !given.has(name.toLowerCase()));
+        for (const item of piped) {
+          const matched = byProperty.filter((name) => Object.keys(item.properties).some((key) => key.toLowerCase() === name.toLowerCase()));
+          if (matched.length > 0) {
+            for (const name of matched) {
+              const key = Object.keys(item.properties).find((candidate) => candidate.toLowerCase() === name.toLowerCase()) ?? name;
+              this.pipelineDetails.push(`ParameterBinding(${command}): name="${name}"; value="${item.properties[key]}"`);
+            }
+          } else if (pipeName !== null && !given.has(pipeName.toLowerCase())) {
+            this.pipelineDetails.push(`ParameterBinding(${command}): name="${pipeName}"; value="${item.text}"`);
+          }
         }
       },
     };
