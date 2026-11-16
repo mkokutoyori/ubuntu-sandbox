@@ -725,6 +725,10 @@ export class PSRegistryProvider {
     seedValue(key, 'ImagePath', fields.imagePath, 'ExpandString');
   }
 
+  upsertEventSourceKey(logName: string, source: string): void {
+    this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
+  }
+
   /**
    * The other half of `upsertServiceKey`: `sc delete` removes the key as
    * well as the service. Leaving it behind would have the SCM re-read a

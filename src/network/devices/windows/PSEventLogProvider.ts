@@ -647,6 +647,7 @@ export class PSEventLogProvider {
   }
 
   private clearedHook: ((logName: string, backupPath: string | null) => void) | null = null;
+  private sourceRegisteredHook: ((logName: string, source: string) => void) | null = null;
 
   /**
    * Le service EventLog consigne lui-même l'effacement d'un journal
@@ -656,6 +657,10 @@ export class PSEventLogProvider {
    */
   attachClearedHook(hook: (logName: string, backupPath: string | null) => void): void {
     this.clearedHook = hook;
+  }
+
+  attachSourceRegisteredHook(hook: (logName: string, source: string) => void): void {
+    this.sourceRegisteredHook = hook;
   }
 
   clearEventLog(logName: string, backupPath: string | null = null): string {
@@ -683,6 +688,7 @@ export class PSEventLogProvider {
     }
     const meta = this.logs.get(key)!;
     if (!(meta.sources ?? []).some((known) => known.toLowerCase() === source.toLowerCase())) meta.sources = [...(meta.sources ?? []), source];
+    this.sourceRegisteredHook?.(meta.logName, source);
     return '';
   }
 

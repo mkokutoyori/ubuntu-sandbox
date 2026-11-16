@@ -680,6 +680,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
     this.eventLog.describeBootEvents(this.hostname.toUpperCase());
+    this.eventLog.attachSourceRegisteredHook((logName, source) => this.registry.upsertEventSourceKey(logName, source));
     this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
     this.auditPolicy.attachChangeListener((subcategory, changes) => {
       if (!this.auditPolicy.isEnabled('Audit Policy Change', 'success')) return;
