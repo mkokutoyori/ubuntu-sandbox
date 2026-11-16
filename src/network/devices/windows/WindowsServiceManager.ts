@@ -573,14 +573,17 @@ export class WindowsServiceManager {
     const count = withinWindow ? prior!.count + 1 : 1;
     this.failureState.set(key, { count, lastFailureAtMs: nowMs });
 
+    const planned = cfg && cfg.actions.length > 0 ? cfg.actions[Math.min(count - 1, cfg.actions.length - 1)] : undefined;
+    const action = planned === undefined || planned.type === 'none' ? undefined : planned;
     this.bus?.publish({
       topic: 'windows.service.crashed',
-      payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, failureCount: count },
+      payload: {
+        deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, failureCount: count,
+        ...(action === undefined ? {} : { recovery: { action: action.type as 'restart' | 'run' | 'reboot', delayMs: action.delayMs } }),
+      },
     });
 
-    if (!cfg || cfg.actions.length === 0) return;
-    const action = cfg.actions[Math.min(count - 1, cfg.actions.length - 1)];
-    if (!action || action.type === 'none') return;
+    if (action === undefined || cfg === undefined) return;
     this.pendingRecoveries.push({
       serviceName: svc.name, dueAtMs: nowMs + action.delayMs, rank: count, action, command: cfg.command,
     });
@@ -599,11 +602,6 @@ export class WindowsServiceManager {
         this.bus?.publish({
           topic: 'windows.service.recovery-run',
           payload: { deviceId: this.deviceId, serviceName: svc.name, command: r.command ?? '', rank: r.rank },
-        });
-      } else if (r.action.type === 'reboot') {
-        this.bus?.publish({
-          topic: 'windows.service.recovery-critical',
-          payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, rank: r.rank },
         });
       }
     }

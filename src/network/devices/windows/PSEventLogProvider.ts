@@ -109,11 +109,10 @@ function entry(
 function buildSystemLog(next: () => number): EventLogEntry[] {
   return [
     entry(next, 'Information', 'Microsoft-Windows-Kernel-General', 12, 'The operating system started at system time 2024-01-15T08:00:00.', 7),
-    entry(next, 'Information', 'Microsoft-Windows-Kernel-Boot', 20, 'The last shutdown\'s success status was true.', 7),
+    entry(next, 'Information', 'Microsoft-Windows-Kernel-Boot', 20, 'The last shutdown\'s success status was true. The last boot\'s success status was true.', 7),
     entry(next, 'Information', 'Service Control Manager', 7036, 'The Windows Update service entered the running state.', 4),
     entry(next, 'Information', 'Service Control Manager', 7036, 'The DHCP Client service entered the running state.', 3),
-    entry(next, 'Information', 'Microsoft-Windows-Winlogon', 7001, 'User Logon Notification for Customer Experience Improvement Program.', 1),
-    entry(next, 'Information', 'Microsoft-Windows-Kernel-General', 1, 'The system uptime is 86400 seconds.', 0, 12),
+    entry(next, 'Information', 'Microsoft-Windows-Winlogon', 7001, 'User Logon Notification for Customer Experience Improvement Program', 1),
     entry(next, 'Information', 'EventLog', 6005, 'The Event log service was started.', 0, 2),
   ];
 }

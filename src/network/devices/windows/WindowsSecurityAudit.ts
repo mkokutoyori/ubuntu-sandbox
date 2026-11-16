@@ -12,6 +12,7 @@
  * callers say *what happened* (`accountCreated`), not *which Event ID*.
  */
 
+import { nanosecondStamp } from './eventlog/NanosecondStamp';
 import type { WindowsLogonDetails, WindowsLogonFailureCause } from './events';
 import { START_TYPE_CODES, type ServiceStartType } from './WindowsServiceManager';
 import { createAuditIdentity, nextLogonId, type AuditIdentity } from './eventlog/AuditIdentity';
@@ -659,7 +660,7 @@ export class WindowsSecurityAudit {
   }
 
   systemTimeChanged(actor: string, previousMs: number, newMs: number, processId: number, processName: string): void {
-    const stamp = (ms: number): string => `${new Date(ms).toISOString().slice(0, 19)}.${String(ms % 1000).padStart(3, '0')}000000Z`;
+    const stamp = nanosecondStamp;
     this.record(SECURITY_EVENT.SYSTEM_TIME_CHANGED, 'SuccessAudit', {
       ...this.subjectFields(actor),
       PreviousTime: stamp(previousMs), NewTime: stamp(newMs),

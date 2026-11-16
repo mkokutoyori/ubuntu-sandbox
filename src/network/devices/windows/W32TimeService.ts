@@ -165,7 +165,7 @@ export class W32TimeService {
           mode: 'client', origin: 'domain', address: source.address,
         });
       } else if (this.host.isDomainMember()) {
-        this.host.writeEvent(134, 'Warning',
+        this.host.writeEvent(129, 'Warning',
           'NtpClient was unable to set a domain peer to use as a time source because of discovery error. '
           + 'NtpClient will try again in 15 minutes and double the reattempt interval thereafter. '
           + 'The error was: The entry is not found. (0x800706E1)');
@@ -176,7 +176,7 @@ export class W32TimeService {
         if ('invalid' in entry) continue;
         const address = isValidIPv4(entry.host) ? entry.host : this.host.resolve(entry.host);
         if (address === null) {
-          this.host.writeEvent(129, 'Warning',
+          this.host.writeEvent(134, 'Warning',
             `NtpClient was unable to set a manual peer to use as a time source because of DNS resolution error on '${entry.host}'. `
             + 'NtpClient will try again in 15 minutes and double the reattempt interval thereafter. '
             + 'The error was: No such host is known. (0x80072AF9)');

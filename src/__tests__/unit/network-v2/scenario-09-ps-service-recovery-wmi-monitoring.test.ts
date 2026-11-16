@@ -84,10 +84,8 @@ describe('Scénario 2 — Récupération automatique après échec et audit Powe
       await pc.executeCommand(`taskkill /F /PID ${pidBefore}`);
 
       const crashedOut = await ps.execute(
-        'Get-WinEvent -LogName System | Where-Object { $_.Id -eq 7034 } | Select-Object -First 1',
+        'Get-WinEvent -LogName System | Where-Object { $_.Id -eq 7031 } | Select-Object -First 1',
       );
-      // Real SCM 7034 messages name the service by its DisplayName, not the
-      // short `sc` key.
       expect(crashedOut).toContain('Mon Super Service');
 
       pc.advanceTime(9_000);
