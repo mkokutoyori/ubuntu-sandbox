@@ -13,7 +13,10 @@
  * file (it holds the identity template for the identifiers 1 to 1001), which is what ReactOS's eventcreate.c documents and reproduces; this is a reimplementation's account, not a
  * Microsoft page, said here and in TODO.md. TypesSupported is "unused" per the Event Sources page and is not written.
  *
- * Discrimination (git stash push -- src/network src/powershell): 3 of 7 cases fall on the previous commit (CustomSource, EventMessageFile, the refusal); the key and its listing
+ * The machine's own providers (MsiInstaller, Service Control Manager...) have a key without CustomSource, written when they first write an event, so eventcreate refuses them as installed
+ * applications.
+ *
+ * Discrimination (git stash push -- src/network src/powershell): the two provider cases fall on the previous commit (2 of 9), and CustomSource, EventMessageFile and the refusal on the one before; the key and its listing
  * fell on a base with no key at all. The WITNESS (the event log store knows the source) and the case that a source eventcreate created keeps working pass either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -69,5 +72,20 @@ describe('New-EventLog registers the source in the registry', () => {
     const pc = await lab();
     const out = await pc.executeCommand('eventcreate /l Application /so Billing /id 7 /t INFORMATION /d "second"');
     expect(out).toContain('SUCCESS');
+  });
+
+  it('a provider of the machine has a key without CustomSource, and eventcreate refuses it as installed', async () => {
+    const pc = await lab();
+    const key = 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\Application\\MsiInstaller';
+    expect((await pc.executeCommand(`powershell -Command "Test-Path ${key}"`))).toContain('True');
+    expect((await pc.executeCommand(`powershell -Command "(Get-ItemProperty ${key}).CustomSource"`)).trim()).toBe('');
+    expect(await pc.executeCommand('eventcreate /l Application /so MsiInstaller /id 8 /t INFORMATION /d "no"')).toContain('not installed applications');
+  });
+
+  it('a provider that writes later (a service control) gets its key too', async () => {
+    const pc = await lab();
+    await pc.executeCommand('powershell -Command "Restart-Service Spooler"');
+    const out = await pc.executeCommand(`powershell -Command "Test-Path -LiteralPath 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\System\\Service Control Manager'"`);
+    expect(out).toContain('True');
   });
 });

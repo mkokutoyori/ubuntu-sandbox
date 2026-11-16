@@ -513,6 +513,7 @@ export class PSEventLogProvider {
       ...(userSid === undefined ? {} : { userSid }),
     };
     meta.entries.push(entry);
+    this.announceSource(meta.logName, source);
     this.materialize();
     if (this.forwarder && key !== 'forwardedevents') this.forwarder(meta.logName, entry);
     if (this.bus && this.deviceId) {
@@ -591,6 +592,7 @@ export class PSEventLogProvider {
 
   private clearedHook: ((logName: string, backupPath: string | null) => void) | null = null;
   private sourceRegisteredHook: ((logName: string, source: string) => void) | null = null;
+  private readonly announcedSources = new Set<string>();
 
   /**
    * Le service EventLog consigne lui-même l'effacement d'un journal
@@ -604,6 +606,21 @@ export class PSEventLogProvider {
 
   attachSourceRegisteredHook(hook: (logName: string, source: string) => void): void {
     this.sourceRegisteredHook = hook;
+  }
+
+  private announceSource(logName: string, source: string): void {
+    if (this.sourceRegisteredHook === null) return;
+    const key = `${logName}\\${source}`.toLowerCase();
+    if (this.announcedSources.has(key)) return;
+    this.announcedSources.add(key);
+    this.sourceRegisteredHook?.(logName, source);
+  }
+
+  announceExistingSources(): void {
+    for (const meta of this.logs.values()) {
+      for (const entry of meta.entries) this.announceSource(meta.logName, entry.source);
+      for (const source of meta.sources ?? []) this.announceSource(meta.logName, source);
+    }
   }
 
   clearEventLog(logName: string, backupPath: string | null = null): string {
@@ -631,7 +648,7 @@ export class PSEventLogProvider {
     }
     const meta = this.logs.get(key)!;
     if (!(meta.sources ?? []).some((known) => known.toLowerCase() === source.toLowerCase())) meta.sources = [...(meta.sources ?? []), source];
-    this.sourceRegisteredHook?.(meta.logName, source);
+    this.announceSource(meta.logName, source);
     return '';
   }
 

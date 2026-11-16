@@ -688,6 +688,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.attachSourceRegisteredHook((logName, source) => {
       if (!logName.includes('/')) this.registry.upsertEventSourceKey(logName, source);
     });
+    this.eventLog.announceExistingSources();
     this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
     this.auditPolicy.attachChangeListener((subcategory, changes) => {
       if (!this.auditPolicy.isEnabled('Audit Policy Change', 'success')) return;
