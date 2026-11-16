@@ -177,17 +177,14 @@ export class PSEnvironment {
 
 // ─── Built-in Variable Initialiser ───────────────────────────────────────────
 
-/** Seeds the global scope with PowerShell built-in automatic variables. */
-export function seedBuiltins(env: PSEnvironment): void {
-  env.set('true',  true);
-  env.set('false', false);
-  env.set('null',  null);
+export const POWERSHELL_PROCESS_ID = 1234;
 
+export function psVersionTable(): Record<string, PSValue> {
   const version = {
     Major: 7, Minor: 6, Patch: 0, PreReleaseLabel: null, BuildLabel: null,
     toString() { return '7.6.0'; },
   } as unknown as PSValue;
-  env.set('PSVersionTable', {
+  return {
     PSVersion: version,
     PSEdition: 'Core',
     GitCommitId: '7.6.0',
@@ -197,7 +194,16 @@ export function seedBuiltins(env: PSEnvironment): void {
     WSManStackVersion: '3.0',
     Platform: 'Win32NT',
     OS: 'Microsoft Windows 10.0.19045',
-  } as Record<string, PSValue>);
+  } as Record<string, PSValue>;
+}
+
+/** Seeds the global scope with PowerShell built-in automatic variables. */
+export function seedBuiltins(env: PSEnvironment): void {
+  env.set('true',  true);
+  env.set('false', false);
+  env.set('null',  null);
+
+  env.set('PSVersionTable', psVersionTable());
   env.set('IsWindows', true);
   env.set('IsLinux', false);
   env.set('IsMacOS', false);
@@ -234,7 +240,7 @@ export function seedBuiltins(env: PSEnvironment): void {
   env.set('PROFILE', 'C:\\Users\\User\\Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1');
 
   // Process / context automatic variables
-  env.set('PID', 1234 as PSValue);
+  env.set('PID', POWERSHELL_PROCESS_ID as PSValue);
   env.set('ExecutionContext', { SessionState: { Path: { CurrentLocation: { Path: 'C:\\' } } } } as unknown as PSValue);
   env.set('MyInvocation', { MyCommand: { Name: '<ScriptBlock>' } } as unknown as PSValue);
   env.set('PWD', { Path: 'C:\\', ProviderPath: 'C:\\', Provider: 'FileSystem' } as unknown as PSValue);

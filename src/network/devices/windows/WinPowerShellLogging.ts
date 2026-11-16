@@ -17,6 +17,8 @@
  * tapé. D'où l'intérêt de le lire dans une investigation.
  */
 
+import { psVersionTable } from '@/powershell/runtime/PSEnvironment';
+
 export const SCRIPT_BLOCK_LOGGING_KEY =
   'HKLM\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\ScriptBlockLogging';
 export const TRANSCRIPTION_KEY =
@@ -180,9 +182,7 @@ export function transcriptDirectory(source: PowerShellPolicySource): string {
  * retrouve son fichier.
  */
 export function transcriptFileName(hostname: string, startedAt: Date): string {
-  const p = (n: number, w = 2): string => String(n).padStart(w, '0');
-  const stamp = `${startedAt.getFullYear()}${p(startedAt.getMonth() + 1)}${p(startedAt.getDate())}`
-    + `${p(startedAt.getHours())}${p(startedAt.getMinutes())}${p(startedAt.getSeconds())}`;
+  const stamp = stampOf(startedAt);
   const token = stamp.slice(-8);
   return `PowerShell_transcript.${hostname.toUpperCase()}.${token}.${stamp}.txt`;
 }
@@ -204,14 +204,44 @@ export function scriptBlockId(text: string): string {
   return `${a}-${b.slice(0, 4)}-${b.slice(4)}-${a.slice(0, 4)}-${a.slice(4)}${b}`;
 }
 
-/** L'en-tête que PowerShell écrit en tête de chaque transcription. */
-export function transcriptHeader(hostname: string, user: string, startedAt: Date): string {
+export interface TranscriptHeaderFields {
+  readonly startedAt: Date;
+  readonly username: string;
+  readonly runAsUser: string;
+  readonly configurationName: string;
+  readonly machine: string;
+  readonly osVersion: string;
+  readonly hostApplication: string;
+  readonly processId: number;
+}
+
+const VERSION_TABLE_ORDER = [
+  'PSVersion', 'PSEdition', 'GitCommitId', 'OS', 'Platform', 'PSCompatibleVersions',
+  'PSRemotingProtocolVersion', 'SerializationVersion', 'WSManStackVersion',
+] as const;
+
+function stampOf(date: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
+}
+
+export function transcriptHeader(fields: TranscriptHeaderFields): string {
+  const table = psVersionTable();
+  const versionLines = VERSION_TABLE_ORDER.map((key) => {
+    const value = table[key];
+    return `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`;
+  });
   return [
     '**********************',
     'PowerShell transcript start',
-    `Start time: ${startedAt.toISOString()}`,
-    `Username: ${user}`,
-    `Machine: ${hostname.toUpperCase()}`,
+    `Start time: ${stampOf(fields.startedAt)}`,
+    `Username: ${fields.username}`,
+    `RunAs User: ${fields.runAsUser}`,
+    `Configuration Name: ${fields.configurationName}`,
+    `Machine: ${fields.machine} (${fields.osVersion})`,
+    `Host Application: ${fields.hostApplication}`,
+    `Process ID: ${fields.processId}`,
+    ...versionLines,
     '**********************',
     '',
   ].join('\n');

@@ -143,10 +143,11 @@ import {
 import {
   isScriptBlockLoggingEnabled, isScriptBlockInvocationLoggingEnabled, SCRIPT_BLOCK_INVOCATION_STARTED, SCRIPT_BLOCK_INVOCATION_COMPLETED,
   isTranscriptionEnabled, transcriptDirectory,
-  transcriptFileName, transcriptHeader, scriptBlockId, type PowerShellPolicySource,
+  transcriptFileName, transcriptHeader, scriptBlockId, type PowerShellPolicySource, type TranscriptHeaderFields,
   POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED, PIPELINE_EXECUTION_DETAIL,
   loggedModuleNames, moduleIsLogged, pipelineExecutionDetailMessage,
 } from './windows/WinPowerShellLogging';
+import { psVersionTable, POWERSHELL_PROCESS_ID } from '@/powershell/runtime/PSEnvironment';
 import { moduleOfCommand } from './windows/PowerShellModuleExports';
 import type { PipelineAuditPort } from './windows/PipelineAuditPort';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
@@ -967,6 +968,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Ajoute une commande et sa sortie à la transcription en cours, en
    * créant le fichier — en-tête compris — à la première écriture.
    */
+  private transcriptHeaderFields(startedAt: Date): TranscriptHeaderFields {
+    const user = this.userMgr.currentUser || 'Administrator';
+    const account = `${this.getEnvVars().get('USERDOMAIN') ?? this.getHostname().toUpperCase()}\\${user}`;
+    const os = String(psVersionTable().OS).replace('Windows ', 'Windows NT ');
+    return {
+      startedAt, username: account, runAsUser: account, configurationName: '',
+      machine: this.getHostname().toUpperCase(), osVersion: `${os}.0`,
+      hostApplication: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', processId: POWERSHELL_PROCESS_ID,
+    };
+  }
+
   private appendTranscript(command: string, output: string): void {
     const dir = transcriptDirectory(this.powerShellPolicySource());
     if (!this.transcriptStartedAt) this.transcriptStartedAt = this.simulatedDate();
@@ -974,9 +986,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const existing = this.fs.readFile(path);
     const head = existing.ok && existing.content !== undefined
       ? existing.content
-      : transcriptHeader(
-        this.getHostname(), this.userMgr.currentUser || 'Administrator',
-        this.transcriptStartedAt);
+      : transcriptHeader(this.transcriptHeaderFields(this.transcriptStartedAt));
     this.fs.mkdirp(dir);
     this.fs.createFile(path, `${head}PS> ${command}\n${output ? `${output}\n` : ''}`);
   }
