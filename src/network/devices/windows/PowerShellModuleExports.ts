@@ -203,6 +203,7 @@ export const MODULE_EXPORTS: Readonly<Record<string, readonly string[]>> = {
     'remove-job', 'remove-module', 'remove-pssession', 'save-help', 'set-psdebug', 'set-pssessionconfiguration',
     'set-strictmode', 'start-job', 'stop-job', 'switch-process', 'test-modulemanifest',
     'test-pssessionconfigurationfile', 'unregister-pssessionconfiguration', 'update-help', 'wait-job', 'where-object',
+    'foreach-object',
   ],
   'Microsoft.PowerShell.Host': [
     'start-transcript', 'stop-transcript',
@@ -621,6 +622,33 @@ export const MODULE_EXPORTS: Readonly<Record<string, readonly string[]>> = {
   ],
   'ConfigDefender': [
    
+  ],
+  'CimCmdlets': [
+    'get-cimassociatedinstance', 'get-cimclass', 'get-ciminstance', 'get-cimsession', 'invoke-cimmethod',
+    'new-ciminstance', 'new-cimsession', 'new-cimsessionoption', 'register-cimindicationevent', 'remove-ciminstance',
+    'remove-cimsession', 'set-ciminstance',
+  ],
+  'International': [
+    'copy-userinternationalsettingstosystem', 'get-winacceptlanguagefromlanguagelistoptout',
+    'get-winculturefromlanguagelistoptout', 'get-windefaultinputmethodoverride', 'get-winhomelocation',
+    'get-winlanguagebaroption', 'get-winsystemlocale', 'get-winuilanguageoverride', 'get-winuserlanguagelist',
+    'new-winuserlanguagelist', 'set-culture', 'set-winacceptlanguagefromlanguagelistoptout',
+    'set-winculturefromlanguagelistoptout', 'set-windefaultinputmethodoverride', 'set-winhomelocation',
+    'set-winlanguagebaroption', 'set-winsystemlocale', 'set-winuilanguageoverride', 'set-winuserlanguagelist',
+  ],
+  'Microsoft.WSMan.Management': [
+    'connect-wsman', 'disable-wsmancredssp', 'disconnect-wsman', 'enable-wsmancredssp', 'get-wsmancredssp',
+    'get-wsmaninstance', 'invoke-wsmanaction', 'new-wsmaninstance', 'new-wsmansessionoption', 'remove-wsmaninstance',
+    'set-wsmaninstance', 'set-wsmanquickconfig', 'test-wsman',
+  ],
+  'VpnClient': [
+    'add-vpnconnection', 'add-vpnconnectionroute', 'add-vpnconnectiontriggerapplication',
+    'add-vpnconnectiontriggerdnsconfiguration', 'add-vpnconnectiontriggertrustednetwork', 'get-vpnconnection',
+    'get-vpnconnectiontrigger', 'new-eapconfiguration', 'new-vpnserveraddress', 'remove-vpnconnection',
+    'remove-vpnconnectionroute', 'remove-vpnconnectiontriggerapplication',
+    'remove-vpnconnectiontriggerdnsconfiguration', 'remove-vpnconnectiontriggertrustednetwork', 'set-vpnconnection',
+    'set-vpnconnectionipsecconfiguration', 'set-vpnconnectionproxy', 'set-vpnconnectiontriggerdnsconfiguration',
+    'set-vpnconnectiontriggertrustednetwork',
   ],
 };
 
