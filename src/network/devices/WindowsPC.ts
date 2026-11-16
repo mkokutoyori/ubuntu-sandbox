@@ -1346,6 +1346,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   announceFirewallRuleChange(change: 'added' | 'modified' | 'deleted', rule: NetFirewallRuleEntry): void {
+    if (change !== 'deleted' && rule.enabled) {
+      for (const unapplied of this.emptyAddressSetRules().filter((candidate) => candidate.ruleId === rule.name)) {
+        this.getBus().publish({
+          topic: 'windows.firewall.rule-not-applied',
+          payload: { deviceId: this.id, ruleId: unapplied.ruleId, ruleName: unapplied.ruleName, attribute: unapplied.attribute },
+        });
+      }
+    }
     this.getBus().publish({
       topic: 'windows.firewall.rule-changed',
       payload: {

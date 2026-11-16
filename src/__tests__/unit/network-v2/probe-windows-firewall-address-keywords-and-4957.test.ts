@@ -9,7 +9,7 @@
  * Measured before the change: a keyword was refused as an invalid address (so DefaultGateway/DNS rules, which real policies use, could not be written), and 4957 never existed.
  *
  * Discrimination (git stash push -- src/network src/powershell): 5 of 8 cases fall on the base. Three pass either way and are named: the WITNESS that a plain address still matches, the
- * case that expects nothing while failure auditing is off (vacuous on a base that never wrote 4957), and the fail-closed case (the base cannot match a keyword either).
+ * case that expects nothing while failure auditing is off (vacuous on a base that never wrote 4957), and the fail-closed case (the base cannot match a keyword either); the creation-time case falls on the previous commit, the plain-address creation case is vacuous there.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -76,5 +76,23 @@ describe('4957', () => {
 
   it('writes nothing while failure auditing is off', async () => {
     expect((await events(await lab(false))).trim()).toBe('');
+  });
+
+  it('creating a rule whose set is empty writes 4957 at once, without a service restart', async () => {
+    const pc = new WindowsPC('windows-pc', 'win2', 0, 0);
+    pc.powerOn();
+    pc.setCurrentUser('Administrator');
+    await pc.executeCommand('auditpol /set /subcategory:"MPSSVC Rule-Level Policy Change" /failure:enable');
+    await pc.executeCommand('powershell -Command "New-NetFirewallRule -DisplayName AtOnce -Direction Outbound -Action Block -RemoteAddress WINS | Out-Null"');
+    expect(await events(pc, '| ForEach-Object { $_.Message }')).toContain('Remote Address resolved to an empty set.');
+  });
+
+  it('a rule with a plain address writes no 4957 when created', async () => {
+    const pc = new WindowsPC('windows-pc', 'win3', 0, 0);
+    pc.powerOn();
+    pc.setCurrentUser('Administrator');
+    await pc.executeCommand('auditpol /set /subcategory:"MPSSVC Rule-Level Policy Change" /failure:enable');
+    await pc.executeCommand('powershell -Command "New-NetFirewallRule -DisplayName Plain -Direction Outbound -Action Block -RemoteAddress 10.0.0.9 | Out-Null"');
+    expect((await events(pc)).trim()).toBe('');
   });
 });

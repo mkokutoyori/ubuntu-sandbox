@@ -248,7 +248,8 @@ export type WindowsDomainEvent =
   | { topic: 'windows.system.time-changed'; payload: WindowsSystemTimeChangedPayload }
   | { topic: 'windows.service.start-type-changed'; payload: WindowsServiceStartTypeChangedPayload }
   | { topic: 'windows.firewall.rule-changed'; payload: WindowsFirewallRuleChangedPayload }
-  | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload };
+  | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload }
+  | { topic: 'windows.firewall.rule-not-applied'; payload: WindowsFirewallRuleNotAppliedPayload };
 
 /** `Set-Acl`/`icacls` changed the discretionary ACL on a filesystem object. */
 export interface WindowsFileAclChangedPayload extends WindowsDeviceRef {
@@ -274,6 +275,13 @@ export interface WindowsFirewallRuleChangedPayload {
   ruleId: string;
   ruleName: string;
   profile: string;
+}
+
+export interface WindowsFirewallRuleNotAppliedPayload {
+  deviceId: string;
+  ruleId: string;
+  ruleName: string;
+  attribute: string;
 }
 
 export interface WindowsFirewallSettingChangedPayload {

@@ -31,6 +31,7 @@ import type {
   WindowsFirewallRuleChangedPayload,
   WindowsSystemTimeChangedPayload,
   WindowsFirewallSettingChangedPayload,
+  WindowsFirewallRuleNotAppliedPayload,
   WindowsGroupEnumeratedPayload,
 } from './events';
 
@@ -76,6 +77,7 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.service.started', (e) => this.onServiceStarted(e.payload)),
       bus.subscribe('windows.firewall.rule-changed', (e) => this.onFirewallRuleChanged(e.payload)),
       bus.subscribe('windows.firewall.setting-changed', (e) => this.onFirewallSettingChanged(e.payload)),
+      bus.subscribe('windows.firewall.rule-not-applied', (e) => this.onFirewallRuleNotApplied(e.payload)),
     );
   }
 
@@ -101,6 +103,12 @@ export class WindowsSecurityAuditProjection {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('MPSSVC Rule-Level Policy Change', 'success')) return;
     this.audit.firewallRuleChanged(p.change, p.ruleId, p.ruleName, p.profile);
+  }
+
+  private onFirewallRuleNotApplied(p: WindowsFirewallRuleNotAppliedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('MPSSVC Rule-Level Policy Change', 'failure')) return;
+    this.audit.firewallRuleNotApplied(p.ruleId, p.ruleName, p.attribute);
   }
 
   private onFirewallSettingChanged(p: WindowsFirewallSettingChangedPayload): void {

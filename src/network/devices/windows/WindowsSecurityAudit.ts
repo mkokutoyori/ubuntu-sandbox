@@ -700,9 +700,11 @@ export class WindowsSecurityAudit {
     for (const r of rules) {
       this.record(SECURITY_EVENT.FIREWALL_RULE_LISTED, 'SuccessAudit', { ProfileUsed: 'Public', RuleId: r.ruleId, RuleName: r.ruleName });
     }
-    for (const r of unapplied) {
-      this.record(SECURITY_EVENT.FIREWALL_RULE_NOT_APPLIED, 'FailureAudit', { RuleId: r.ruleId, RuleName: r.ruleName, RuleAttr: r.attribute });
-    }
+    for (const r of unapplied) this.firewallRuleNotApplied(r.ruleId, r.ruleName, r.attribute);
+  }
+
+  firewallRuleNotApplied(ruleId: string, ruleName: string, attribute: string): void {
+    this.record(SECURITY_EVENT.FIREWALL_RULE_NOT_APPLIED, 'FailureAudit', { RuleId: ruleId, RuleName: ruleName, RuleAttr: attribute });
   }
 
   firewallSettingChanged(profile: string, setting: string, value: string): void {
