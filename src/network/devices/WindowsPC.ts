@@ -1304,13 +1304,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _processSocketReaperOff: (() => void) | null = null;
   private _portProxyChangesOff: (() => void) | null = null;
 
+  private readonly winsServers = new Map<string, string[]>();
+
   private firewallAddressSets(): FirewallAddressSets {
     const ports = [...this.getPorts()];
     const unique = (values: ReadonlyArray<string | null>): string[] => [...new Set(values.filter((value): value is string => value !== null && value !== ''))];
     return {
       dns: () => unique(ports.flatMap((port) => this.effectiveDnsServers(port.getName()))),
       dhcp: () => unique(ports.map((port) => this.getDhcpServer(port.getName()))),
-      wins: () => [],
+      wins: () => unique(ports.flatMap((port) => this.winsServers.get(port.getName()) ?? [])),
       defaultGateway: () => unique([this.getDefaultGatewayString()]),
       localSubnets: () => unique(ports.map((port) => {
         const address = port.getIPAddress();
@@ -4748,6 +4750,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       // DNS management
       getDnsServers: (ifName: string) => this.effectiveDnsServers(ifName),
+      getWinsServers: (ifName: string) => this.winsServers.get(ifName) ?? [],
+      setWinsServers: (ifName: string, servers: string[]) => { this.winsServers.set(ifName, [...servers]); },
       getDohServers: () => this.dnsClientSettings.dohServers(),
       setDnsServers: (ifName: string, servers: string[]) => {
         this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });

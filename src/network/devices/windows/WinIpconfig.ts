@@ -196,6 +196,12 @@ function searchListLines(suffixes: readonly string[]): string[] {
     index === 0 ? `   DNS Suffix Search List. . . . . . : ${suffix}` : `${SEARCH_LIST_CONTINUATION}${suffix}`);
 }
 
+function pushWinsServers(lines: string[], servers: readonly string[]): void {
+  if (servers.length === 0) return;
+  lines.push(`   Primary WINS Server . . . . . . . : ${servers[0]}`);
+  if (servers.length > 1) lines.push(`   Secondary WINS Server . . . . . . : ${servers[1]}`);
+}
+
 function ipconfigAll(ctx: WinCommandContext): string {
   const suffix = ctx.getDnsSuffix();
   const lines: string[] = [
@@ -265,6 +271,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
           // Static DNS servers configured via netsh
           pushDnsServers(lines, ctx.getDnsServers(name));
         }
+        pushWinsServers(lines, ctx.getWinsServers(name));
 
         lines.push(`   NetBIOS over Tcpip. . . . . . . . : Enabled`);
       } else if (global6 || linkLocal6) {
