@@ -1806,6 +1806,7 @@ export interface IVpnProvider {
 
 import type { DirectoryAuditPort } from '@/network/devices/windows/DirectoryAuditPort';
 import type { PipelineAuditPort } from '@/network/devices/windows/PipelineAuditPort';
+import type { TranscriptPort } from '@/network/devices/windows/TranscriptPort';
 
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
@@ -1886,6 +1887,7 @@ export interface PSProviders {
   readonly eventLog:       IEventLogProvider       | null;
   readonly directoryAudit?: DirectoryAuditPort     | null;
   readonly pipelineAudit?: PipelineAuditPort       | null;
+  readonly transcript?: TranscriptPort             | null;
   readonly vpn:            IVpnProvider            | null;
   readonly scheduledTasks: IScheduledTaskProvider  | null;
   readonly disks:          IDiskProvider           | null;

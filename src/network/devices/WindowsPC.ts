@@ -142,7 +142,7 @@ import {
 } from './windows/WinDnsClientPolicy';
 import {
   isScriptBlockLoggingEnabled, isScriptBlockInvocationLoggingEnabled, SCRIPT_BLOCK_INVOCATION_STARTED, SCRIPT_BLOCK_INVOCATION_COMPLETED,
-  isTranscriptionEnabled, transcriptDirectory,
+  isTranscriptionEnabled, isInvocationHeaderEnabled, invocationHeader, minimalTranscriptHeader, transcriptEpilogue, transcriptDirectory,
   transcriptFileName, transcriptHeader, scriptBlockId, type PowerShellPolicySource, type TranscriptHeaderFields,
   POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED, PIPELINE_EXECUTION_DETAIL,
   loggedModuleNames, moduleIsLogged, pipelineExecutionDetailMessage,
@@ -150,6 +150,7 @@ import {
 import { psVersionTable, POWERSHELL_PROCESS_ID } from '@/powershell/runtime/PSEnvironment';
 import { moduleOfCommand } from './windows/PowerShellModuleExports';
 import type { PipelineAuditPort } from './windows/PipelineAuditPort';
+import type { TranscriptPort } from './windows/TranscriptPort';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -684,7 +685,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
     this.eventLog.describeBootEvents(this.hostname.toUpperCase());
-    this.eventLog.attachSourceRegisteredHook((logName, source) => this.registry.upsertEventSourceKey(logName, source));
+    this.eventLog.attachSourceRegisteredHook((logName, source) => {
+      if (!logName.includes('/')) this.registry.upsertEventSourceKey(logName, source);
+    });
     this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
     this.auditPolicy.attachChangeListener((subcategory, changes) => {
       if (!this.auditPolicy.isEnabled('Audit Policy Change', 'success')) return;
@@ -943,7 +946,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           { ScriptBlockId: scriptBlockId(text), RunspaceId: this.powerShellRunspaceId() });
       }
     }
+    const handled = this.transcriptLineHandled;
+    this.transcriptLineHandled = false;
+    if (handled) return;
     if (isTranscriptionEnabled(this.powerShellPolicySource())) this.appendTranscript(text, output);
+    if (this.explicitTranscript !== null) {
+      this.appendToFile(this.explicitTranscript.path, this.transcriptEntry(text, output, this.explicitTranscript.invocationHeader));
+    }
   }
 
   private powerShellPolicySource(): PowerShellPolicySource {
@@ -979,16 +988,56 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
+  private explicitTranscript: { path: string; invocationHeader: boolean } | null = null;
+  private transcriptLineHandled = false;
+
+  private appendToFile(path: string, text: string): void {
+    const existing = this.fs.readFile(path);
+    this.fs.mkdirp(path.slice(0, path.lastIndexOf('\\')));
+    this.fs.createFile(path, `${existing.ok && existing.content !== undefined ? existing.content : ''}${text}`);
+  }
+
   private appendTranscript(command: string, output: string): void {
     const dir = transcriptDirectory(this.powerShellPolicySource());
     if (!this.transcriptStartedAt) this.transcriptStartedAt = this.simulatedDate();
     const path = `${dir}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
-    const existing = this.fs.readFile(path);
-    const head = existing.ok && existing.content !== undefined
-      ? existing.content
-      : transcriptHeader(this.transcriptHeaderFields(this.transcriptStartedAt));
-    this.fs.mkdirp(dir);
-    this.fs.createFile(path, `${head}PS> ${command}\n${output ? `${output}\n` : ''}`);
+    if (!this.fs.readFile(path).ok) this.appendToFile(path, transcriptHeader(this.transcriptHeaderFields(this.transcriptStartedAt)));
+    this.appendToFile(path, this.transcriptEntry(command, output, isInvocationHeaderEnabled(this.powerShellPolicySource())));
+  }
+
+  private transcriptEntry(command: string, output: string, withInvocationHeader: boolean): string {
+    const header = withInvocationHeader ? invocationHeader(this.simulatedDate()) : '';
+    return `${header}PS> ${command}\n${output ? `${output}\n` : ''}`;
+  }
+
+  transcriptPort(): TranscriptPort {
+    return {
+      start: (options) => {
+        const startedAt = this.simulatedDate();
+        const dir = options.outputDirectory ?? transcriptDirectory(this.powerShellPolicySource());
+        const path = options.path ?? `${dir}\\${transcriptFileName(this.getHostname(), startedAt)}`;
+        const existing = this.fs.readFile(path);
+        if (existing.ok && !options.append && options.noClobber) {
+          return { error: `File ${path} already exists and NoClobber was specified.` };
+        }
+        const header = options.useMinimalHeader ? minimalTranscriptHeader(startedAt) : transcriptHeader(this.transcriptHeaderFields(startedAt));
+        if (!(existing.ok && options.append)) {
+          this.fs.mkdirp(path.slice(0, path.lastIndexOf('\\')));
+          this.fs.createFile(path, header);
+        }
+        this.explicitTranscript = { path, invocationHeader: options.includeInvocationHeader };
+        this.transcriptLineHandled = true;
+        return { path };
+      },
+      stop: () => {
+        const session = this.explicitTranscript;
+        if (session === null) return { error: 'The host is not currently transcribing.' };
+        this.appendToFile(session.path, `PS> Stop-Transcript\n${transcriptEpilogue(this.simulatedDate())}`);
+        this.explicitTranscript = null;
+        this.transcriptLineHandled = true;
+        return { path: session.path };
+      },
+    };
   }
 
   protected override linkLocalAutoconfigurationEnabled(): boolean {

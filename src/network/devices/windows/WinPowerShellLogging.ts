@@ -164,6 +164,22 @@ export function pipelineExecutionDetailMessage(details: readonly string[], conte
   return `${payload}\nContext:\n${contextInfo}User Data:\n`;
 }
 
+export function isInvocationHeaderEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'Transcription', 'EnableInvocationHeader'));
+}
+
+export function invocationHeader(at: Date): string {
+  return `**********************\nCommand start time: ${stampOf(at)}\n**********************\n`;
+}
+
+export function minimalTranscriptHeader(startedAt: Date): string {
+  return `**********************\nPowerShell transcript start\nStart time: ${stampOf(startedAt)}\n**********************\n`;
+}
+
+export function transcriptEpilogue(endedAt: Date): string {
+  return `**********************\nPowerShell transcript end\nEnd time: ${stampOf(endedAt)}\n**********************\n`;
+}
+
 export function isTranscriptionEnabled(source: PowerShellPolicySource): boolean {
   return enabledWhenOne(policyValue(source, 'Transcription', 'EnableTranscripting'));
 }

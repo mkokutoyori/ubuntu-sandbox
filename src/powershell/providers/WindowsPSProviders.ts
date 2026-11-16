@@ -4006,6 +4006,7 @@ export function createWindowsPSProviders(
     eventLog:       new WindowsEventLogAdapter(log),
     directoryAudit: pc.directoryAudit(),
     pipelineAudit:  pc.pipelineAudit(),
+    transcript:     pc.transcriptPort(),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),
     // Le fuseau vit sur l'identite de la machine, la meme que

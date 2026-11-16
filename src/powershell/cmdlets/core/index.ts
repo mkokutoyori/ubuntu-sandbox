@@ -107,6 +107,7 @@ import {
 } from './DnsClientCmdlets';
 import { SendMailMessageCmdlet } from './MailMessageCmdlets';
 import { SendSyslogMessageCmdlet } from './SyslogCmdlets';
+import { StartTranscriptCmdlet, StopTranscriptCmdlet } from './TranscriptCmdlets';
 import {
   AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
   SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
@@ -547,6 +548,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new TestNetConnectionCmdlet());
   registry.register(new SendMailMessageCmdlet());
   registry.register(new SendSyslogMessageCmdlet());
+  registry.register(new StartTranscriptCmdlet());
+  registry.register(new StopTranscriptCmdlet());
 
   // ── VPN (provider-backed) ─────────────────────────────────────────────────
   registry.register(new AddVpnConnectionCmdlet());
