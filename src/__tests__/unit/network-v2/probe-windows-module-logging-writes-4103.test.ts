@@ -17,6 +17,9 @@
  * Positional arguments are bound to the parameter name of their position (Position attributes of the cmdlets, from documentation and memory: the C# files are not read here); a cmdlet
  * absent from the position table logs its named parameters only.
  *
+ * The last two cases fall on the commit that had the hand-written table (2 of 17): Get-NetIPAddress was absent from it, and it bound Get-WinEvent's first argument to LogName
+ * although the position is shared with FilterHashtable.
+ *
  * Discrimination (git stash push -- src/network src/powershell): the three positional cases and the two other-module cases fall on the base of those changes (6 of 15), and 9 of 12 fall on a base with no 4103 at all. Three pass either way: the cases that expect nothing (policy off,
  * module not listed, user-defined function), vacuous on a base that never wrote 4103.
  */
@@ -143,5 +146,19 @@ describe('module logging', () => {
     await enable(['Storage']);
     await ps('Get-Disk');
     expect(await messages()).toContain('CommandInvocation(Get-Disk): "Get-Disk"');
+  });
+
+  it('binds the positional argument of a cmdlet outside the former hand-written table', async () => {
+    await enable(['*']);
+    await ps('Get-NetIPAddress 127.0.0.1');
+    expect(await messages()).toContain('ParameterBinding(Get-NetIPAddress): name="IPAddress"; value="127.0.0.1"');
+  });
+
+  it('binds nothing for a position shared by two parameter sets (Get-WinEvent: LogName or FilterHashtable)', async () => {
+    await enable(['*']);
+    await ps('Get-WinEvent System -MaxEvents 1');
+    const text = await messages();
+    expect(text).toContain('CommandInvocation(Get-WinEvent)');
+    expect(text).not.toContain('value="System"');
   });
 });
