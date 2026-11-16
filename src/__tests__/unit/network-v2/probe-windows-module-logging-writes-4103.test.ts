@@ -8,7 +8,8 @@
  * with opcode Method (0x14) and task ExecutePipeline (0x6A), the context lines being LogContextToString's (LogProvider.cs). The cmdlet-to-module table is the
  * CmdletsToExport of the module manifests of src/Modules/Windows (Management, Utility, Security, Diagnostics), and for the other modules the cmdlet lists of their Microsoft Learn
  * module pages (NetTCPIP, NetSecurity, NetAdapter, SmbShare, DnsClient, ScheduledTasks, ActiveDirectory, DhcpServer, DnsServer, ServerManager, Storage, NetConnection, BitsTransfer,
- * LocalAccounts, Core, Host, Archive, iSCSI, NFS, SmbWitness). The message layout (blank lines around
+ * LocalAccounts, Core, Host, Archive, iSCSI, NFS, SmbWitness, Hyper-V, Defender, BitLocker, NetLbfo, PrintManagement, Dism, Appx, WindowsUpdateProvider, ConfigCI, DFSR, DFSN,
+ * FailoverClusters, NetworkController, NetNat, NetSwitchTeam, NetQos, PKI). The message layout (blank lines around
  * "Context:" and "User Data:") is the manifest template flattened, "{Payload}Context:{ContextInfo}User Data:{UserData}" (nasbench dump), so its whitespace is a guess.
  *
  * Measured before the change: EnableModuleLogging was stored and never read (rule 6) and 4103 did not exist.
@@ -16,7 +17,7 @@
  * Positional arguments are bound to the parameter name of their position (Position attributes of the cmdlets, from documentation and memory: the C# files are not read here); a cmdlet
  * absent from the position table logs its named parameters only.
  *
- * Discrimination (git stash push -- src/network src/powershell): the three positional cases and the two other-module cases fall on the base of those changes (5 of 14), and 9 of 12 fall on a base with no 4103 at all. Three pass either way: the cases that expect nothing (policy off,
+ * Discrimination (git stash push -- src/network src/powershell): the three positional cases and the two other-module cases fall on the base of those changes (6 of 15), and 9 of 12 fall on a base with no 4103 at all. Three pass either way: the cases that expect nothing (policy off,
  * module not listed, user-defined function), vacuous on a base that never wrote 4103.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -136,5 +137,11 @@ describe('module logging', () => {
     const text = await messages();
     expect(text).toContain('CommandInvocation(Get-NetFirewallRule)');
     expect(text).not.toContain('CommandInvocation(Get-NetIPAddress)');
+  });
+
+  it('logs a cmdlet of Storage when that module is listed', async () => {
+    await enable(['Storage']);
+    await ps('Get-Disk');
+    expect(await messages()).toContain('CommandInvocation(Get-Disk): "Get-Disk"');
   });
 });
