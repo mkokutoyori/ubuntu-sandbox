@@ -26,6 +26,8 @@ export const TRANSCRIPTION_KEY =
 export const POWERSHELL_OPERATIONAL_LOG = 'PowerShellCore/Operational';
 export const POWERSHELL_PROVIDER = 'PowerShellCore';
 export const SCRIPT_BLOCK_LOGGED = 4104;
+export const SCRIPT_BLOCK_INVOCATION_STARTED = 4105;
+export const SCRIPT_BLOCK_INVOCATION_COMPLETED = 4106;
 
 export interface RegistryValueReader {
   getItemPropertyValues(path: string): Record<string, unknown> | null | undefined;
@@ -56,21 +58,83 @@ function enabledWhenOne(raw: unknown): boolean {
   return text !== '' && text !== '0' && text !== '0x0' && text !== 'false';
 }
 
-export function isScriptBlockLoggingEnabled(registry: RegistryValueReader): boolean {
-  return enabledWhenOne(
-    readPolicyValue(registry, SCRIPT_BLOCK_LOGGING_KEY, 'EnableScriptBlockLogging'));
+export interface PowerShellPolicySource {
+  readonly registry: RegistryValueReader;
+  readFile(path: string): string | null;
+  readonly userConfigPath: string;
 }
 
-export function isTranscriptionEnabled(registry: RegistryValueReader): boolean {
-  return enabledWhenOne(readPolicyValue(registry, TRANSCRIPTION_KEY, 'EnableTranscripting'));
+export const SYSTEM_CONFIG_PATH = 'C:\\Program Files\\PowerShell\\7\\powershell.config.json';
+
+type PolicySection = 'ScriptBlockLogging' | 'Transcription';
+
+const SECTION_SETTINGS: Record<PolicySection, readonly string[]> = {
+  ScriptBlockLogging: ['EnableScriptBlockLogging', 'EnableScriptBlockInvocationLogging'],
+  Transcription: ['EnableTranscripting', 'EnableInvocationHeader', 'OutputDirectory'],
+};
+
+const CORE_POLICY_ROOT = 'SOFTWARE\\Policies\\Microsoft\\PowerShellCore';
+const WINDOWS_POWERSHELL_POLICY_ROOT = 'SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell';
+const FALLBACK_VALUE = 'UseWindowsPowerShellPolicySetting';
+
+function hasAnySetting(values: Record<string, unknown>, section: PolicySection): boolean {
+  const present = new Set(Object.keys(values).map((name) => name.toLowerCase()));
+  return SECTION_SETTINGS[section].some((name) => present.has(name.toLowerCase()));
 }
 
-export function transcriptDirectory(registry: RegistryValueReader): string {
-  const raw = readPolicyValue(registry, TRANSCRIPTION_KEY, 'OutputDirectory');
+function registryPolicy(source: PowerShellPolicySource, section: PolicySection): Record<string, unknown> | null {
+  for (const hive of ['HKLM', 'HKCU']) {
+    const core = source.registry.getItemPropertyValues(`${hive}\\${CORE_POLICY_ROOT}\\${section}`);
+    if (core === null || core === undefined) continue;
+    const useWindowsPolicy = Number(readPolicyValue(source.registry, `${hive}\\${CORE_POLICY_ROOT}\\${section}`, FALLBACK_VALUE)) === 1;
+    const values = useWindowsPolicy
+      ? source.registry.getItemPropertyValues(`${hive}\\${WINDOWS_POWERSHELL_POLICY_ROOT}\\${section}`)
+      : core;
+    if (values !== null && values !== undefined && hasAnySetting(values, section)) return values;
+  }
+  return null;
+}
+
+function configFilePolicy(source: PowerShellPolicySource, section: PolicySection): Record<string, unknown> | null {
+  for (const path of [SYSTEM_CONFIG_PATH, source.userConfigPath]) {
+    const text = source.readFile(path);
+    if (text === null) continue;
+    try {
+      const policies = (JSON.parse(text) as { PowerShellPolicies?: Record<string, unknown> }).PowerShellPolicies;
+      const entry = policies === undefined ? undefined : Object.entries(policies).find(([name]) => name.toLowerCase() === section.toLowerCase())?.[1];
+      if (entry !== null && typeof entry === 'object' && hasAnySetting(entry as Record<string, unknown>, section)) return entry as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function policyValue(source: PowerShellPolicySource, section: PolicySection, name: string): unknown {
+  const policy = registryPolicy(source, section) ?? configFilePolicy(source, section);
+  if (policy === null) return undefined;
+  const wanted = name.toLowerCase();
+  for (const [key, value] of Object.entries(policy)) {
+    if (key.toLowerCase() === wanted) return value;
+  }
+  return undefined;
+}
+
+export function isScriptBlockLoggingEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'ScriptBlockLogging', 'EnableScriptBlockLogging'));
+}
+
+export function isScriptBlockInvocationLoggingEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'ScriptBlockLogging', 'EnableScriptBlockInvocationLogging'));
+}
+
+export function isTranscriptionEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'Transcription', 'EnableTranscripting'));
+}
+
+export function transcriptDirectory(source: PowerShellPolicySource): string {
+  const raw = policyValue(source, 'Transcription', 'OutputDirectory');
   const dir = raw === undefined || raw === null ? '' : String(raw).trim();
-  // Sans répertoire déclaré, Windows dépose la transcription dans les
-  // documents de l'utilisateur. Un chemin vide n'est pas une raison de
-  // ne rien écrire.
   return dir || 'C:\\Users\\User\\Documents';
 }
 

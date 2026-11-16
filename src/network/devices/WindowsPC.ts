@@ -141,8 +141,9 @@ import {
   isLlmnrEnabled, isMdnsEnabled, type DnsClientQueryOptions,
 } from './windows/WinDnsClientPolicy';
 import {
-  isScriptBlockLoggingEnabled, isTranscriptionEnabled, transcriptDirectory,
-  transcriptFileName, transcriptHeader, scriptBlockId,
+  isScriptBlockLoggingEnabled, isScriptBlockInvocationLoggingEnabled, SCRIPT_BLOCK_INVOCATION_STARTED, SCRIPT_BLOCK_INVOCATION_COMPLETED,
+  isTranscriptionEnabled, transcriptDirectory,
+  transcriptFileName, transcriptHeader, scriptBlockId, type PowerShellPolicySource,
   POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
 } from './windows/WinPowerShellLogging';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
@@ -873,7 +874,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   recordPowerShellExecution(scriptBlock: string, output: string): void {
     const text = scriptBlock.trim();
     if (!text) return;
-    if (isScriptBlockLoggingEnabled(this.registry)) {
+    if (isScriptBlockLoggingEnabled(this.powerShellPolicySource())) {
       this.eventLog.writeEventLog(
         POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
         'Information',
@@ -884,7 +885,33 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           ScriptBlockText: text, ScriptBlockId: scriptBlockId(text), Path: '',
         });
     }
-    if (isTranscriptionEnabled(this.registry)) this.appendTranscript(text, output);
+    if (isScriptBlockInvocationLoggingEnabled(this.powerShellPolicySource())) {
+      for (const eventId of [SCRIPT_BLOCK_INVOCATION_STARTED, SCRIPT_BLOCK_INVOCATION_COMPLETED]) {
+        this.eventLog.writeEventLog(
+          POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, eventId, 'Information',
+          `${eventId === SCRIPT_BLOCK_INVOCATION_STARTED ? 'Started' : 'Completed'} invocation of ScriptBlock ID: ${scriptBlockId(text)}\nRunspace ID: ${this.powerShellRunspaceId()}`,
+          { ScriptBlockId: scriptBlockId(text), RunspaceId: this.powerShellRunspaceId() });
+      }
+    }
+    if (isTranscriptionEnabled(this.powerShellPolicySource())) this.appendTranscript(text, output);
+  }
+
+  private powerShellPolicySource(): PowerShellPolicySource {
+    return {
+      registry: this.registry,
+      readFile: (path) => {
+        const file = this.fs.readFile(path);
+        return file.ok && file.content !== undefined ? file.content : null;
+      },
+      userConfigPath: `C:\\Users\\${this.userMgr.currentUser}\\Documents\\PowerShell\\powershell.config.json`,
+    };
+  }
+
+  private runspaceId: string | null = null;
+
+  private powerShellRunspaceId(): string {
+    this.runspaceId ??= this.newTaskInstanceId().slice(1, -1).toLowerCase();
+    return this.runspaceId;
   }
 
   /**
@@ -892,7 +919,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * créant le fichier — en-tête compris — à la première écriture.
    */
   private appendTranscript(command: string, output: string): void {
-    const dir = transcriptDirectory(this.registry);
+    const dir = transcriptDirectory(this.powerShellPolicySource());
     if (!this.transcriptStartedAt) this.transcriptStartedAt = this.simulatedDate();
     const path = `${dir}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
     const existing = this.fs.readFile(path);

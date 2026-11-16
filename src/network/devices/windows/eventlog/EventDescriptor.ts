@@ -97,6 +97,10 @@ const TASK_SCHEDULER_EVENTS: Record<number, { task: string; opcode?: { id: numbe
 };
 const POWERSHELL_PROVIDER = 'powershellcore';
 const SCRIPT_BLOCK_EVENT = 4104;
+const SCRIPT_BLOCK_INVOCATION: Record<number, { taskId: number; taskName: string }> = {
+  4105: { taskId: 0x66, taskName: 'CommandStart' },
+  4106: { taskId: 0x67, taskName: 'CommandStop' },
+};
 
 const EVENT_VERSIONS: Record<number, number> = { 4616: 1, 4624: 2, 4625: 0, 4776: 0, 4634: 0, 4672: 0, 4688: 2, 4689: 0 };
 
@@ -147,6 +151,14 @@ export function describeEvent(event: EventClassified): EventDescriptor {
       level: 4, levelName: 'Information', taskId: 0, taskName: scheduled.task,
       opcode: scheduled.opcode?.id ?? 0, opcodeName: scheduled.opcode?.name ?? 'Info',
       keywords: '0x8000000000000000', keywordNames: [], version: scheduled.version ?? 0, providerGuid: null,
+    };
+  }
+
+  const invocation = provider === POWERSHELL_PROVIDER ? SCRIPT_BLOCK_INVOCATION[event.eventId] : undefined;
+  if (invocation !== undefined) {
+    return {
+      level: 5, levelName: 'Verbose', taskId: invocation.taskId, taskName: invocation.taskName, opcode: 0xf, opcodeName: 'Create',
+      keywords: '0x1', keywordNames: ['Runspace'], version: 0, providerGuid: PROVIDER_GUIDS[provider],
     };
   }
 
