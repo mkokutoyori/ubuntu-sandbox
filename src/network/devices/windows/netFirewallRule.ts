@@ -89,7 +89,31 @@ const ADDRESS_KEYWORDS: Readonly<Record<string, keyof FirewallAddressSets>> = {
 
 const KEYWORD_NAMES: Readonly<Record<string, string>> = {
   localsubnet: 'LocalSubnet', dns: 'DNS', dhcp: 'DHCP', wins: 'WINS', defaultgateway: 'DefaultGateway',
+  internet: 'Internet', intranet: 'Intranet', intranetremoteaccess: 'IntranetRemoteAccess',
+  playtodevice: 'PlayToDevice', captiveportal: 'CaptivePortal',
 };
+
+const ALWAYS_EMPTY_KEYWORDS = new Set(['intranetremoteaccess', 'playtodevice', 'captiveportal']);
+const PREDICATE_KEYWORDS = new Set(['internet', 'intranet']);
+
+function keywordOf(part: string): { name: string; family: string } | null {
+  const match = /^([A-Za-z]+?)([46])?$/.exec(part);
+  if (match === null) return null;
+  const name = match[1].toLowerCase();
+  return ADDRESS_KEYWORDS[name] !== undefined || ALWAYS_EMPTY_KEYWORDS.has(name) || PREDICATE_KEYWORDS.has(name)
+    ? { name, family: match[2] ?? '' }
+    : null;
+}
+
+function isIntranetAddress(address: IPAddress): boolean {
+  const entry = address.specialPurpose();
+  return entry !== null && (entry.rfc === 'RFC1918' || entry.rfc === 'RFC3927');
+}
+
+function isInternetAddress(address: IPAddress): boolean {
+  const entry = address.specialPurpose();
+  return entry === null || entry.global;
+}
 
 export function parseAddressSpec(raw: string | readonly string[]): string | null {
   const tokens = (Array.isArray(raw) ? raw : [String(raw)])
@@ -137,10 +161,11 @@ export function parseAddressSpec(raw: string | readonly string[]): string | null
 
 function expandAddressSpec(spec: string, sets: FirewallAddressSets | undefined): string[] {
   return spec.split(',').flatMap((part) => {
-    const keyword = /^([A-Za-z]+?)([46])?$/.exec(part);
-    const set = keyword === null ? undefined : ADDRESS_KEYWORDS[keyword[1].toLowerCase()];
-    if (set === undefined) return [part];
-    if (keyword?.[2] === '6' || sets === undefined) return [];
+    const keyword = keywordOf(part);
+    if (keyword === null) return [part];
+    if (PREDICATE_KEYWORDS.has(keyword.name)) return keyword.family === '6' ? [] : [part];
+    const set = ADDRESS_KEYWORDS[keyword.name];
+    if (set === undefined || keyword.family === '6' || sets === undefined) return [];
     return [...sets[set]()];
   });
 }
@@ -148,13 +173,18 @@ function expandAddressSpec(spec: string, sets: FirewallAddressSets | undefined):
 export function addressSetIsEmpty(spec: string, sets: FirewallAddressSets): boolean {
   if (spec === '' || spec === ANY) return false;
   const parts = spec.split(',');
-  return parts.some((part) => ADDRESS_KEYWORDS[part.toLowerCase().replace(/[46]$/, '')] !== undefined) && expandAddressSpec(spec, sets).length === 0;
+  return parts.some((part) => keywordOf(part) !== null) && expandAddressSpec(spec, sets).length === 0;
 }
 
 export function addressSpecMatches(spec: string, address: IPAddress, sets?: FirewallAddressSets): boolean {
   if (spec === '' || spec === ANY) return true;
   const target = address.toUint32() >>> 0;
   return expandAddressSpec(spec, sets).some(part => {
+    const predicate = keywordOf(part);
+    if (predicate !== null) {
+      if (predicate.name === 'internet') return isInternetAddress(address);
+      if (predicate.name === 'intranet') return isIntranetAddress(address);
+    }
     const range = /^([^-]+)-([^-]+)$/.exec(part);
     if (range !== null) {
       const low = IPAddress.tryParse(range[1]);
