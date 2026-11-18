@@ -1333,6 +1333,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       dhcp: () => unique(ports.map((port) => this.getDhcpServer(port.getName()))),
       wins: () => unique(ports.flatMap((port) => this.winsServers.get(port.getName()) ?? [])),
       defaultGateway: () => unique([this.getDefaultGatewayString()]),
+      intranet: () => unique([
+        ...ports.map((port) => {
+          const address = port.getIPAddress();
+          const mask = port.getSubnetMask();
+          return address === null || mask === null ? null : `${address.networkAddress(mask)}/${mask.toCIDR()}`;
+        }),
+        ...(this.getDirectoryStore()?.listSubnets().map((subnet) => subnet.cidr) ?? []),
+      ]),
       localSubnets: () => unique(ports.map((port) => {
         const address = port.getIPAddress();
         const mask = port.getSubnetMask();

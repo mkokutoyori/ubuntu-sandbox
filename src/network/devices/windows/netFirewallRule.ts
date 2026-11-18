@@ -81,10 +81,11 @@ export interface FirewallAddressSets {
   wins(): readonly string[];
   defaultGateway(): readonly string[];
   localSubnets(): readonly string[];
+  intranet(): readonly string[];
 }
 
 const ADDRESS_KEYWORDS: Readonly<Record<string, keyof FirewallAddressSets>> = {
-  localsubnet: 'localSubnets', dns: 'dns', dhcp: 'dhcp', wins: 'wins', defaultgateway: 'defaultGateway',
+  localsubnet: 'localSubnets', dns: 'dns', dhcp: 'dhcp', wins: 'wins', defaultgateway: 'defaultGateway', intranet: 'intranet',
 };
 
 const KEYWORD_NAMES: Readonly<Record<string, string>> = {
@@ -94,7 +95,7 @@ const KEYWORD_NAMES: Readonly<Record<string, string>> = {
 };
 
 const ALWAYS_EMPTY_KEYWORDS = new Set(['intranetremoteaccess', 'playtodevice', 'captiveportal']);
-const PREDICATE_KEYWORDS = new Set(['internet', 'intranet']);
+const PREDICATE_KEYWORDS = new Set(['internet']);
 
 function keywordOf(part: string): { name: string; family: string } | null {
   const match = /^([A-Za-z]+?)([46])?$/.exec(part);
@@ -103,15 +104,6 @@ function keywordOf(part: string): { name: string; family: string } | null {
   return ADDRESS_KEYWORDS[name] !== undefined || ALWAYS_EMPTY_KEYWORDS.has(name) || PREDICATE_KEYWORDS.has(name)
     ? { name, family: match[2] ?? '' }
     : null;
-}
-
-function isIntranetAddress(address: IPAddress): boolean {
-  const entry = address.specialPurpose();
-  return entry !== null && (entry.rfc === 'RFC1918' || entry.rfc === 'RFC3927');
-}
-
-function isInternetAddress(address: IPAddress): boolean {
-  return !isIntranetAddress(address);
 }
 
 export function parseAddressSpec(raw: string | readonly string[]): string | null {
@@ -181,8 +173,7 @@ export function addressSpecMatches(spec: string, address: IPAddress, sets?: Fire
   return expandAddressSpec(spec, sets).some(part => {
     const predicate = keywordOf(part);
     if (predicate !== null) {
-      if (predicate.name === 'internet') return isInternetAddress(address);
-      if (predicate.name === 'intranet') return isIntranetAddress(address);
+      if (predicate.name === 'internet') return predicate.family !== '6' && sets !== undefined && !addressSpecMatches('Intranet', address, sets);
     }
     const range = /^([^-]+)-([^-]+)$/.exec(part);
     if (range !== null) {

@@ -19,7 +19,7 @@
  * The EventMessageFile of the machine's own providers comes from the winevt-kb tables (libyal/winevt-kb, docs/sources/eventlog-providers), a forensic knowledge base built from real Windows
  * installations: the entry seen on Windows 10 and 11 of each provider (Service Control Manager: services.exe, MsiInstaller: msimsg.dll, SecurityCenter: wscsvc.dll, Tcpip and EventLog: netevent.dll,
  * Time-Service: w32time.dll, Security-Auditing: adtschema.dll, Kernel-General and Kernel-Boot: Microsoft-Windows-System-Events.dll). It is a third-party compilation, not a Microsoft page, and a
- * web search corrected a wrong recollection (netmsg.dll) before this was written. The Winlogon key is not filled: the real classic source is Winlogon in the Application log, not the one of the simulator.
+ * web search corrected a wrong recollection (netmsg.dll) before this was written. The simulator's Microsoft-Windows-Winlogon provider is registered the way the table records it: as Winlogon in the Application log (winlogon.exe), with no key of its own name in System.
  *
  * Discrimination (git stash push -- src/network src/powershell): the two provider cases fall on the previous commit (2 of 9), and CustomSource, EventMessageFile and the refusal on the one before; the key and its listing
  * fell on a base with no key at all. The WITNESS (the event log store knows the source) and the case that a source eventcreate created keeps working pass either way.
@@ -106,7 +106,13 @@ describe('New-EventLog registers the source in the registry', () => {
       ['System', 'Tcpip', '%SystemRoot%\\System32\\netevent.dll'],
       ['System', 'Microsoft-Windows-Time-Service', '%SystemRoot%\\system32\\w32time.dll'],
       ['Security', 'Microsoft-Windows-Security-Auditing', '%SystemRoot%\\system32\\adtschema.dll'],
+      ['Application', 'Winlogon', '%SystemRoot%\\System32\\winlogon.exe'],
     ];
     for (const [log, source, file] of expected) expect((await read(log, source)).trim()).toBe(file);
+  });
+
+  it('the simulator\'s Microsoft-Windows-Winlogon is registered where a real machine registers it: Winlogon in the Application log, with no key of that name in System', async () => {
+    const pc = await lab();
+    expect(await pc.executeCommand('powershell -Command "Test-Path -LiteralPath \'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\System\\Microsoft-Windows-Winlogon\'"')).toContain('False');
   });
 });

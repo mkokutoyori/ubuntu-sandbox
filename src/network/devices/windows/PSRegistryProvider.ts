@@ -36,16 +36,19 @@ function seedValue(key: RegistryKey, name: string, value: string | number, type:
   key.values.set(name.toLowerCase(), { name, value, type });
 }
 
-const EVENT_MESSAGE_FILES: Readonly<Record<string, string>> = {
-  'msiinstaller': '%SystemRoot%\\system32\\msimsg.dll',
-  'service control manager': '%SystemRoot%\\system32\\services.exe',
-  'securitycenter': '%SystemRoot%\\System32\\wscsvc.dll',
-  'microsoft-windows-kernel-general': '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll',
-  'microsoft-windows-kernel-boot': '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll',
-  'microsoft-windows-security-auditing': '%SystemRoot%\\system32\\adtschema.dll',
-  'microsoft-windows-time-service': '%SystemRoot%\\system32\\w32time.dll',
-  'tcpip': '%SystemRoot%\\System32\\netevent.dll',
-  'eventlog': '%SystemRoot%\\System32\\netevent.dll',
+interface ClassicRegistration { readonly log: string; readonly source: string; readonly file: string }
+
+const CLASSIC_REGISTRATIONS: Readonly<Record<string, ClassicRegistration>> = {
+  'msiinstaller': { log: 'Application', source: 'MsiInstaller', file: '%SystemRoot%\\system32\\msimsg.dll' },
+  'service control manager': { log: 'System', source: 'Service Control Manager', file: '%SystemRoot%\\system32\\services.exe' },
+  'securitycenter': { log: 'Application', source: 'SecurityCenter', file: '%SystemRoot%\\System32\\wscsvc.dll' },
+  'microsoft-windows-kernel-general': { log: 'System', source: 'Microsoft-Windows-Kernel-General', file: '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll' },
+  'microsoft-windows-kernel-boot': { log: 'System', source: 'Microsoft-Windows-Kernel-Boot', file: '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll' },
+  'microsoft-windows-security-auditing': { log: 'Security', source: 'Microsoft-Windows-Security-Auditing', file: '%SystemRoot%\\system32\\adtschema.dll' },
+  'microsoft-windows-time-service': { log: 'System', source: 'Microsoft-Windows-Time-Service', file: '%SystemRoot%\\system32\\w32time.dll' },
+  'microsoft-windows-winlogon': { log: 'Application', source: 'Winlogon', file: '%SystemRoot%\\System32\\winlogon.exe' },
+  'tcpip': { log: 'System', source: 'Tcpip', file: '%SystemRoot%\\System32\\netevent.dll' },
+  'eventlog': { log: 'System', source: 'EventLog', file: '%SystemRoot%\\System32\\netevent.dll' },
 };
 
 // ─── Seed data ───────────────────────────────────────────────────────────────
@@ -738,9 +741,10 @@ export class PSRegistryProvider {
   }
 
   upsertEventSourceKey(logName: string, source: string): void {
-    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
-    const messageFile = EVENT_MESSAGE_FILES[source.toLowerCase()];
-    if (messageFile !== undefined && !key.values.has('eventmessagefile')) seedValue(key, 'EventMessageFile', messageFile, 'ExpandString');
+    const registration = CLASSIC_REGISTRATIONS[source.toLowerCase()];
+    const target = registration ?? { log: logName, source, file: '' };
+    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', target.log, target.source] });
+    if (target.file !== '' && !key.values.has('eventmessagefile')) seedValue(key, 'EventMessageFile', target.file, 'ExpandString');
   }
 
   private eventSourceKey(logName: string, source: string): RegistryKey | null {
