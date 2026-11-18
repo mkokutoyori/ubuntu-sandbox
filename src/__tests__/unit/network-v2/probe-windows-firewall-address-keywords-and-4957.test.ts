@@ -8,9 +8,10 @@
  *
  * Measured before the change: a keyword was refused as an invalid address (so DefaultGateway/DNS rules, which real policies use, could not be written), and 4957 never existed.
  *
- * Internet and Intranet, added at the user's explicit request to close the limit, are INTERPRETATIONS, not definitions the Learn pages give: Intranet = the private-use (RFC 1918) and
- * link-local (RFC 3927) ranges, Internet = the addresses the IANA special-purpose registry marks globally reachable or does not list. IntranetRemoteAccess, PlayToDevice and CaptivePortal
- * are empty sets because the simulator models no DirectAccess, Play To renderer or captive portal, as WINS was before it was modelled. TODO.md says so.
+ * Definitions (rule 8): Microsoft [MS-FASP] 2.2.21 FW_ADDRESS_KEYWORD: Intranet = the addresses currently within the local intranet of the computer; Internet = the addresses currently not within the
+ * local intranet or the remote intranet; the remote intranet keyword (IntranetRemoteAccess), the PlayTo renderers (the DLNA Digital Media Renderer devices, PlayToDevice) and the captive portal
+ * (CaptivePortal) are sets of addresses of those things. The simulator has no DirectAccess, no DLNA renderer and no captive portal, so those three are empty sets, as WINS was before it was
+ * modelled. What the "local intranet" contains is not specified: the simulator takes the private-use (RFC 1918) and link-local (RFC 3927) ranges, a CHOICE stated in TODO.md.
  *
  * Discrimination (git stash push -- src/network src/powershell): 5 of 8 cases fall on the base (three of the four cases of the last block, ranges, masks and the 4/6 suffix, fall on the commit before them). Three pass either way and are named: the WITNESS that a plain address still matches, the
  * case that expects nothing while failure auditing is off (vacuous on a base that never wrote 4957), and the fail-closed case (the base cannot match a keyword either); the creation-time case falls on the previous commit, the plain-address creation case is vacuous there.
@@ -133,9 +134,9 @@ describe('Internet, Intranet and the keywords the simulator has no source for', 
     expect(addressSpecMatches('Intranet', new IPAddress('8.8.8.8'))).toBe(false);
   });
 
-  it('Internet matches a globally reachable address, not a private, loopback or link-local one', () => {
+  it('Internet is what is not the local intranet or the remote intranet (MS-FASP), so a public address matches and an intranet one does not', () => {
     expect(addressSpecMatches('Internet', new IPAddress('8.8.8.8'))).toBe(true);
-    for (const address of ['10.1.2.3', '127.0.0.1', '169.254.3.4']) {
+    for (const address of ['10.1.2.3', '192.168.0.9', '169.254.3.4']) {
       expect(addressSpecMatches('Internet', new IPAddress(address))).toBe(false);
     }
   });

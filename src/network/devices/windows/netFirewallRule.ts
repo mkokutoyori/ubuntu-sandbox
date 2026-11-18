@@ -111,8 +111,7 @@ function isIntranetAddress(address: IPAddress): boolean {
 }
 
 function isInternetAddress(address: IPAddress): boolean {
-  const entry = address.specialPurpose();
-  return entry === null || entry.global;
+  return !isIntranetAddress(address);
 }
 
 export function parseAddressSpec(raw: string | readonly string[]): string | null {
