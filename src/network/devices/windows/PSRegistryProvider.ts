@@ -36,6 +36,18 @@ function seedValue(key: RegistryKey, name: string, value: string | number, type:
   key.values.set(name.toLowerCase(), { name, value, type });
 }
 
+const EVENT_MESSAGE_FILES: Readonly<Record<string, string>> = {
+  'msiinstaller': '%SystemRoot%\\system32\\msimsg.dll',
+  'service control manager': '%SystemRoot%\\system32\\services.exe',
+  'securitycenter': '%SystemRoot%\\System32\\wscsvc.dll',
+  'microsoft-windows-kernel-general': '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll',
+  'microsoft-windows-kernel-boot': '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll',
+  'microsoft-windows-security-auditing': '%SystemRoot%\\system32\\adtschema.dll',
+  'microsoft-windows-time-service': '%SystemRoot%\\system32\\w32time.dll',
+  'tcpip': '%SystemRoot%\\System32\\netevent.dll',
+  'eventlog': '%SystemRoot%\\System32\\netevent.dll',
+};
+
 // ─── Seed data ───────────────────────────────────────────────────────────────
 
 /** The subset of registry values that differ between a Windows client and a Windows Server install. */
@@ -726,7 +738,9 @@ export class PSRegistryProvider {
   }
 
   upsertEventSourceKey(logName: string, source: string): void {
-    this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
+    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
+    const messageFile = EVENT_MESSAGE_FILES[source.toLowerCase()];
+    if (messageFile !== undefined && !key.values.has('eventmessagefile')) seedValue(key, 'EventMessageFile', messageFile, 'ExpandString');
   }
 
   private eventSourceKey(logName: string, source: string): RegistryKey | null {

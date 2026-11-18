@@ -16,6 +16,11 @@
  * The machine's own providers (MsiInstaller, Service Control Manager...) have a key without CustomSource, written when they first write an event, so eventcreate refuses them as installed
  * applications.
  *
+ * The EventMessageFile of the machine's own providers comes from the winevt-kb tables (libyal/winevt-kb, docs/sources/eventlog-providers), a forensic knowledge base built from real Windows
+ * installations: the entry seen on Windows 10 and 11 of each provider (Service Control Manager: services.exe, MsiInstaller: msimsg.dll, SecurityCenter: wscsvc.dll, Tcpip and EventLog: netevent.dll,
+ * Time-Service: w32time.dll, Security-Auditing: adtschema.dll, Kernel-General and Kernel-Boot: Microsoft-Windows-System-Events.dll). It is a third-party compilation, not a Microsoft page, and a
+ * web search corrected a wrong recollection (netmsg.dll) before this was written. The Winlogon key is not filled: the real classic source is Winlogon in the Application log, not the one of the simulator.
+ *
  * Discrimination (git stash push -- src/network src/powershell): the two provider cases fall on the previous commit (2 of 9), and CustomSource, EventMessageFile and the refusal on the one before; the key and its listing
  * fell on a base with no key at all. The WITNESS (the event log store knows the source) and the case that a source eventcreate created keeps working pass either way.
  */
@@ -87,5 +92,21 @@ describe('New-EventLog registers the source in the registry', () => {
     await pc.executeCommand('powershell -Command "Restart-Service Spooler"');
     const out = await pc.executeCommand(`powershell -Command "Test-Path -LiteralPath 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\System\\Service Control Manager'"`);
     expect(out).toContain('True');
+  });
+
+  it('the machine\'s own providers carry the message file the winevt-kb tables record for Windows 10 and 11', async () => {
+    const pc = await lab();
+    await pc.executeCommand('powershell -Command "Restart-Service Spooler"');
+    const read = (log: string, source: string): Promise<string> =>
+      pc.executeCommand(`powershell -Command "(Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\${log}\\${source}').EventMessageFile"`);
+    const expected: Array<[string, string, string]> = [
+      ['System', 'Service Control Manager', '%SystemRoot%\\system32\\services.exe'],
+      ['Application', 'MsiInstaller', '%SystemRoot%\\system32\\msimsg.dll'],
+      ['Application', 'SecurityCenter', '%SystemRoot%\\System32\\wscsvc.dll'],
+      ['System', 'Tcpip', '%SystemRoot%\\System32\\netevent.dll'],
+      ['System', 'Microsoft-Windows-Time-Service', '%SystemRoot%\\system32\\w32time.dll'],
+      ['Security', 'Microsoft-Windows-Security-Auditing', '%SystemRoot%\\system32\\adtschema.dll'],
+    ];
+    for (const [log, source, file] of expected) expect((await read(log, source)).trim()).toBe(file);
   });
 });
