@@ -212,6 +212,7 @@ import { parseSubscriptionXml, type WecSubscription } from './windows/server/wec
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { selfSignedLdapCert } from './windows/server/ad/ldap/ldapStartTls';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
+import { parseFilter as parseLdapFilter } from './windows/server/ad/ldap/LdapFilterString';
 import { getForestForDomain } from './windows/server/ad/forest/Forest';
 import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
@@ -1325,6 +1326,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private readonly winsServers = new Map<string, string[]>();
 
+  private siteSubnets: string[] = [];
+
+  private refreshSiteSubnets(): void {
+    const membership = this.domainMembership;
+    if (membership === null || this.getDirectoryStore()) return;
+    const conn = dialLdap(this.getTcpStack(), membership.dcAddress);
+    if (!conn.ok || !conn.client) return;
+    if (conn.client.bind(`${this.getHostname()}$`, membership.machineSecret).ok) {
+      const root = membership.dnsName.split('.').map((label) => `DC=${label}`).join(',');
+      const found = conn.client.search(`CN=Subnets,CN=Sites,CN=Configuration,${root}`, 'one', parseLdapFilter('(objectClass=subnet)'), ['cn']);
+      if (found.ok) {
+        this.siteSubnets = found.entries.flatMap((entry) => entry.attributes.filter((attribute) => attribute.type.toLowerCase() === 'cn').flatMap((attribute) => attribute.values));
+      }
+    }
+    conn.client.unbind();
+  }
+
   private firewallAddressSets(): FirewallAddressSets {
     const ports = [...this.getPorts()];
     const unique = (values: ReadonlyArray<string | null>): string[] => [...new Set(values.filter((value): value is string => value !== null && value !== ''))];
@@ -1339,7 +1357,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           const mask = port.getSubnetMask();
           return address === null || mask === null ? null : `${address.networkAddress(mask)}/${mask.toCIDR()}`;
         }),
-        ...(this.getDirectoryStore()?.listSubnets().map((subnet) => subnet.cidr) ?? []),
+        ...(this.getDirectoryStore()?.listSubnets().map((subnet) => subnet.cidr) ?? this.siteSubnets),
       ]),
       localSubnets: () => unique(ports.map((port) => {
         const address = port.getIPAddress();
@@ -1350,6 +1368,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private emptyAddressSetRules(): ReadonlyArray<{ ruleId: string; ruleName: string; attribute: string }> {
+    this.refreshSiteSubnets();
     const sets = this.firewallAddressSets();
     return [...this.firewallRules.values()].filter((rule) => rule.enabled).flatMap((rule) => [
       ...(addressSetIsEmpty(rule.localAddress, sets) ? [{ ruleId: rule.name, ruleName: rule.displayName, attribute: 'Local Address' }] : []),
@@ -1358,6 +1377,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private firewallStartState(): FirewallStartState {
+    this.refreshSiteSubnets();
     const flag = (value: string): 'Enabled' | 'Disabled' => (value === 'True' ? 'Enabled' : 'Disabled');
     return {
       profiles: [...this.firewallProfiles.values()].map((row) => ({
