@@ -18,6 +18,9 @@
  * absent from the position table logs its named parameters only.
  *
  * VpnClient, CimCmdlets, International and Microsoft.WSMan.Management come from their Learn pages as well; the VpnClient case falls on the previous commit (1 of 22). The command name is written with the casing of the Learn page title (370 names; ForEach-Object was written Foreach-Object): that case falls on the previous commit too.
+ * Third-party and 5.1-only cmdlets: Get-WindowsUpdate and Set-WUSettings are cmdlets of PSWindowsUpdate (the module's README, mgajda83/PSWindowsUpdate), Send-SyslogMessage of Posh-SYSLOG (PowerShell
+ * Gallery listings), Add-Computer, Remove-Computer, Test-ComputerSecureChannel and Register-WmiEvent of Microsoft.PowerShell.Management in Windows PowerShell 5.1 (their Learn pages, view=powershell-5.1);
+ * the two new cases fall on the previous commit (2 of 25).
  * Pipeline cases: the logging case falls on the previous commit (1 of 19); the by-name case passes either way (vacuous there). By-property-name binding reads the "Value from pipeline
  * by property name" flags of the same pages (168 cmdlets): the property-name case falls on the previous commit (1 of 21), the absent-property case passes either way.
  * Values bound from the pipeline are logged under the parameter whose "Value from pipeline" is True on the Learn page (one parameter only; a cmdlet with several is skipped).
@@ -207,5 +210,20 @@ describe('module logging', () => {
     const text = await messages();
     expect(text).toContain('CommandInvocation(ForEach-Object): "ForEach-Object"');
     expect(text).not.toContain('Foreach-Object');
+  });
+
+  it('logs the cmdlets of the third-party modules the simulator implements when those modules are listed', async () => {
+    await enable(['PSWindowsUpdate', 'Posh-SYSLOG']);
+    await ps('Get-WindowsUpdate');
+    await ps("Send-SyslogMessage -Server 10.9.9.9 -Message 'x'");
+    const text = await messages();
+    expect(text).toContain('CommandInvocation(Get-WindowsUpdate)');
+    expect(text).toContain('CommandInvocation(Send-SyslogMessage)');
+  });
+
+  it('logs the Windows PowerShell 5.1 cmdlets the simulator keeps (Test-ComputerSecureChannel) under Microsoft.PowerShell.Management', async () => {
+    await enable(['Microsoft.PowerShell.Management']);
+    await ps('Test-ComputerSecureChannel');
+    expect(await messages()).toContain('CommandInvocation(Test-ComputerSecureChannel)');
   });
 });

@@ -10,6 +10,7 @@ export const MODULE_EXPORTS: Readonly<Record<string, readonly string[]>> = {
     'set-clipboard', 'set-content', 'set-item', 'set-itemproperty', 'set-location', 'set-service', 'set-timezone',
     'split-path', 'start-process', 'start-service', 'stop-computer', 'stop-process', 'stop-service',
     'suspend-service', 'test-connection', 'test-path', 'wait-process',
+    'add-computer', 'remove-computer', 'test-computersecurechannel', 'register-wmievent',
   ],
   'Microsoft.PowerShell.Utility': [
     'add-member', 'add-type', 'clear-variable', 'compare-object', 'convertfrom-clixml', 'convertfrom-csv',
@@ -650,6 +651,12 @@ export const MODULE_EXPORTS: Readonly<Record<string, readonly string[]>> = {
     'set-vpnconnectionipsecconfiguration', 'set-vpnconnectionproxy', 'set-vpnconnectiontriggerdnsconfiguration',
     'set-vpnconnectiontriggertrustednetwork',
   ],
+  'PSWindowsUpdate': [
+    'get-windowsupdate', 'set-wusettings',
+  ],
+  'Posh-SYSLOG': [
+    'send-syslogmessage',
+  ],
 };
 
 const MODULE_OF_COMMAND: ReadonlyMap<string, string> = new Map(
@@ -1140,6 +1147,7 @@ export function pipelinePropertyParameterNames(command: string): readonly string
 }
 
 export const CANONICAL_COMMAND_NAMES: readonly string[] = [
+    'Add-Computer', 'Remove-Computer', 'Test-ComputerSecureChannel', 'Register-WmiEvent', 'Get-WindowsUpdate', 'Set-WUSettings', 'Send-SyslogMessage',
     'Add-Content', 'Add-DnsClientDohServerAddress', 'Add-DnsClientNrptRule', 'Add-History', 'Add-LocalGroupMember',
     'Add-Member', 'Add-NetLbfoTeamMember', 'Add-NetLbfoTeamNic', 'Add-Printer', 'Add-VpnConnection',
     'Add-VpnConnectionRoute', 'Add-VpnConnectionTriggerApplication', 'Add-VpnConnectionTriggerDnsConfiguration',
