@@ -19,7 +19,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { PSLexer }  from '@/powershell/lexer/PSLexer';
-import { makePSCredentialFromSecret } from '@/powershell/credential/PSCredential';
+import { makePSCredentialFromSecret, isPSCredential, isSecureStringValue, PS_CREDENTIAL_TYPE_NAME } from '@/powershell/credential/PSCredential';
 import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
@@ -4790,6 +4790,8 @@ export class PSRuntime {
     const rec = obj as Record<string, PSValue>;
     if (isTimeSpan(rec)) return { name: 'TimeSpan', fullName: 'System.TimeSpan' };
     if (this.isScriptBlock(obj)) return { name: 'ScriptBlock', fullName: 'System.Management.Automation.ScriptBlock' };
+    if (isPSCredential(rec)) return { name: 'PSCredential', fullName: PS_CREDENTIAL_TYPE_NAME };
+    if (isSecureStringValue(rec)) return { name: 'SecureString', fullName: 'System.Security.SecureString' };
     const declared = rec['__type__'];
     if (typeof declared === 'string') return { name: declared.slice(declared.lastIndexOf('.') + 1), fullName: declared };
     if ((rec as unknown as Record<string, unknown>)['__pscustomobject__'] === true) {
