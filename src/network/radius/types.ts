@@ -213,6 +213,7 @@ export interface RadiusUser {
   acceptAny?: boolean;
   loginTime?: string;
   simultaneousUse?: number;
+  knownGoodName?: string;
   serviceType?: number;
   replyAttributes?: RadiusAttribute[];
   /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */

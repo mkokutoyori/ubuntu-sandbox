@@ -38,6 +38,7 @@ export interface UsersMatch {
   rejected: boolean;
   loginTime: string | null;
   simultaneousUse: number | null;
+  matchedEntries: Array<{ name: string; line: number }>;
   reply: RadiusAttribute[];
 }
 
@@ -237,7 +238,7 @@ export function pairMatches(pair: UsersPair, username: string, request: UsersReq
 }
 
 export function matchUsersEntries(entries: UsersEntry[], username: string, request: UsersRequestView): UsersMatch | null {
-  const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, loginTime: null, simultaneousUse: null, reply: [] };
+  const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, loginTime: null, simultaneousUse: null, matchedEntries: [], reply: [] };
   let matched = false;
   for (const entry of entries) {
     if (entry.name !== 'DEFAULT' && entry.name !== username) continue;
@@ -253,6 +254,7 @@ export function matchUsersEntries(entries: UsersEntry[], username: string, reque
     }
     if (!selected) continue;
     matched = true;
+    result.matchedEntries.push({ name: entry.name, line: entry.line });
     for (const [key, value] of control) {
       if (isKnownGoodName(key)) result.knownGood = [...result.knownGood.filter((item) => item.name !== key), { name: key, value }];
       if (key === 'cleartext-password') result.password = value;

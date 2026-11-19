@@ -2,8 +2,15 @@ import type { ConfSection } from './FreeradiusConf';
 
 export type ProcessingSection = 'authorize' | 'authenticate' | 'preacct' | 'accounting' | 'session' | 'post-auth';
 
+export interface SectionLocation {
+  readonly file: string;
+  readonly line: number;
+}
+
 export interface Pipeline {
   readonly sections: ReadonlyMap<ProcessingSection, ReadonlySet<string>>;
+  readonly locations: ReadonlyMap<ProcessingSection, SectionLocation>;
+  readonly authTypes: ReadonlyMap<string, SectionLocation>;
 }
 
 const SECTION_NAMES: readonly ProcessingSection[] = ['authorize', 'authenticate', 'preacct', 'accounting', 'session', 'post-auth'];
@@ -21,14 +28,20 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
   const pipelines = new Map<string, Pipeline>();
   for (const server of root.sections.filter((section) => section.name1 === 'server')) {
     const sections = new Map<ProcessingSection, ReadonlySet<string>>();
+    const locations = new Map<ProcessingSection, SectionLocation>();
+    const authTypes = new Map<string, SectionLocation>();
     for (const section of server.sections) {
       if (!SECTION_NAMES.includes(section.name1 as ProcessingSection)) continue;
+      locations.set(section.name1 as ProcessingSection, { file: section.file, line: section.line });
+      if (section.name1 === 'authenticate') {
+        for (const child of section.sections) if (child.name1 === 'Auth-Type' && child.name2 !== null) authTypes.set(child.name2, { file: child.file, line: child.line });
+      }
       const names = new Set<string>();
       const failure = collectModules(section, names);
       if (failure !== null) return { error: failure };
       sections.set(section.name1 as ProcessingSection, names);
     }
-    pipelines.set(server.name2 ?? '', { sections });
+    pipelines.set(server.name2 ?? '', { sections, locations, authTypes });
   }
   return pipelines;
 }

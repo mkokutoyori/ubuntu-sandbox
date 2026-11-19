@@ -328,7 +328,11 @@ export class LinuxServer extends LinuxMachine {
       for (const attribute of event.packet.attributes) sink(`${prefix}   ${formatRadiusAttribute(attribute)}`);
       if (event.direction === 'sent') sink(`${prefix} Finished request`);
     });
-    return () => this.radiusServer.setPacketTrace(null);
+    this.radiusServer.setDebugEmit((number, lines) => { for (const line of lines) sink(`(${number}) ${line}`); });
+    return () => {
+      this.radiusServer.setPacketTrace(null);
+      this.radiusServer.setDebugEmit(null);
+    };
   }
 
   getSmtpServer(): SmtpServer { return this.smtpServer; }

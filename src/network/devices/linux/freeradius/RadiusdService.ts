@@ -28,6 +28,7 @@ import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
+import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from './RequestDebug';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, type PreprocessFiles } from './PreprocessModule';
 import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
@@ -323,6 +324,7 @@ export class RadiusdService {
   }
 
   private preprocessFiles: PreprocessFiles = { hints: null, huntgroups: null };
+  private lastResolution: ResolutionTrace | null = null;
 
   private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH): RadiusUser | undefined {
     const groupsOf = (name: string) => this.wallClock.groupsOf(name);
@@ -330,18 +332,25 @@ export class RadiusdService {
     const prepared = this.sectionAllows(listenPort, 'authorize', 'preprocess')
       ? applyPreprocess(this.preprocessFiles, username, attributes, nasIp, groupsOf)
       : { extra: [] as RadiusAttribute[], overlay: new Map<string, string>(), rejected: false };
+    this.lastResolution = { preprocessRejected: prepared.rejected, matched: [], loginTime: null, loginVerdict: 'noop', secondsLeft: 0 };
     if (prepared.rejected) return undefined;
     if (!this.sectionAllows(listenPort, 'authorize', 'files')) return undefined;
     const match = matchUsersEntries(entries, username, requestViewOf([...attributes, ...prepared.extra], prepared.overlay, groupsOf, username));
     if (match === null || match.rejected) return undefined;
     const known = knownGoodPassword(match.knownGood);
+    const knownItem = match.knownGood.find((item) => knownGoodPassword([item]) !== null);
+    this.lastResolution = { ...this.lastResolution, matched: match.matchedEntries, loginTime: match.loginTime, loginVerdict: 'noop', secondsLeft: 0 };
     if (known === null && !match.acceptAny) return undefined;
-    return {
+    const user: RadiusUser = {
+      ...(knownItem === undefined ? {} : { knownGoodName: knownGoodDisplayName(knownItem.name) }),
       username, password: known?.cleartext ?? match.password ?? '', verify: known?.verify,
       acceptAny: match.acceptAny, replyAttributes: match.reply,
       ...(match.loginTime === null || !this.sectionAllows(listenPort, 'authorize', 'logintime') ? {} : { loginTime: match.loginTime }),
       ...(match.simultaneousUse === null ? {} : { simultaneousUse: match.simultaneousUse }),
     };
+    const login = this.radiusServer.loginTimeOutcome(user);
+    this.lastResolution = { ...this.lastResolution, matched: match.matchedEntries, loginTime: user.loginTime ?? null, loginVerdict: login.result, secondsLeft: login.secondsLeft };
+    return user;
   }
 
   private confReader(): ConfFileReader {
@@ -383,6 +392,11 @@ export class RadiusdService {
     this.logConfig = loaded.log;
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
+    this.radiusServer.setDebugBuilder((info) => requestDebugLines({
+      server: this.portServers.get(info.port) ?? 'default', pipeline: this.pipelines.get(this.portServers.get(info.port) ?? 'default'),
+      request: info.request, user: info.user, resolution: this.lastResolution, usersPath: this.usersFilePath, accepted: info.accepted,
+      receivedLines: info.receivedLines, replyLines: info.replyLines,
+    }));
     this.radiusServer.setFeaturePolicy((feature, port) => {
       const both = (name: string) => this.sectionAllows(port, 'authorize', name) && this.sectionAllows(port, 'authenticate', name);
       if (feature === 'session') return this.sectionAllows(port, 'session', 'radutmp');

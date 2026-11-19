@@ -21,6 +21,7 @@ import {
 } from './authenticators';
 import { parseChapPasswordHex, verifyChapResponse } from './passwords';
 import { loginTimeSecondsLeft } from './LoginTime';
+import { formatRadiusAttribute } from './attributeText';
 import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
@@ -135,6 +136,16 @@ export interface RadiusPacketTrace {
   destinationIp: string;
   destinationPort: number;
   length: number;
+}
+
+export interface RequestDebugInfo {
+  port: number;
+  request: RadiusPacket;
+  username: string;
+  user: RadiusUser | undefined;
+  accepted: boolean;
+  receivedLines: string[];
+  replyLines: string[];
 }
 
 export type RequestFeature = 'pap' | 'chap' | 'mschap' | 'eap' | 'session' | 'accounting-utmp';
@@ -309,15 +320,43 @@ export class RadiusServerAgent {
     this.traceOpen = false;
   }
 
-  private traceReceived(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstPort: number, inPort: string, decrypt: boolean): void {
-    if (this.packetTrace === null) return;
-    const attributes = decrypt
+  private displayAttributes(packet: RadiusPacket, srcIp: IPAddress, decrypt: boolean): RadiusAttribute[] {
+    return decrypt
       ? packet.attributes.map((attribute) => {
         if (attribute.type !== 'user-password') return attribute;
         const clear = decryptUserPassword(String(attribute.value), this.secretFor(srcIp), packet.authenticator);
         return isPrintablePassword(clear) ? { ...attribute, value: clear } : attribute;
       })
       : packet.attributes;
+  }
+
+  private debugEmit: ((number: number, lines: string[]) => void) | null = null;
+  private debugBuilder: ((info: RequestDebugInfo) => string[]) | null = null;
+
+  setDebugEmit(emit: ((number: number, lines: string[]) => void) | null): void { this.debugEmit = emit; }
+
+  setDebugBuilder(builder: ((info: RequestDebugInfo) => string[]) | null): void { this.debugBuilder = builder; }
+
+  loginTimeOutcome(user: RadiusUser | undefined): { result: 'noop' | 'ok' | 'updated' | 'userlock'; secondsLeft: number } {
+    if (user?.loginTime === undefined) return { result: 'noop', secondsLeft: 0 };
+    const verdict = this.loginTimeVerdict(user);
+    if (!verdict.allowed) return { result: 'userlock', secondsLeft: 0 };
+    return { result: verdict.secondsLeft > 0 ? 'updated' : 'ok', secondsLeft: verdict.secondsLeft };
+  }
+
+  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean): void {
+    if (this.debugEmit === null || this.debugBuilder === null) return;
+    const lineOf = (attribute: RadiusAttribute) => `  ${formatRadiusAttribute(attribute)}`;
+    this.debugEmit(this.requestNumber, this.debugBuilder({
+      port: this.servedPort ?? this.config.port, request, username, user, accepted,
+      receivedLines: this.displayAttributes(request, srcIp, true).map(lineOf),
+      replyLines: accepted ? (user?.replyAttributes ?? []).map(lineOf) : [],
+    }));
+  }
+
+  private traceReceived(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstPort: number, inPort: string, decrypt: boolean): void {
+    if (this.packetTrace === null) return;
+    const attributes = this.displayAttributes(packet, srcIp, decrypt);
     this.traceOpen = true;
     this.packetTrace({
       number: this.requestNumber, direction: 'received', packet: { ...packet, attributes },
@@ -679,6 +718,7 @@ export class RadiusServerAgent {
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
     }
 
+    this.emitRequestDebug(payload, srcIp, username, user, accepted);
     const denial = accepted ? this.simultaneousUseDenial(user, username) : null;
     if (denial !== null) {
       this.publishRejected(senderIp, username, 'simultaneous-use');
