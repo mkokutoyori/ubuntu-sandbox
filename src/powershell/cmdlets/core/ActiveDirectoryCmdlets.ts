@@ -827,7 +827,7 @@ export class SetADGroupCmdlet implements ICmdlet {
   readonly name = 'set-adgroup';
   readonly displayName = 'Set-ADGroup';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm',
+  readonly parameters = ['Identity', 'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm', 'SamAccountName',
     ...GROUP_PROPERTY_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -839,12 +839,17 @@ export class SetADGroupCmdlet implements ICmdlet {
       return null;
     }
     const attributes = groupAttributesFrom(ctx);
+    if (ctx.named['samaccountname'] !== undefined) attributes['sAMAccountName'] = psValueToString(ctx.named['samaccountname']);
     const before = ad.getGroup(identity);
     const res = ad.setGroup(identity, attributes, remoteTargetOf(ctx));
     if (!res.ok) { ctx.emitError(`Set-ADGroup : ${res.message}`); return null; }
     const audited = Object.keys(attributes).some((ldap) => ldap !== 'managedBy');
     if (before !== null && before.category === 'Security' && audited) {
-      auditSinkFor(ctx)?.groupChanged(before.sam, before.scope === 'DomainLocal' ? 'Local' : before.scope, subjectUserOf(ctx));
+      const renamedTo = attributes['sAMAccountName'] !== undefined && attributes['sAMAccountName'].toLowerCase() !== before.sam.toLowerCase()
+        ? attributes['sAMAccountName'] : undefined;
+      const sink = auditSinkFor(ctx);
+      sink?.groupChanged(renamedTo ?? before.sam, before.scope === 'DomainLocal' ? 'Local' : before.scope, subjectUserOf(ctx), renamedTo);
+      if (renamedTo !== undefined) sink?.accountRenamed(before.sam, renamedTo, subjectUserOf(ctx));
     }
     if (ctx.named['passthru'] !== true) return null;
     const g = ad.getGroup(identity);

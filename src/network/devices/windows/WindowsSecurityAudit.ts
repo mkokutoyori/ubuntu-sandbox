@@ -285,12 +285,12 @@ export class WindowsSecurityAudit {
     });
   }
 
-  groupChanged(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local'): void {
+  groupChanged(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local', samAccountName = '-'): void {
     const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_CHANGED_GLOBAL
       : scope === 'Universal' ? SECURITY_EVENT.GROUP_CHANGED_UNIVERSAL : SECURITY_EVENT.GROUP_CHANGED;
     this.record(eventId, 'SuccessAudit', {
       ...this.groupFields(group), ...this.subjectFields(subjectUserName),
-      PrivilegeList: '-', SamAccountName: '-', SidHistory: '-',
+      PrivilegeList: '-', SamAccountName: samAccountName, SidHistory: '-',
     });
   }
 

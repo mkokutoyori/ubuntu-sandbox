@@ -1592,6 +1592,11 @@ export class DirectoryStore {
   setGroupAttributes(identity: string, attributes: Record<string, string>): DirOpResult {
     const entry = this.findGroupEntry(this.resolveIdentity(identity));
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    const newSam = attributes['sAMAccountName'];
+    if (newSam !== undefined) {
+      const holder = this.findUserEntry(newSam) ?? this.findGroupEntry(newSam);
+      if (newSam === '' || (holder !== null && holder !== entry)) return { ok: false, message: 'The specified account already exists' };
+    }
     for (const [ldap, value] of Object.entries(attributes)) {
       this.tree.modifyEntry(entry.dn, [value === ''
         ? { op: 'delete', type: ldap, values: [] }

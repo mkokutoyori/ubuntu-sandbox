@@ -8,8 +8,11 @@
  * 4737 and 4755 pages were not reachable: the titles and the shared layout follow the 4731/4754 pairs already written and the
  * Microsoft French page that says 4737 is 4735 for a global group).
  *
- * Discriminated with git stash on src: 4 of 7 fall before the fix; three pass either way and are named: the witness (New-ADGroup
+ * Discriminated with git stash on src: 7 of 10 fall before both changes (4 before the group-changed events, 3 more before
+ * -SamAccountName, which alone fails the last three); three pass either way and are named: the witness (New-ADGroup
  * writes 4727), "ManagedBy alone writes nothing" and "a distribution group writes nothing" (nothing was written for anything).
+ * The 4735 page says a group SAM rename also writes 4781 although the 4781 page speaks of user and computer accounts only; the
+ * probe follows the page of the event being written.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
@@ -85,4 +88,31 @@ describe('Set-ADGroup writes the group-changed events', () => {
     await run(server, 'Set-ADGroup -Identity Eng -ManagedBy "CN=Administrator,CN=Users,DC=lab,DC=local"');
     expect(await events(server, 4737)).not.toContain('Group Name:');
   });
+
+  it('-SamAccountName renames the group, keeps its SID, and refuses a name another account holds', async () => {
+    const server = await dc();
+    const before = await run(server, '(Get-ADGroup -Identity Eng).SID.Value');
+    await run(server, 'Set-ADGroup -Identity Eng -SamAccountName Eng2');
+    expect(await run(server, '(Get-ADGroup -Identity Eng2).SID.Value')).toBe(before);
+    expect(await run(server, 'Get-ADGroup -Identity Eng')).toContain('Cannot find an object');
+    expect(await run(server, 'Set-ADGroup -Identity Eng2 -SamAccountName Loc')).toContain('already exists');
+  });
+
+  it('a renamed group writes 4737 whose SAM Account Name is the new name (4735 page: new value shown)', async () => {
+    const server = await dc();
+    await run(server, 'Set-ADGroup -Identity Eng -SamAccountName Eng2');
+    const out = await events(server, 4737);
+    expect(out).toMatch(/Group Name:\s+Eng2/);
+    expect(out).toMatch(/SAM Account Name:\s+Eng2/);
+  });
+
+  it('a renamed group also writes 4781 when User Account Management is audited (4735 page)', async () => {
+    const server = await dc();
+    await run(server, 'auditpol /set /subcategory:"User Account Management" /success:enable');
+    await run(server, 'Set-ADGroup -Identity Eng -SamAccountName Eng2');
+    const xml = String(await server.executeCmdCommand('wevtutil qe Security /q:"*[System[EventID=4781]]" /rd:true /f:xml'));
+    expect(xml).toContain("<Data Name='OldTargetUserName'>Eng</Data>");
+    expect(xml).toContain("<Data Name='NewTargetUserName'>Eng2</Data>");
+  });
 });
+
