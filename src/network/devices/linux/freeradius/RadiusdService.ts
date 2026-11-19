@@ -29,6 +29,8 @@ import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
 import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from './RequestDebug';
+import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
+import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, type PreprocessFiles } from './PreprocessModule';
 import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
@@ -94,6 +96,8 @@ const PROCESS_NAME = 'freeradius';
 type ConfigLoadResult =
   | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; files: readonly string[] }
   | { ok: false; error: string };
+
+const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
 
 export class RadiusdService {
   private running = false;
@@ -328,29 +332,94 @@ export class RadiusdService {
 
   private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH): RadiusUser | undefined {
     const groupsOf = (name: string) => this.wallClock.groupsOf(name);
-    if (this.sectionPresent(listenPort, 'authorize', 'reject')) return undefined;
-    const prepared = this.sectionAllows(listenPort, 'authorize', 'preprocess')
-      ? applyPreprocess(this.preprocessFiles, username, attributes, nasIp, groupsOf)
-      : { extra: [] as RadiusAttribute[], overlay: new Map<string, string>(), rejected: false };
-    this.lastResolution = { preprocessRejected: prepared.rejected, matched: [], loginTime: null, loginVerdict: 'noop', secondsLeft: 0 };
-    if (prepared.rejected) return undefined;
-    if (!this.sectionAllows(listenPort, 'authorize', 'files')) return undefined;
-    const match = matchUsersEntries(entries, username, requestViewOf([...attributes, ...prepared.extra], prepared.overlay, groupsOf, username));
-    if (match === null || match.rejected) return undefined;
-    const known = knownGoodPassword(match.knownGood);
-    const knownItem = match.knownGood.find((item) => knownGoodPassword([item]) !== null);
-    this.lastResolution = { ...this.lastResolution, matched: match.matchedEntries, loginTime: match.loginTime, loginVerdict: 'noop', secondsLeft: 0 };
-    if (known === null && !match.acceptAny) return undefined;
-    const user: RadiusUser = {
+    const pipeline = this.pipelines.get(this.portServers.get(listenPort) ?? 'default');
+    const program: readonly Statement[] = pipeline?.authorize ?? DEFAULT_AUTHORIZE_PROGRAM;
+    const context = newContext(username, attributes);
+    const lines: string[] = [];
+    const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
+    const outcome = run(program, context, host, lines, 3);
+    const authType = context.control.get('auth-type')?.toLowerCase();
+    const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : null;
+    this.lastResolution = { lines, result: outcome.result, authType: trace };
+    if (outcome.result === 'reject' || authType === 'reject') return undefined;
+    const known = knownGoodPassword(context.knownGood);
+    const acceptAny = authType === 'accept';
+    if (known === null && !acceptAny) return undefined;
+    const knownItem = context.knownGood.find((item) => knownGoodPassword([item]) !== null);
+    const loginTime = context.control.get('login-time');
+    const simultaneous = context.control.get('simultaneous-use');
+    return {
       ...(knownItem === undefined ? {} : { knownGoodName: knownGoodDisplayName(knownItem.name) }),
-      username, password: known?.cleartext ?? match.password ?? '', verify: known?.verify,
-      acceptAny: match.acceptAny, replyAttributes: match.reply,
-      ...(match.loginTime === null || !this.sectionAllows(listenPort, 'authorize', 'logintime') ? {} : { loginTime: match.loginTime }),
-      ...(match.simultaneousUse === null ? {} : { simultaneousUse: match.simultaneousUse }),
+      username, password: known?.cleartext ?? context.control.get('cleartext-password') ?? '', verify: known?.verify,
+      acceptAny, replyAttributes: context.reply,
+      ...(loginTime === undefined || !this.sectionAllows(listenPort, 'authorize', 'logintime') ? {} : { loginTime }),
+      ...(simultaneous === undefined ? {} : { simultaneousUse: Number(simultaneous) }),
     };
-    const login = this.radiusServer.loginTimeOutcome(user);
-    this.lastResolution = { ...this.lastResolution, matched: match.matchedEntries, loginTime: user.loginTime ?? null, loginVerdict: login.result, secondsLeft: login.secondsLeft };
-    return user;
+  }
+
+  private runAuthorizeModule(name: string, context: UnlangContext, entries: UsersEntry[], nasIp: string, groupsOf: (username: string) => readonly string[]): ModuleOutcome {
+    const has = (type: string) => context.request.some((attribute) => attribute.type === type);
+    const messages: string[] = [];
+    if (name === 'preprocess') {
+      const prepared = applyPreprocess(this.preprocessFiles, context.username, context.request, nasIp, groupsOf);
+      context.request.push(...prepared.extra);
+      for (const [key, value] of prepared.overlay) context.overlay.set(key, value);
+      return { result: prepared.rejected ? 'reject' : 'ok', messages };
+    }
+    if (name === 'chap' && has('chap-password')) {
+      if (!context.control.has('auth-type')) context.control.set('auth-type', 'chap');
+      messages.push('chap: &control:Auth-Type := CHAP');
+      return { result: 'ok', messages };
+    }
+    if (name === 'mschap') {
+      const present = context.request.some((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === MICROSOFT_VENDOR_ID && attribute.vendor.type === 25);
+      return { result: present ? 'ok' : 'noop', messages };
+    }
+    if (name === 'eap') {
+      if (has('eap-message')) return { result: 'ok', messages };
+      messages.push('eap: No EAP-Message, not doing EAP');
+      return { result: 'noop', messages };
+    }
+    if (name === 'files') {
+      const match = matchUsersEntries(entries, context.username, requestViewOf(context.request, context.overlay, groupsOf, context.username));
+      if (match === null) return { result: 'noop', messages };
+      for (const entry of match.matchedEntries) messages.push(`files: ${this.usersFilePath}: Matched entry ${entry.name} at line ${entry.line}`);
+      for (const item of match.knownGood) {
+        context.control.set(item.name, item.value);
+        context.knownGood = [...context.knownGood.filter((known) => known.name !== item.name), item];
+      }
+      if (match.acceptAny) context.control.set('auth-type', 'accept');
+      if (match.rejected) context.control.set('auth-type', 'reject');
+      if (match.loginTime !== null) context.control.set('login-time', match.loginTime);
+      if (match.simultaneousUse !== null) context.control.set('simultaneous-use', String(match.simultaneousUse));
+      context.reply.push(...match.reply);
+      return { result: 'ok', messages };
+    }
+    if (name === 'logintime') {
+      const loginTime = context.control.get('login-time');
+      if (loginTime === undefined) return { result: 'noop', messages };
+      messages.push('logintime: Checking Login-Time');
+      const verdict = this.radiusServer.loginTimeOutcome({ username: context.username, password: '', loginTime });
+      if (verdict.result === 'updated') {
+        messages.push(`logintime: Login within allowed time-slot, ${verdict.secondsLeft} seconds left in this session`);
+        messages.push(`logintime: reply:Session-Timeout set to ${verdict.secondsLeft}`);
+      } else if (verdict.result === 'userlock') messages.push('logintime: ERROR: Login outside of allowed time-slot');
+      return { result: verdict.result, messages };
+    }
+    if (name === 'pap') {
+      if (!has('user-password')) {
+        messages.push('pap: No User-Password attribute in the request.  Cannot do PAP');
+        return { result: 'noop', messages };
+      }
+      if (knownGoodPassword(context.knownGood) === null) {
+        messages.push('pap: WARNING: No "known good" password found for the user.  Not setting Auth-Type');
+        messages.push('pap: WARNING: Authentication will fail unless a "known good" password is available');
+        return { result: 'noop', messages };
+      }
+      if (!context.control.has('auth-type')) context.control.set('auth-type', 'pap');
+      return { result: 'updated', messages };
+    }
+    return { result: 'noop', messages };
   }
 
   private confReader(): ConfFileReader {

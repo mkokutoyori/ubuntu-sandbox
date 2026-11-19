@@ -12,6 +12,7 @@ export interface ConfSection {
   readonly name2: string | null;
   readonly pairs: ConfPair[];
   readonly sections: ConfSection[];
+  readonly items: Array<ConfPair | ConfSection>;
   readonly file: string;
   readonly line: number;
 }
@@ -70,7 +71,7 @@ function logicalLines(source: string): Array<{ text: string; line: number }> {
 }
 
 export function parseFreeradiusConf(source: string, fileName: string, readFile: ConfFileReader = () => null): ConfParseResult {
-  const root: ConfSection = { name1: '', name2: null, pairs: [], sections: [], file: fileName, line: 0 };
+  const root: ConfSection = { name1: '', name2: null, pairs: [], sections: [], items: [], file: fileName, line: 0 };
   const files: string[] = [fileName];
   try {
     readInto(source, fileName, readFile, [root], 0, files);
@@ -227,6 +228,14 @@ function readInto(
       readInto(included, path, readFile, stack, depth + 1, files);
       continue;
     }
+    const condition = /^(if|elsif)\s*\((.*)\)\s*\{\s*$/.exec(trimmed);
+    if (condition !== null && stack[stack.length - 1].name1 !== '') {
+      const conditional: ConfSection = { name1: condition[1], name2: condition[2].trim(), pairs: [], sections: [], items: [], file, line };
+      stack[stack.length - 1].sections.push(conditional);
+      stack[stack.length - 1].items.push(conditional);
+      stack.push(conditional);
+      continue;
+    }
     const tokens = tokenize(text, file, line);
     const current = stack[stack.length - 1];
     const first = tokens[0];
@@ -240,7 +249,9 @@ function readInto(
     }
     const second = tokens[1];
     if (first.kind === 'word' && (second.kind === 'eol' || second.kind === 'rbrace') && current.name1 !== '') {
-      current.pairs.push({ name: first.text, op: '=', value: '', quoted: false, file, line });
+      const bare: ConfPair = { name: first.text, op: '=', value: '', quoted: false, file, line };
+      current.pairs.push(bare);
+      current.items.push(bare);
       continue;
     }
     if (second.kind === 'op') {
@@ -249,7 +260,9 @@ function readInto(
         throw new ParseFailure(`${file}[${line}]: Parse error: Missing value for '${first.text}'`);
       }
       const value = expand(valueToken.text, stack, file, line);
-      current.pairs.push({ name: first.text, op: second.text, value, quoted: valueToken.kind === 'quoted', file, line });
+      const assigned: ConfPair = { name: first.text, op: second.text, value, quoted: valueToken.kind === 'quoted', file, line };
+      current.pairs.push(assigned);
+      current.items.push(assigned);
       continue;
     }
     let name2: string | null = null;
@@ -262,8 +275,9 @@ function readInto(
       const offender = tokens[braceAt].kind === 'eol' ? 'end of line' : tokens[braceAt].text;
       throw new ParseFailure(`${file}[${line}]: Parse error after '${first.text}': unexpected token '${offender}'`);
     }
-    const section: ConfSection = { name1: first.text, name2, pairs: [], sections: [], file, line };
+    const section: ConfSection = { name1: first.text, name2, pairs: [], sections: [], items: [], file, line };
     current.sections.push(section);
+    current.items.push(section);
     stack.push(section);
   }
   if (stack.length > baseStackLength) {

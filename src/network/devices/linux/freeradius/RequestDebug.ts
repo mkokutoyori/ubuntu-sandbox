@@ -1,15 +1,13 @@
 import type { RadiusPacket, RadiusUser } from '@/network/radius/types';
-import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
 import type { Pipeline, ProcessingSection } from './PipelineConfig';
+import type { ModuleResult } from './Unlang';
 
-export type ModuleResult = 'reject' | 'fail' | 'ok' | 'handled' | 'invalid' | 'userlock' | 'notfound' | 'noop' | 'updated';
+export type { ModuleResult };
 
 export interface ResolutionTrace {
-  preprocessRejected: boolean;
-  matched: Array<{ name: string; line: number }>;
-  loginTime: string | null;
-  loginVerdict: ModuleResult;
-  secondsLeft: number;
+  lines: string[];
+  result: ModuleResult;
+  authType: 'PAP' | 'CHAP' | 'Accept' | null;
 }
 
 export interface DebugInput {
@@ -24,7 +22,6 @@ export interface DebugInput {
   replyLines: string[];
 }
 
-const DEFAULT_AUTHORIZE = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'];
 const KNOWN_GOOD_NAMES: Record<string, string> = {
   'cleartext-password': 'Cleartext-Password', 'md5-password': 'MD5-Password', 'smd5-password': 'SMD5-Password',
   'sha-password': 'SHA-Password', 'ssha-password': 'SSHA-Password', 'sha2-password': 'SHA2-Password', 'nt-password': 'NT-Password',
@@ -35,13 +32,6 @@ export function knownGoodDisplayName(itemName: string): string {
   return KNOWN_GOOD_NAMES[itemName.toLowerCase()] ?? itemName;
 }
 
-const PRIORITY: ModuleResult[] = ['reject', 'userlock', 'fail', 'invalid', 'handled', 'updated', 'ok', 'notfound', 'noop'];
-
-function combine(results: ModuleResult[]): ModuleResult {
-  for (const candidate of PRIORITY) if (results.includes(candidate)) return candidate;
-  return 'noop';
-}
-
 function located(pipeline: Pipeline | undefined, section: ProcessingSection): string {
   const place = pipeline?.locations.get(section);
   return place === undefined ? '' : ` from file ${place.file} line ${place.line}`;
@@ -49,50 +39,13 @@ function located(pipeline: Pipeline | undefined, section: ProcessingSection): st
 
 export function requestDebugLines(input: DebugInput): string[] {
   const { request, user, pipeline } = input;
-  const has = (type: string) => request.attributes.some((attribute) => attribute.type === type);
   const lines: string[] = [`Virtual server ${input.server} received request`, ...input.receivedLines, `server ${input.server} {`];
   const inner = (text: string, depth: number): void => { lines.push(`${'  '.repeat(depth)}${text}`); };
-  const authorize = pipeline?.sections.get('authorize');
-  const order = authorize === undefined ? DEFAULT_AUTHORIZE : Array.from(authorize);
-  const hasCleartext = user !== undefined && user.knownGoodName !== undefined;
-  let authType: 'PAP' | 'CHAP' | 'Accept' | null = null;
-  const results: ModuleResult[] = [];
-  const body: string[] = [];
-  for (const module of order) {
-    let result: ModuleResult = 'noop';
-    const messages: string[] = [];
-    if (module === 'preprocess') result = input.resolution?.preprocessRejected === true ? 'reject' : 'ok';
-    else if (module === 'chap' && has('chap-password')) { result = 'ok'; messages.push('chap: &control:Auth-Type := CHAP'); if (authType === null) authType = 'CHAP'; }
-    else if (module === 'mschap' && request.attributes.some((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === MICROSOFT_VENDOR_ID && attribute.vendor.type === 25)) result = 'ok';
-    else if (module === 'eap') {
-      if (has('eap-message')) result = 'ok';
-      else messages.push('eap: No EAP-Message, not doing EAP');
-    } else if (module === 'files') {
-      for (const entry of input.resolution?.matched ?? []) messages.push(`files: ${input.usersPath}: Matched entry ${entry.name} at line ${entry.line}`);
-      result = (input.resolution?.matched.length ?? 0) > 0 ? 'ok' : 'noop';
-    } else if (module === 'logintime' && input.resolution?.loginTime !== null && input.resolution !== null) {
-      messages.push('logintime: Checking Login-Time');
-      result = input.resolution.loginVerdict;
-      if (result === 'updated') {
-        messages.push(`logintime: Login within allowed time-slot, ${input.resolution.secondsLeft} seconds left in this session`);
-        messages.push(`logintime: reply:Session-Timeout set to ${input.resolution.secondsLeft}`);
-      } else if (result === 'userlock') messages.push('logintime: ERROR: Login outside of allowed time-slot');
-    } else if (module === 'pap') {
-      if (!has('user-password')) messages.push('pap: No User-Password attribute in the request.  Cannot do PAP');
-      else if (!hasCleartext) {
-        messages.push('pap: WARNING: No "known good" password found for the user.  Not setting Auth-Type');
-        messages.push('pap: WARNING: Authentication will fail unless a "known good" password is available');
-      } else { result = 'updated'; if (authType === null) authType = 'PAP'; }
-    }
-    results.push(result);
-    for (const message of messages) body.push(`      ${message}`);
-    body.push(`    [${module}] = ${result}`);
-  }
-  if (user?.acceptAny === true) authType = 'Accept';
-  const sectionResult = combine(results);
+  const sectionResult = input.resolution?.result ?? 'noop';
+  const authType = input.resolution?.authType ?? null;
   inner(`# Executing section authorize${located(pipeline, 'authorize')}`, 1);
   inner('authorize {', 2);
-  lines.push(...body.map((line) => `  ${line}`));
+  lines.push(...(input.resolution?.lines ?? []));
   inner(`} # authorize = ${sectionResult}`, 2);
   if (sectionResult !== 'reject' && sectionResult !== 'userlock') {
     if (authType === 'Accept') {

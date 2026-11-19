@@ -1,4 +1,5 @@
 import type { ConfSection } from './FreeradiusConf';
+import { parseStatements, moduleNames, UnlangError, type Statement } from './Unlang';
 
 export type ProcessingSection = 'authorize' | 'authenticate' | 'preacct' | 'accounting' | 'session' | 'post-auth';
 
@@ -11,6 +12,7 @@ export interface Pipeline {
   readonly sections: ReadonlyMap<ProcessingSection, ReadonlySet<string>>;
   readonly locations: ReadonlyMap<ProcessingSection, SectionLocation>;
   readonly authTypes: ReadonlyMap<string, SectionLocation>;
+  readonly authorize: readonly Statement[] | null;
 }
 
 const SECTION_NAMES: readonly ProcessingSection[] = ['authorize', 'authenticate', 'preacct', 'accounting', 'session', 'post-auth'];
@@ -30,6 +32,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
     const sections = new Map<ProcessingSection, ReadonlySet<string>>();
     const locations = new Map<ProcessingSection, SectionLocation>();
     const authTypes = new Map<string, SectionLocation>();
+    let authorize: Statement[] | null = null;
     for (const section of server.sections) {
       if (!SECTION_NAMES.includes(section.name1 as ProcessingSection)) continue;
       locations.set(section.name1 as ProcessingSection, { file: section.file, line: section.line });
@@ -37,13 +40,35 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
         for (const child of section.sections) if (child.name1 === 'Auth-Type' && child.name2 !== null) authTypes.set(child.name2, { file: child.file, line: child.line });
       }
       const names = new Set<string>();
-      const failure = collectModules(section, names);
-      if (failure !== null) return { error: failure };
+      if (section.name1 === 'authorize') {
+        try {
+          authorize = parseStatements(section, resolveModule);
+        } catch (error) {
+          if (error instanceof UnlangError) return { error: error.message };
+          throw error;
+        }
+        moduleNames(authorize, names);
+      } else {
+        const failure = collectModules(section, names);
+        if (failure !== null) return { error: failure };
+      }
       sections.set(section.name1 as ProcessingSection, names);
     }
-    pipelines.set(server.name2 ?? '', { sections, locations, authTypes });
+    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize });
   }
   return pipelines;
+}
+
+function resolveModule(rawName: string, file: string, line: number): string | null {
+  const optional = rawName.startsWith('-');
+  const name = optional ? rawName.slice(1) : rawName;
+  const base = name.split('.')[0];
+  if (IMPLEMENTED_MODULES.has(base)) return base;
+  if (optional) return null;
+  if (REAL_MODULES_NOT_IMPLEMENTED.has(base) || REAL_MODULES_NOT_IMPLEMENTED.has(name)) {
+    throw new UnlangError(`${file}[${line}]: The module "${name}" is not implemented in this simulator`);
+  }
+  throw new UnlangError(`${file}[${line}]: Failed to find module "${name}".`);
 }
 
 function collectModules(section: ConfSection, into: Set<string>): string | null {
