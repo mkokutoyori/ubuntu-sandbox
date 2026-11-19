@@ -1,4 +1,5 @@
 import { RADIUS_ATTR, type RadiusAttribute, type RadiusAttrType } from '@/network/radius/types';
+import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodPassword';
 import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, type RadiusValueType } from '@/network/radius/dictionary';
 
 export type UsersOperator = '=' | ':=' | '+=' | '-=' | '==' | '!=' | '<' | '>' | '<=' | '>=' | '=~' | '!~';
@@ -23,6 +24,8 @@ export type UsersRequestView = (attributeName: string) => string | number | unde
 
 export interface UsersMatch {
   password: string | null;
+  knownGood: KnownGoodItem[];
+  acceptAny: boolean;
   rejected: boolean;
   reply: RadiusAttribute[];
 }
@@ -89,7 +92,7 @@ export function parsePairList(text: string): PairListResult {
   }
 }
 
-const CONTROL_ONLY = new Set(['cleartext-password', 'auth-type', 'fall-through', 'hint', 'huntgroup-name', 'user-category', 'group', 'simultaneous-use', 'login-time']);
+const CONTROL_ONLY = new Set(['cleartext-password', 'crypt-password', 'md5-password', 'smd5-password', 'sha-password', 'ssha-password', 'nt-password', 'sha2-password', 'password-with-header', 'auth-type', 'fall-through', 'hint', 'huntgroup-name', 'user-category', 'group', 'simultaneous-use', 'login-time']);
 
 function knownName(name: string): boolean {
   const key = name.toLowerCase();
@@ -210,7 +213,7 @@ function matches(op: UsersOperator, actual: string | number | undefined, wanted:
 const SETTING_OPS = new Set<UsersOperator>([':=', '+=', '-=']);
 
 export function matchUsersEntries(entries: UsersEntry[], username: string, request: UsersRequestView): UsersMatch | null {
-  const result: UsersMatch = { password: null, rejected: false, reply: [] };
+  const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, reply: [] };
   let matched = false;
   for (const entry of entries) {
     if (entry.name !== 'DEFAULT' && entry.name !== username) continue;
@@ -229,7 +232,9 @@ export function matchUsersEntries(entries: UsersEntry[], username: string, reque
     if (!selected) continue;
     matched = true;
     for (const [key, value] of control) {
+      if (isKnownGoodName(key)) result.knownGood = [...result.knownGood.filter((item) => item.name !== key), { name: key, value }];
       if (key === 'cleartext-password') result.password = value;
+      else if (key === 'auth-type' && value.toLowerCase() === 'accept') result.acceptAny = true;
       else if (key === 'auth-type' && value.toLowerCase() === 'reject') result.rejected = true;
     }
     let fallThrough = false;

@@ -493,12 +493,12 @@ export class RadiusServerAgent {
       const parsed = parseChapPasswordHex(String(chapAttr.value));
       const challengeAttr = getAttr(payload, 'chap-challenge');
       const challenge = challengeAttr ? hexToBytes(String(challengeAttr.value)) : hexToBytes(payload.authenticator);
-      accepted = !!parsed && !!user && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge);
+      accepted = !!user && (user.acceptAny === true || (!!parsed && user.password !== '' && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge)));
       reason = !user ? 'unknown-user' : 'bad-password';
     } else {
       const decrypted = decryptUserPassword(String(passwordAttr!.value), this.secretFor(srcIp), payload.authenticator);
       const secretLooksWrong = !isPrintablePassword(decrypted);
-      accepted = !secretLooksWrong && !!user && user.password === decrypted;
+      accepted = !secretLooksWrong && !!user && (user.acceptAny === true || (user.verify ? user.verify(decrypted) : user.password === decrypted));
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
     }
 

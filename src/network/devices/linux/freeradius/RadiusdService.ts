@@ -14,6 +14,7 @@
  * either — that's a separate, pre-existing feature this PRD item doesn't
  * touch.
  */
+import { knownGoodPassword } from '@/network/radius/KnownGoodPassword';
 import { IPAddress } from '@/network/core/types';
 import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
@@ -221,8 +222,13 @@ export class RadiusdService {
 
   private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[]): RadiusUser | undefined {
     const match = matchUsersEntries(entries, username, (name) => attributes.find((candidate) => candidate.type === name)?.value);
-    if (match === null || match.rejected || match.password === null) return undefined;
-    return { username, password: match.password, replyAttributes: match.reply };
+    if (match === null || match.rejected) return undefined;
+    const known = knownGoodPassword(match.knownGood);
+    if (known === null && !match.acceptAny) return undefined;
+    return {
+      username, password: known?.cleartext ?? match.password ?? '', verify: known?.verify,
+      acceptAny: match.acceptAny, replyAttributes: match.reply,
+    };
   }
 
   private confReader(): ConfFileReader {
