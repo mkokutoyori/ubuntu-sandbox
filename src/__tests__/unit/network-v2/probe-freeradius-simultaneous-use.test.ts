@@ -7,12 +7,14 @@
  * Accounting-On/Off close them, On/Off for every session of the NAS; mod_checksimul: counts the sessions of the user, case
  * sensitive, then with check_with_nas asks rad_check_ts) and src/main/session.c rad_check_ts (an unknown NAS or nas_type "other" is
  * trusted, which is what the shipped clients.conf has; any other type would run checkrad, which the simulator cannot, and a failed
- * check lets the login through), raddb/radiusd.conf.in (msg_denied). The sessions come from real Accounting-Requests on the wire.
+ * check lets the login through; mod_accounting records a session only when the packet carries a NAS-Port and the user is not "!root"),
+ * raddb/radiusd.conf.in (msg_denied). The sessions come from real Accounting-Requests on the wire.
  *
- * Discriminated with git stash on src: 5 of 10 fall before the fix (every denial, the maximum of 2, Accounting-On, the log and message
- * case). Five pass either way and are named: the witness (no Simultaneous-Use), no session open, Stop frees the session, the sessions of
- * another user and another case do not count, and the nas_type case (a failed NAS check allows the login, which ignoring the item
- * also does); these keep the accepting side of the lab honest.
+ * Discriminated with git stash on src: 5 of 11 fall before the fix (every denial, the maximum of 2, Accounting-On, the log and message
+ * case). Six pass either way and are named: the witness (no Simultaneous-Use), no session open, the session without NAS-Port (which the
+ * old code also ignored, by ignoring everything), Stop frees the session, the sessions of another user and another case do not count,
+ * and the nas_type case (a failed NAS check allows the login, which ignoring the item also does); these keep the accepting side of the
+ * lab honest.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -56,8 +58,8 @@ import { DEFAULT_RADIUSD_CONF } from '@/network/devices/linux/freeradius/Default
 
 const ALICE = `printf 'User-Name = "alice"\\nUser-Password = "wonderland"\\n'`;
 const LOG = '/var/log/freeradius/radius.log';
-const acct = (status: string, session: string, user = 'alice') =>
-  `printf 'User-Name = "${user}"\\nAcct-Status-Type = ${status}\\nAcct-Session-Id = "${session}"\\nNAS-IP-Address = 10.0.0.1\\n' | radclient 10.0.0.2 acct shared`;
+const acct = (status: string, session: string, user = 'alice', port: number | null = 1) =>
+  `printf 'User-Name = "${user}"\\nAcct-Status-Type = ${status}\\nAcct-Session-Id = "${session}"\\nNAS-IP-Address = 10.0.0.1\\n${port === null ? '' : `NAS-Port = ${port}\\n`}' | radclient 10.0.0.2 acct shared`;
 
 async function labWith(max: number | null, clients?: string) {
   const simultaneous = max === null ? '' : `, Simultaneous-Use := ${max}`;
@@ -94,6 +96,12 @@ describe('Simultaneous-Use', () => {
     const { client } = await labWith(1);
     await client.executeCommand(acct('Start', 's1'));
     expect(await client.executeCommand(`printf 'User-Name = "alice"\\nCHAP-Password = "wonderland"\\n' | radclient 10.0.0.2 auth shared`)).toContain('Received Access-Reject');
+  });
+
+  it('a session the NAS reported without NAS-Port is not in the radutmp table: rlm_radutmp ignores it, so it does not count', async () => {
+    const { client } = await labWith(1);
+    await client.executeCommand(acct('Start', 's1', 'alice', null));
+    expect(await client.executeCommand(`${ALICE} | radclient 10.0.0.2 auth shared`)).toContain('Received Access-Accept');
   });
 
   it('a Stop frees the session', async () => {

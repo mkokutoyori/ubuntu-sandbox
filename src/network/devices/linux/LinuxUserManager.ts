@@ -690,13 +690,21 @@ export class LinuxUserManager {
     return undefined;
   }
 
-  usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; G?: string; L?: boolean; U?: boolean; g?: string }): string {
+  usermod(username: string, opts: { s?: string; c?: string; d?: string; m?: boolean; aG?: string; G?: string; L?: boolean; U?: boolean; g?: string }): string {
     const user = this.users.get(username);
     if (!user) return `usermod: user '${username}' does not exist`;
 
     const changed: string[] = [];
 
     if (opts.s) { user.shell = opts.s; changed.push('shell'); }
+    if (opts.c !== undefined) {
+      user.gecos = opts.c;
+      changed.push('comment');
+      this.publish({
+        topic: 'linux.iam.user.gecos-changed',
+        payload: { deviceId: this.deviceId, username, uid: user.uid, gecos: user.gecos },
+      });
+    }
     if (opts.d) {
       user.home = opts.d;
       changed.push('home');

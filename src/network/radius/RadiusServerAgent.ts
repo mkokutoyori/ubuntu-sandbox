@@ -46,6 +46,8 @@ function randomSalt(): number {
   return Math.floor(Math.random() * 0x10000);
 }
 
+const UTMP_PORT_TYPES = ['A', 'S', 'I', 'T', 'X'];
+
 const ACCT_STATUS_BY_NUMBER = new Map<number, AcctStatusType>(
   (Object.keys(ACCT_STATUS_TYPE) as AcctStatusType[]).map((k) => [ACCT_STATUS_TYPE[k], k]),
 );
@@ -64,6 +66,16 @@ export interface AcctSessionRecord {
   inputOctets: number;
   outputOctets: number;
   terminateCause?: AcctTerminateCause;
+  utmp?: UtmpFields;
+}
+
+export interface UtmpFields {
+  nasPort: number;
+  protocol: 'P' | 'S' | 'T';
+  portType: string;
+  framedAddress: string | null;
+  callerId: string;
+  startedAtMs: number;
 }
 
 export interface RadiusServerHost {
@@ -185,7 +197,7 @@ export class RadiusServerAgent {
   private simultaneousUseDenial(user: RadiusUser | undefined, username: string): { reply: RadiusAttribute[]; note: string } | null {
     if (user?.simultaneousUse === undefined) return null;
     const maximum = user.simultaneousUse;
-    const active = Array.from(this.acctSessions.values()).filter((record) => record.username === username && record.status !== 'stop');
+    const active = this.utmpSessions().filter((record) => record.username === username);
     if (active.length < maximum) return null;
     for (const record of active) {
       const nasType = this.clientTable.find(new IPAddress(record.nasIp))?.nasType ?? 'other';
@@ -195,16 +207,20 @@ export class RadiusServerAgent {
     return { reply: [attr('reply-message', maximum > 1 ? `${denied} (${maximum})` : denied)], note: `Multiple logins (max ${maximum}) ` };
   }
 
-  private minuteOfWeek: () => number = () => {
-    const date = new Date(simulationNowMs());
+  private wallClockMs: () => number = () => simulationNowMs();
+  private minuteOfWeek: (epochMs: number) => number = (epochMs) => {
+    const date = new Date(epochMs);
     return date.getUTCDay() * 1440 + date.getUTCHours() * 60 + date.getUTCMinutes();
   };
 
-  setMinuteOfWeekClock(clock: () => number): void { this.minuteOfWeek = clock; }
+  setWallClock(nowMs: () => number, minuteOfWeek: (epochMs: number) => number): void {
+    this.wallClockMs = nowMs;
+    this.minuteOfWeek = minuteOfWeek;
+  }
 
   private loginTimeVerdict(user: RadiusUser | undefined): { allowed: boolean; secondsLeft: number } {
     if (user?.loginTime === undefined) return { allowed: true, secondsLeft: 0 };
-    const left = loginTimeSecondsLeft(user.loginTime, this.minuteOfWeek());
+    const left = loginTimeSecondsLeft(user.loginTime, this.minuteOfWeek(this.wallClockMs()));
     if (left < 0) return { allowed: false, secondsLeft: 0 };
     if (left > 0 && left < LOGIN_TIME_MINIMUM_TIMEOUT_SECONDS) return { allowed: false, secondsLeft: 0 };
     return { allowed: true, secondsLeft: left };
@@ -341,6 +357,10 @@ export class RadiusServerAgent {
 
   listUsers(): RadiusUser[] { return Array.from(this.config.users.values()); }
 
+  utmpSessions(): AcctSessionRecord[] {
+    return Array.from(this.acctSessions.values()).filter((record) => record.status !== 'stop' && record.utmp !== undefined);
+  }
+
   /** Accounting journal — last known state per Acct-Session-Id (RFC 2866). */
   listAccountingSessions(): AcctSessionRecord[] { return Array.from(this.acctSessions.values()); }
 
@@ -434,12 +454,24 @@ export class RadiusServerAgent {
       ? ACCT_TERMINATE_CAUSE_BY_NUMBER.get(Number(terminateCauseAttr.value)) : undefined;
 
     const now = simulationNowMs();
+    const wallNow = this.wallClockMs();
     const sessionKey = `${nasIp}|${sessionId}`;
     const existing = this.acctSessions.get(sessionKey);
+    const nasPortAttribute = getAttr(payload, 'nas-port');
+    const framedProtocol = Number(getAttr(payload, 'framed-protocol')?.value);
+    const utmp: UtmpFields | undefined = existing?.utmp ?? (nasPortAttribute === undefined || username === '!root' || status === 'stop' ? undefined : {
+      nasPort: Number(nasPortAttribute.value),
+      protocol: framedProtocol === 1 ? 'P' : framedProtocol === 2 ? 'S' : 'T',
+      portType: UTMP_PORT_TYPES[Number(getAttr(payload, 'nas-port-type')?.value)] ?? 'A',
+      framedAddress: String(getAttr(payload, 'framed-ip-address')?.value ?? getAttr(payload, 'login-ip-host')?.value ?? '') || null,
+      callerId: this.config.callerIdInUtmp === false ? '' : String(getAttr(payload, 'calling-station-id')?.value ?? '').slice(0, 15),
+      startedAtMs: wallNow - Number(getAttr(payload, 'acct-delay-time')?.value ?? 0) * 1000,
+    });
     this.acctSessions.set(sessionKey, {
       sessionId, username, nasIp, status,
       startedAt: status === 'start' ? now : (existing?.startedAt ?? now),
       updatedAt: now, sessionTimeSec, inputOctets, outputOctets, terminateCause,
+      ...(utmp === undefined ? {} : { utmp }),
     });
 
     this.getBus().publish({

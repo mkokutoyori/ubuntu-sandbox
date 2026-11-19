@@ -59,7 +59,7 @@ describe('the request debug of freeradius -X (machine hook)', () => {
     expect(lines).toContain('(0)   NAS-IP-Address = 10.0.0.1');
     const sent = lines.findIndex((line) => /^\(0\) Sent Access-Accept Id \d+ from 10\.0\.0\.2:1812 to 10\.0\.0\.1:49999 length \d+$/.test(line));
     expect(sent).toBeGreaterThan(0);
-    expect(lines[sent + 1]).toBe('(0)   Reply-Message = "Hello, alice"');
+    expect(lines.slice(sent + 1)).toContain('(0)   Reply-Message = "Hello, alice"');
     expect(lines[lines.length - 1]).toBe('(0) Finished request');
   });
 

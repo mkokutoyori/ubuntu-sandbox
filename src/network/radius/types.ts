@@ -254,6 +254,7 @@ export interface RadiusServerAgentConfig {
   rejectReplyMessage?: string | null;
   statusServer?: boolean;
   deniedMessage?: string;
+  callerIdInUtmp?: boolean;
 }
 
 export function createDefaultClientConfig(): RadiusClientConfig {

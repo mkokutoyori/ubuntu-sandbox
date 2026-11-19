@@ -45,6 +45,18 @@ export interface RadiusdWallClock {
   nowMs(): number;
 }
 
+export interface RadutmpEntry {
+  login: string;
+  nasPort: number;
+  sessionId: string;
+  nasAddress: string;
+  framedAddress: string | null;
+  protocol: 'P' | 'S' | 'T';
+  portType: string;
+  callerId: string;
+  timeMs: number;
+}
+
 export interface RadiusdCheckReport {
   ok: boolean;
   logFile: string | null;
@@ -89,6 +101,20 @@ export class RadiusdService {
     private readonly usersFilePath: string = USERS_FILE_PATH,
     private readonly wallClock: RadiusdWallClock = { zone: () => undefined, nowMs: () => simulationNowMs() },
   ) {}
+
+  utmpEntries(): RadutmpEntry[] {
+    return this.radiusServer.utmpSessions().map((record) => ({
+      login: record.username.slice(0, 32),
+      nasPort: record.utmp!.nasPort,
+      sessionId: record.sessionId.slice(-8),
+      nasAddress: record.nasIp,
+      framedAddress: record.utmp!.framedAddress,
+      protocol: record.utmp!.protocol,
+      portType: record.utmp!.portType,
+      callerId: record.utmp!.callerId,
+      timeMs: record.utmp!.startedAtMs,
+    }));
+  }
 
   isRunning(): boolean {
     return this.running;
@@ -292,8 +318,8 @@ export class RadiusdService {
     this.logConfig = loaded.log;
     this.radiusServer.setStatusServer(loaded.security.statusServer);
     this.radiusServer.setDeniedMessage(loaded.log.msgDenied);
-    this.radiusServer.setMinuteOfWeekClock(() => {
-      const [day, hour, minute] = formatLocalTime('%w %H %M', this.wallClock.nowMs(), this.wallClock.zone()).split(' ').map(Number);
+    this.radiusServer.setWallClock(() => this.wallClock.nowMs(), (epochMs) => {
+      const [day, hour, minute] = formatLocalTime('%w %H %M', epochMs, this.wallClock.zone()).split(' ').map(Number);
       return day * 1440 + hour * 60 + minute;
     });
     this.radiusServer.setRejectReplyMessage(null);
