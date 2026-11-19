@@ -1,3 +1,4 @@
+import { RadiusClientTable } from './ClientTable';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
@@ -154,7 +155,10 @@ export class RadiusServerAgent {
 
   setEnabled(on: boolean): void { this.config.enabled = on; }
 
-  setSharedSecret(secret: string): void { this.config.sharedSecret = secret; }
+  setSharedSecret(secret: string): void {
+    this.config.sharedSecret = secret;
+    this.clientTable.clear();
+  }
 
   /** RFC 5216 EAP-TLS / PEAP / RFC 5281 EAP-TTLS — when set, an Access-Request's EAP-Response/Identity starts a TLS-tunnel conversation instead of EAP-MD5 (no NAK negotiation between methods: exactly one is offered, chosen by `config.eapType`, default 'tls'). PEAP/EAP-TTLS additionally need `config.innerAuth` (see `InnerAuth.ts`) — without it they'd behave like plain EAP-TLS under a different wire type. `null` restores EAP-MD5 (the default). */
   setEapTlsConfig(config: EapTlsConfig | null): void { this.eapTlsConfig = config; }
@@ -171,8 +175,18 @@ export class RadiusServerAgent {
 
   requireAuthorizedClient(on: boolean): void { this.config.requireAuthorizedClient = on; }
 
+  readonly clientTable = new RadiusClientTable();
+
   private clientRefused(senderIp: string): boolean {
-    return (this.config.requireAuthorizedClient === true || this.config.clients.size > 0) && !this.config.clients.has(senderIp);
+    if (this.clientTable.size > 0 && this.clientTable.find(new IPAddress(senderIp)) !== null) return false;
+    const restricted = this.config.requireAuthorizedClient === true || this.config.clients.size > 0 || this.clientTable.size > 0;
+    return restricted && !this.config.clients.has(senderIp);
+  }
+
+  private secretFor(ip: IPAddress | string): string {
+    if (this.clientTable.size === 0) return this.config.sharedSecret;
+    const entry = this.clientTable.find(typeof ip === 'string' ? new IPAddress(ip) : ip);
+    return entry === null ? this.config.sharedSecret : entry.secret;
   }
 
   authorizeClient(clientIp: string): void { this.config.clients.add(clientIp); }
@@ -215,7 +229,7 @@ export class RadiusServerAgent {
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-request') return;
 
-    if (!verifyAccountingRequestAuthenticator(payload, this.config.sharedSecret)) {
+    if (!verifyAccountingRequestAuthenticator(payload, this.secretFor(srcIp))) {
       Logger.warn(this.host.id, 'radius:bad-accounting-authenticator',
         `${this.host.name}: dropped Accounting-Request from ${srcIp} — invalid Authenticator (shared secret mismatch?)`);
       return;
@@ -288,13 +302,18 @@ export class RadiusServerAgent {
         `${this.host.name}: dropped Access-Request from ${srcIp} — EAP-Message without Message-Authenticator (RFC 3579 §3.2)`);
       return;
     }
-    if (!verifyMessageAuthenticator(payload, payload.authenticator, this.config.sharedSecret)) {
+    if (!verifyMessageAuthenticator(payload, payload.authenticator, this.secretFor(srcIp))) {
       Logger.warn(this.host.id, 'radius:bad-message-authenticator',
         `${this.host.name}: dropped Access-Request from ${srcIp} — invalid Message-Authenticator`);
       return; // RFC 3579 §3.2 — silently discarded, no reply, no event
     }
 
     const senderIp = srcIp.toString();
+    if (this.clientTable.find(srcIp)?.requireMessageAuthenticator === 'yes' && !getAttr(payload, 'message-authenticator')) {
+      Logger.warn(this.host.id, 'radius:insecure-packet',
+        `${this.host.name}: Insecure packet from host ${senderIp}:  Packet does not contain required Message-Authenticator attribute.  You may need to set 'require_message_authenticator = no' in the configuration`);
+      return;
+    }
     const dedupKey = `${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
     this.pruneDedupCache();
     const cached = this.recentReplies.get(dedupKey);
@@ -379,7 +398,7 @@ export class RadiusServerAgent {
       accepted = !!parsed && !!user && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge);
       reason = !user ? 'unknown-user' : 'bad-password';
     } else {
-      const decrypted = decryptUserPassword(String(passwordAttr!.value), this.config.sharedSecret, payload.authenticator);
+      const decrypted = decryptUserPassword(String(passwordAttr!.value), this.secretFor(srcIp), payload.authenticator);
       const secretLooksWrong = !isPrintablePassword(decrypted);
       accepted = !secretLooksWrong && !!user && user.password === decrypted;
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
@@ -580,8 +599,8 @@ export class RadiusServerAgent {
     // uses for User-Password.
     const attrs: RadiusAttribute[] = [
       attr('vendor-specific', bytesToHex(successBlob), { id: MICROSOFT_VENDOR_ID, type: 26 }),
-      attr('vendor-specific', encryptMppeKey(sendKey, this.config.sharedSecret, request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 16 }),
-      attr('vendor-specific', encryptMppeKey(recvKey, this.config.sharedSecret, request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 17 }),
+      attr('vendor-specific', encryptMppeKey(sendKey, this.secretFor(dstIp), request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 16 }),
+      attr('vendor-specific', encryptMppeKey(recvKey, this.secretFor(dstIp), request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 17 }),
     ];
     if (user.replyAttributes) attrs.push(...user.replyAttributes);
 
@@ -589,8 +608,8 @@ export class RadiusServerAgent {
       type: 'radius', code: 'access-accept', identifier: request.identifier,
       authenticator: '00'.repeat(16), attributes: attrs,
     };
-    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
+    response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.getBus().publish({
       topic: 'radius.packet.sent',
@@ -619,8 +638,8 @@ export class RadiusServerAgent {
       authenticator: '00'.repeat(16),
       attributes: [attr('eap-message', eapPacketToWireHex(eapRequest)), attr('state', state)],
     };
-    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
+    response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.getBus().publish({
       topic: 'radius.packet.sent',
@@ -649,8 +668,8 @@ export class RadiusServerAgent {
       type: 'radius', code: accepted ? 'access-accept' : 'access-reject', identifier: request.identifier,
       authenticator: '00'.repeat(16), attributes: attrs,
     };
-    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
+    response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.getBus().publish({
       topic: 'radius.packet.sent',
@@ -691,8 +710,8 @@ export class RadiusServerAgent {
       authenticator: '00'.repeat(16),
       attributes: [attr('state', state), attr('reply-message', user.challenge!.prompt)],
     };
-    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
+    response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     // Published before the actual send: delivery is synchronous, so the
     // client may run the rest of the challenge round-trip to completion
@@ -731,8 +750,8 @@ export class RadiusServerAgent {
     };
     // RFC 2869 §5.14: Message-Authenticator must be computed and folded in
     // before the Response Authenticator itself is computed over the packet.
-    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
-    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
+    response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     // Published before the actual send — see the comment in issueChallenge().
     this.getBus().publish({
@@ -772,7 +791,7 @@ export class RadiusServerAgent {
       type: 'radius', code: 'accounting-response', identifier: request.identifier,
       authenticator: '00'.repeat(16), attributes: [],
     };
-    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentAcctReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
   }
@@ -822,7 +841,7 @@ export class RadiusServerAgent {
       const passwordAttr = getAttr(request, 'user-password');
       if (passwordAttr) {
         // User-Password is encrypted per-hop: decrypt with the NAS-facing secret, re-encrypt with the home server's.
-        const decrypted = decryptUserPassword(String(passwordAttr.value), this.config.sharedSecret, request.authenticator);
+        const decrypted = decryptUserPassword(String(passwordAttr.value), this.secretFor(nasIp), request.authenticator);
         attrs.push(attr('user-password', encryptUserPassword(decrypted, route.homeSecret, outAuthenticator)));
       }
     }
@@ -840,7 +859,7 @@ export class RadiusServerAgent {
     this.pendingProxy.set(outIdentifier, {
       nasInPort: inPort, nasIp: nasIp.toString(), nasPort,
       originalIdentifier: request.identifier, originalAuthenticator: request.authenticator,
-      nasSecret: this.config.sharedSecret,
+      nasSecret: this.secretFor(nasIp),
       homeServerIp: route.homeServerIp, homePort: route.homePort, homeSecret: route.homeSecret,
       outAuthenticator, dedupKey, timer,
     });

@@ -105,7 +105,7 @@ describe('freeradius — default config and systemd lifecycle (PRD-RADIUS §2.2)
 
     writeRoot(server, CLIENTS_CONF_PATH, '# no client blocks here\n');
     const reloadOut = await server.executeCommand('systemctl reload freeradius');
-    expect(reloadOut).toContain('no client');
+    expect(reloadOut).toContain('No "client" section found in client file');
 
     // Still serving with the last-known-good config (mirrors bind9's own reload-safety guarantee).
     expect(await nas.getRadiusClient().authenticate('alice', 'wonderland')).toBe(true);

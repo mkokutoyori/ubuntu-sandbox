@@ -18,7 +18,8 @@ import { IPAddress } from '@/network/core/types';
 import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
-import { parseClientsConf, type ParsedClient } from './ClientsConfParser';
+import { parseClientsConf } from './ClientsConfParser';
+import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, type ParsedUsersEntry } from './UsersFileParser';
 import type { OperationResult } from '../LinuxServiceManager';
 import type { EndHost } from '@/network/devices/EndHost';
@@ -32,7 +33,7 @@ export const USERS_FILE_PATH = '/etc/freeradius/3.0/users';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: ParsedClient[]; users: ParsedUsersEntry[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: ParsedUsersEntry[] }
   | { ok: false; error: string };
 
 export class RadiusdService {
@@ -101,17 +102,17 @@ export class RadiusdService {
     if (clientsSource === null) return { ok: false, error: `open: ${this.clientsConfPath}: file not found` };
     const usersSource = this.files.read(this.usersFilePath);
     if (usersSource === null) return { ok: false, error: `open: ${this.usersFilePath}: file not found` };
-    const clients = parseClientsConf(clientsSource);
-    if (clients.length === 0) {
-      return { ok: false, error: `${this.clientsConfPath}: no client { } block with a secret found` };
-    }
-    return { ok: true, clients, users: parseUsersFile(usersSource) };
+    const parsed = parseClientsConf(clientsSource, this.clientsConfPath, (path) => this.files.read(path));
+    if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
+    return { ok: true, clients: parsed.clients, users: parseUsersFile(usersSource) };
   }
 
-  private applyConfig(loaded: { clients: ParsedClient[]; users: ParsedUsersEntry[] }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: ParsedUsersEntry[] }): void {
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
     this.radiusTcpServer.setSharedSecret(secret);
+    this.radiusServer.clientTable.clear();
+    for (const client of loaded.clients) this.radiusServer.clientTable.add(client);
     for (const user of loaded.users) {
       this.radiusServer.addUser(user.username, user.password);
       this.radiusTcpServer.addUser(user.username, user.password);

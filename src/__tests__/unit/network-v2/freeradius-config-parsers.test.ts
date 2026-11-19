@@ -3,57 +3,50 @@ import { parseClientsConf } from '@/network/devices/linux/freeradius/ClientsConf
 import { parseUsersFile } from '@/network/devices/linux/freeradius/UsersFileParser';
 
 describe('parseClientsConf', () => {
-  it('parses a client block keyed by dotted-quad name with an implicit ipaddr', () => {
-    const source = `
-client 10.0.0.1 {
-    secret = testing123
-}
-`;
-    expect(parseClientsConf(source)).toEqual([
-      { name: '10.0.0.1', ipaddr: '10.0.0.1', secret: 'testing123' },
-    ]);
+  const FILE = '/etc/freeradius/3.0/clients.conf';
+
+  it('reads an old-style client named by its address, and warns as the real parser does', () => {
+    const parsed = parseClientsConf('client 10.0.0.1 {\n    secret = testing123\n}\n', FILE);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.clients.map((c) => [c.name, c.address.toString(), c.prefix, c.secret])).toEqual([['10.0.0.1', '10.0.0.1', 32, 'testing123']]);
+    expect(parsed.warnings[0]).toContain("No 'ipaddr' or 'ipv4addr' or 'ipv6addr' field found in client 10.0.0.1");
   });
 
-  it('parses an explicit ipaddr and a quoted secret', () => {
-    const source = `
-client nas1 {
-    ipaddr = 10.0.0.5
-    secret = "shared secret"
-}
-`;
-    expect(parseClientsConf(source)).toEqual([
-      { name: 'nas1', ipaddr: '10.0.0.5', secret: 'shared secret' },
-    ]);
+  it('reads ipaddr, a quoted secret, shortname and nas_type', () => {
+    const parsed = parseClientsConf('client nas1 {\n    ipaddr = 10.0.0.5\n    secret = "shared secret"\n    shortname = edge\n    nas_type = cisco\n}\n', FILE);
+    const [client] = parsed.clients;
+    expect([client.name, client.shortname, client.secret, client.nasType]).toEqual(['10.0.0.5', 'edge', 'shared secret', 'cisco']);
   });
 
-  it('parses multiple client blocks and ignores comments', () => {
-    const source = `
-# The office NAS
-client 10.0.0.1 {
-    secret = testing123 # inline comment
-}
-
-client 10.0.0.2 {
-    secret = other-secret
-}
-`;
-    const parsed = parseClientsConf(source);
-    expect(parsed).toHaveLength(2);
-    expect(parsed[0]).toEqual({ name: '10.0.0.1', ipaddr: '10.0.0.1', secret: 'testing123' });
-    expect(parsed[1]).toEqual({ name: '10.0.0.2', ipaddr: '10.0.0.2', secret: 'other-secret' });
+  it('reads several clients and ignores comments, with a prefix on ipaddr', () => {
+    const parsed = parseClientsConf('# The office NAS\nclient a {\n    ipaddr = 10.0.0.0/24\n    secret = testing123 # inline\n}\nclient b {\n    ipaddr = 10.0.1.2\n    secret = other-secret\n}\n', FILE);
+    expect(parsed.clients.map((c) => [c.address.toString(), c.prefix, c.secret])).toEqual([['10.0.0.0', 24, 'testing123'], ['10.0.1.2', 32, 'other-secret']]);
   });
 
-  it('skips a client block with no secret', () => {
-    const source = `
-client 10.0.0.1 {
-    ipaddr = 10.0.0.1
-}
-`;
-    expect(parseClientsConf(source)).toEqual([]);
+  it('refuses a client with no secret, naming the section line like cf_log_err_cs', () => {
+    const parsed = parseClientsConf('client nas1 {\n    ipaddr = 10.0.0.1\n}\n', FILE);
+    expect(parsed.errors).toEqual([`${FILE}[1]: secret must be at least 1 character long`]);
   });
 
-  it('returns an empty array for a file with no client blocks', () => {
-    expect(parseClientsConf('# empty config\n')).toEqual([]);
+  it('reports a file without any client section', () => {
+    expect(parseClientsConf('# empty config\n', FILE).errors).toEqual([`${FILE}: No "client" section found in client file`]);
+  });
+
+  it('reports an unterminated section and a stray closing brace with the conffile.c wording', () => {
+    expect(parseClientsConf('client a {\n  secret = x\n', FILE).errors).toEqual([`${FILE}[3]: EOF reached without closing brace for section client starting at line 1`]);
+    expect(parseClientsConf('}\n', FILE).errors).toEqual([`${FILE}[1]: Too many closing braces`]);
+  });
+
+  it('expands ${variables} defined earlier and $INCLUDEs another file', () => {
+    const reader = (path: string): string | null => (path === '/etc/freeradius/3.0/extra.conf' ? 'client b {\n  ipaddr = 10.9.9.9\n  secret = ${shared}\n}\n' : null);
+    const parsed = parseClientsConf('shared = hunter2hunter2\n$INCLUDE extra.conf\n', FILE, reader);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.clients[0].secret).toBe('hunter2hunter2');
+  });
+
+  it('reports an unknown ${reference} and a missing include', () => {
+    expect(parseClientsConf('client a {\n ipaddr = 1.1.1.1\n secret = ${nope}\n}\n', FILE).errors).toEqual([`${FILE}[3]: Reference '\${nope}' not found`]);
+    expect(parseClientsConf('$INCLUDE missing.conf\n', FILE).errors[0]).toContain("Unable to open file '/etc/freeradius/3.0/missing.conf'");
   });
 });
 
