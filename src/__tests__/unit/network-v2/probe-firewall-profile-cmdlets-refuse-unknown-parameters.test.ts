@@ -3,9 +3,12 @@
  * all three profiles off; `-Bogus 1` was swallowed by Get- and Set-NetFirewallProfile. PowerShell binds only declared
  * parameters (NetSecurity/Set-NetFirewallProfile.md lists -Name, not -Profile) and answers
  * "A parameter cannot be found that matches parameter name 'X'." (ParameterBindingException). The two cmdlets now declare a closed parameter set, the mechanism the runtime already offers.
+ * PowerShell 7.6 ConciseView leads a binding error with the cmdlet (`Set-NetFirewallProfile: A parameter cannot be found ...`); the
+ * runtime led it with `ParameterBindingException:` for every cmdlet, and now names the cmdlet that failed to bind.
  *
- * Discriminated with git stash on src: 3 of 4 fall before the fix; one passes either way and is named: the witness
- * (-Name Domain changes exactly the Domain profile).
+ * Discriminated with git stash on src: 6 of 7 fall before both changes (3 before the closed parameter set, 3 more before the
+ * ConciseView lead, which alone fails the last three); one passes either way and is named: the witness (-Name Domain changes
+ * exactly the Domain profile).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
@@ -47,5 +50,20 @@ describe('Get/Set-NetFirewallProfile bind only the parameters they declare', () 
   it('an unknown parameter of Get-NetFirewallProfile is refused', async () => {
     const run = shell();
     expect(await run('Get-NetFirewallProfile -Name Domain -Bogus 1')).toContain("A parameter cannot be found that matches parameter name 'Bogus'.");
+  });
+
+  it('the error is rendered in ConciseView form, led by the cmdlet that refused the parameter', async () => {
+    const run = shell();
+    expect(await run('Set-NetFirewallProfile -Bogus 1')).toMatch(/^Set-NetFirewallProfile: A parameter cannot be found that matches parameter name 'Bogus'\./);
+  });
+
+  it('the lead is the cmdlet, not the name that was typed', async () => {
+    const run = shell();
+    expect(await run('get-netfirewallprofile -bogus 1')).toMatch(/^Get-NetFirewallProfile: A parameter cannot be found/);
+  });
+
+  it('an ambiguous abbreviation is rendered the same way', async () => {
+    const run = shell();
+    expect(await run('Set-NetFirewallProfile -Log true')).toMatch(/^Set-NetFirewallProfile: Parameter cannot be processed because the parameter name 'Log' is ambiguous/);
   });
 });

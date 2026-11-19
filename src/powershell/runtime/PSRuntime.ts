@@ -4037,8 +4037,16 @@ export class PSRuntime {
     }
     const cmdlet = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
     if (cmdlet) {
-      this.rejectAbsentParameters(cmdlet, cmdletNamed);
-      this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed, cmdlet.closedParameterSet === true);
+      try {
+        this.rejectAbsentParameters(cmdlet, cmdletNamed);
+        this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed, cmdlet.closedParameterSet === true);
+      } catch (bindingFailure) {
+        if (bindingFailure instanceof PSRuntimeError && bindingFailure.commandName === undefined
+          && bindingFailure.exceptionType.endsWith('.ParameterBindingException')) {
+          bindingFailure.commandName = cmdlet.displayName ?? this.typedCommandName(name);
+        }
+        throw bindingFailure;
+      }
       positional = this.returnSwitchArguments(cmdlet, cmdletNamed, positional);
       const declared = new Set(
         ((cmdlet.parameters ?? []) as readonly string[]).map(p => p.toLowerCase()));
