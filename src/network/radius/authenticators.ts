@@ -81,7 +81,7 @@ export function computeMessageAuthenticator(
   const attributes = hasAttr
     ? packet.attributes.map((a) => (a.type === 'message-authenticator'
         ? { ...a, value: ZERO_MESSAGE_AUTHENTICATOR } : a))
-    : [...packet.attributes, attr('message-authenticator', ZERO_MESSAGE_AUTHENTICATOR)];
+    : [attr('message-authenticator', ZERO_MESSAGE_AUTHENTICATOR), ...packet.attributes];
   const forComputation: RadiusPacket = {
     ...packet, authenticator: authenticatorForComputation, attributes,
   };
@@ -97,7 +97,7 @@ export function withMessageAuthenticator(
   const hasAttr = packet.attributes.some((a) => a.type === 'message-authenticator');
   const attributes = hasAttr
     ? packet.attributes.map((a) => (a.type === 'message-authenticator' ? { ...a, value: mac } : a))
-    : [...packet.attributes, attr('message-authenticator', mac)];
+    : [attr('message-authenticator', mac), ...packet.attributes];
   return { ...packet, attributes };
 }
 
