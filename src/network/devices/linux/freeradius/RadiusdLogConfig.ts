@@ -1,4 +1,4 @@
-import type { ConfSection } from './FreeradiusConf';
+import { confBoolean, type ConfSection } from './FreeradiusConf';
 import { readDetailSettings, type DetailSettings } from './DetailModule';
 
 export interface RadiusdLogConfig {
@@ -14,8 +14,6 @@ export interface RadiusdLogConfig {
 
 export const DEFAULT_RADIUS_LOG_FILE = '/var/log/freeradius/radius.log';
 
-const TRUE_WORDS = new Set(['yes', 'true', 'on']);
-const FALSE_WORDS = new Set(['no', 'false', 'off']);
 const DESTINATIONS = new Set(['files', 'syslog', 'stdout', 'stderr']);
 
 export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { error: string } {
@@ -32,10 +30,9 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
   for (const pair of section.pairs) {
     const flag = flags[pair.name];
     if (flag) {
-      const word = pair.value.toLowerCase();
-      if (TRUE_WORDS.has(word)) config[flag] = true;
-      else if (FALSE_WORDS.has(word)) config[flag] = false;
-      else return { error: `${pair.file}[${pair.line}]: Invalid value '${pair.value}' for boolean variable ${pair.name}` };
+      const value = confBoolean(pair);
+      if (typeof value === 'object') return value;
+      config[flag] = value;
     } else if (pair.name === 'destination') {
       if (!DESTINATIONS.has(pair.value)) return { error: `radiusd: Error: Unknown log_destination ${pair.value}` };
       config.destination = pair.value as RadiusdLogConfig['destination'];

@@ -175,6 +175,12 @@ export class RadiusServerAgent {
 
   setRejectReplyMessage(message: string | null): void { this.config.rejectReplyMessage = message; }
 
+  setStatusServer(on: boolean): void { this.config.statusServer = on; }
+
+  private warningListener: ((message: string) => void) | null = null;
+
+  setWarningListener(listener: ((message: string) => void) | null): void { this.warningListener = listener; }
+
   setPorts(authPort: number, acctPort: number): void {
     this.config.port = authPort;
     this.config.acctPort = acctPort;
@@ -317,6 +323,10 @@ export class RadiusServerAgent {
     if (!this.running || !this.config.enabled) return;
     if (udp.destinationPort !== this.config.acctPort) return;
     const payload = udp.payload as RadiusPacket | undefined;
+    if (payload?.type === 'radius' && payload.code === 'status-server') {
+      this.handleStatusServer(inPort, srcIp, udp, payload, 'accounting-response', this.recentAcctReplies);
+      return;
+    }
     if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-request') return;
 
     if (!verifyAccountingRequestAuthenticator(payload, this.secretFor(srcIp))) {
@@ -389,6 +399,10 @@ export class RadiusServerAgent {
 
     if ((payload.code === 'access-accept' || payload.code === 'access-reject') && this.pendingProxy.size > 0) {
       if (this.tryCompleteProxyReply(srcIp, udp, payload)) return;
+    }
+    if (payload.code === 'status-server') {
+      this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies);
+      return;
     }
     if (payload.code !== 'access-request') return;
 
@@ -504,6 +518,52 @@ export class RadiusServerAgent {
 
     if (!accepted) this.publishRejected(senderIp, username, reason);
     this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, user, dedupKey);
+  }
+
+  private handleStatusServer(
+    inPort: string, srcIp: IPAddress, udp: UDPPacket, request: RadiusPacket,
+    replyCode: 'access-accept' | 'accounting-response',
+    cache: Map<string, { response: RadiusPacket; sentAt: number }>,
+  ): void {
+    const senderIp = srcIp.toString();
+    if (this.clientRefused(senderIp)) return;
+    if (this.config.statusServer !== true) {
+      const message = 'Ignoring Status-Server request due to security configuration';
+      Logger.warn(this.host.id, 'radius:status-server-ignored', `${this.host.name}: ${message}`);
+      this.warningListener?.(message);
+      return;
+    }
+    if (!getAttr(request, 'message-authenticator')) {
+      Logger.warn(this.host.id, 'radius:insecure-packet',
+        `${this.host.name}: Insecure packet from host ${senderIp}:  Packet does not contain required Message-Authenticator attribute.  You may need to set 'require_message_authenticator = no' in the configuration`);
+      return;
+    }
+    const secret = this.secretFor(srcIp);
+    if (!verifyMessageAuthenticator(request, request.authenticator, secret)) {
+      Logger.warn(this.host.id, 'radius:bad-message-authenticator',
+        `${this.host.name}: Received packet from ${senderIp} with invalid Message-Authenticator!  (Shared secret is incorrect.)`);
+      return;
+    }
+    const port = this.host.getPort(inPort);
+    const localIp = port?.getIPAddress();
+    if (!port || !localIp) return;
+    const dedupKey = `status:${senderIp}:${udp.sourcePort}:${udp.destinationPort}:${request.identifier}:${request.authenticator}`;
+    this.pruneDedupCache();
+    this.pruneAcctDedupCache();
+    const cached = cache.get(dedupKey);
+    if (!cached) {
+      this.requestNumber++;
+      this.traceReceived(request, srcIp, udp.sourcePort, udp.destinationPort, inPort, false);
+    }
+    let response: RadiusPacket = cached?.response ?? {
+      type: 'radius', code: replyCode, identifier: request.identifier, authenticator: '00'.repeat(16), attributes: [],
+    };
+    if (!cached) {
+      response = withMessageAuthenticator(response, request.authenticator, secret);
+      response = withResponseAuthenticator(response, request.authenticator, secret);
+      cache.set(dedupKey, { response, sentAt: simulationNowMs() });
+    }
+    this.sendRadiusFrame(inPort, port, localIp, srcIp, udp.sourcePort, udp.destinationPort, response);
   }
 
   private pruneDedupCache(): void {

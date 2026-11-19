@@ -25,6 +25,7 @@ import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
 import { CoaClient } from '../radius/CoaClient';
 import { formatRadiusAttribute } from '../radius/attributeText';
+import { RADIUS_PACKET_NAME } from '../radius/types';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
@@ -307,7 +308,7 @@ export class LinuxServer extends LinuxMachine {
   followRadiusDebug(sink: (line: string) => void): () => void {
     this.radiusServer.setPacketTrace((event) => {
       const prefix = `(${event.number})`;
-      const name = event.packet.code.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('-');
+      const name = RADIUS_PACKET_NAME[event.packet.code];
       sink(`${prefix} ${event.direction === 'received' ? 'Received' : 'Sent'} ${name} Id ${event.packet.identifier} from ${event.sourceIp}:${event.sourcePort} to ${event.destinationIp}:${event.destinationPort} length ${event.length}`);
       for (const attribute of event.packet.attributes) sink(`${prefix}   ${formatRadiusAttribute(attribute)}`);
       if (event.direction === 'sent') sink(`${prefix} Finished request`);

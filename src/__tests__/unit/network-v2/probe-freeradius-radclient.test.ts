@@ -5,7 +5,7 @@
  * code does not come back, "No reply from server for ID %d socket %d", -c/-r/-t/-q/-s/-S/-f, the summary block, the version string)
  * and radtest.sh (which pipes its arguments to `radclient -x`). radtest now builds that input and runs the same engine, so the two
  * print one notation. The auth and acct commands are implemented (acct through the accounting client's new generic send);
- * status, coa, disconnect and auto are refused naming the missing brick, as are -6, -b, -F, -D, -n, -p, -P.
+ * auto is refused naming the missing brick, as are -6, -b, -F, -D, -n, -p, -P (status, coa and disconnect have their own probes).
  *
  * Discriminated with git stash on src: 16 of 17 fall before the fix; one passes either way and is named: the witness (radtest, now a
  * wrapper, still accepts a right login).
@@ -161,10 +161,10 @@ describe('radclient', () => {
     expect(result.code).toBe('1');
   });
 
-  it('the status command is refused naming what is missing', async () => {
+  it('the auto command is refused naming what is missing', async () => {
     const { client } = await lab();
-    expect((await status(client, `${ALICE} | radclient 10.0.0.2 status shared`)).output)
-      .toContain('the status command is not implemented in this simulator');
+    expect((await status(client, `${ALICE} | radclient 10.0.0.2 auto shared`)).output)
+      .toContain('the auto command is not implemented in this simulator');
   });
 
   it('a packet without User-Name is refused rather than sent', async () => {

@@ -12,6 +12,7 @@ export type RadiusCode =
   | 'access-accept'
   | 'access-reject'
   | 'access-challenge'
+  | 'status-server'
   | 'accounting-request'
   | 'accounting-response'
   | 'disconnect-request'
@@ -26,6 +27,7 @@ export const RADIUS_CODE: Record<RadiusCode, number> = {
   'access-accept': 2,
   'access-reject': 3,
   'access-challenge': 11,
+  'status-server': 12,
   'accounting-request': 4,
   'accounting-response': 5,
   'disconnect-request': 40,
@@ -34,6 +36,22 @@ export const RADIUS_CODE: Record<RadiusCode, number> = {
   'coa-request': 43,
   'coa-ack': 44,
   'coa-nak': 45,
+};
+
+export const RADIUS_PACKET_NAME: Record<RadiusCode, string> = {
+  'access-request': 'Access-Request',
+  'access-accept': 'Access-Accept',
+  'access-reject': 'Access-Reject',
+  'access-challenge': 'Access-Challenge',
+  'status-server': 'Status-Server',
+  'accounting-request': 'Accounting-Request',
+  'accounting-response': 'Accounting-Response',
+  'disconnect-request': 'Disconnect-Request',
+  'disconnect-ack': 'Disconnect-ACK',
+  'disconnect-nak': 'Disconnect-NAK',
+  'coa-request': 'CoA-Request',
+  'coa-ack': 'CoA-ACK',
+  'coa-nak': 'CoA-NAK',
 };
 
 export type RadiusAttrType =
@@ -232,6 +250,7 @@ export interface RadiusServerAgentConfig {
   clients: Set<string>;
   requireAuthorizedClient?: boolean;
   rejectReplyMessage?: string | null;
+  statusServer?: boolean;
 }
 
 export function createDefaultClientConfig(): RadiusClientConfig {

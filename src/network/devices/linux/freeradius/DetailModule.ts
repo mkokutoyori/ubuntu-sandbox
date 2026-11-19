@@ -1,4 +1,4 @@
-import type { ConfSection } from './FreeradiusConf';
+import { confBoolean, type ConfSection } from './FreeradiusConf';
 import { RADIUS_ATTR, type RadiusAttribute, type RadiusPacket } from '@/network/radius/types';
 import { formatRadiusAttribute, radiusAttributeDisplayName } from '@/network/radius/attributeText';
 import { md5Hex } from '@/crypto/hash/md5';
@@ -26,8 +26,6 @@ export interface DetailRecord {
   atMs: number;
 }
 
-const TRUE_WORDS = new Set(['yes', 'true', 'on']);
-const FALSE_WORDS = new Set(['no', 'false', 'off']);
 const KNOWN_KEYS = new Set([
   'filename', 'detailfile', 'header', 'permissions', 'detailperm', 'group', 'locking', 'dates_as_integer',
   'escape_filenames', 'log_packet_header',
@@ -43,12 +41,6 @@ export function readDetailSettings(root: ConfSection): DetailSettings | null | {
     locking: false, group: null, suppressed: new Set(),
   };
   const fail = (pair: { file: string; line: number }, message: string) => ({ error: `${pair.file}[${pair.line}]: ${message}` });
-  const boolean = (pair: { name: string; value: string; file: string; line: number }): boolean | { error: string } => {
-    const word = pair.value.toLowerCase();
-    if (TRUE_WORDS.has(word)) return true;
-    if (FALSE_WORDS.has(word)) return false;
-    return fail(pair, `Invalid value '${pair.value}' for boolean variable ${pair.name}`);
-  };
   for (const pair of section.pairs) {
     if (!KNOWN_KEYS.has(pair.name)) continue;
     if (pair.name === 'filename' || pair.name === 'detailfile') settings.filename = pair.value;
@@ -59,7 +51,7 @@ export function readDetailSettings(root: ConfSection): DetailSettings | null | {
       settings.permissions = parsed;
     } else if (pair.name === 'group') settings.group = pair.value;
     else {
-      const value = boolean(pair);
+      const value = confBoolean(pair);
       if (typeof value === 'object') return value;
       if (pair.name === 'locking') settings.locking = value;
       else if (pair.name === 'dates_as_integer') settings.datesAsInteger = value;

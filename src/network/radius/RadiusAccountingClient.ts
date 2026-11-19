@@ -2,8 +2,11 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { type RadiusPacket, type RadiusAttribute, type RadiusAttributePolicy, defaultAttributePolicy, UDP_PORT_RADIUS_ACCT } from './types';
-import { withAccountingRequestAuthenticator, verifyResponseAuthenticator } from './authenticators';
+import { type RadiusPacket, type RadiusAttribute, type RadiusAttributePolicy, defaultAttributePolicy, UDP_PORT_RADIUS_ACCT, attr } from './types';
+import {
+  withAccountingRequestAuthenticator, verifyResponseAuthenticator, withMessageAuthenticator, verifyMessageAuthenticator,
+  randomRequestAuthenticator,
+} from './authenticators';
 import { encodeRadiusPacket } from './codec';
 import { acctAttributesFor, generateAcctSessionId, type AcctRecord, type AcctTerminateCause } from './accounting';
 import {
@@ -46,8 +49,12 @@ export interface RawAcctExchange {
   localIp: string;
 }
 
+export type RawRequestCode = 'accounting-request' | 'status-server';
+
 interface PendingRaw {
   identifier: number;
+  code: RawRequestCode;
+  requestAuthenticator: string;
   server: RadiusAcctServerConfig;
   attributes: RadiusAttribute[];
   sourcePort: number;
@@ -197,11 +204,13 @@ export class RadiusAccountingClient {
   }
 
   sendAttributes(
-    serverIp: string, attributes: RadiusAttribute[], opts: { sourcePort: number; port?: number; timeoutMs?: number; retransmit?: number },
+    serverIp: string, attributes: RadiusAttribute[],
+    opts: { sourcePort: number; port?: number; timeoutMs?: number; retransmit?: number; code?: RawRequestCode },
   ): Promise<RawAcctExchange> {
     const server = this.servers.find((candidate) => candidate.ip === serverIp);
+    const code = opts.code ?? 'accounting-request';
     const empty: RawAcctExchange = {
-      request: { type: 'radius', code: 'accounting-request', identifier: 0, authenticator: '00'.repeat(16), attributes },
+      request: { type: 'radius', code, identifier: 0, authenticator: '00'.repeat(16), attributes },
       sourcePort: opts.sourcePort, serverIp, serverPort: opts.port ?? UDP_PORT_RADIUS_ACCT, length: 0, transmissions: 0,
       reply: null, replyLength: 0, localIp: '0.0.0.0',
     };
@@ -210,7 +219,8 @@ export class RadiusAccountingClient {
     this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
     return new Promise<RawAcctExchange>((resolve) => {
       const pending: PendingRaw = {
-        identifier, server, attributes, sourcePort: opts.sourcePort, exchange: { ...empty },
+        identifier, code, requestAuthenticator: randomRequestAuthenticator(),
+        server, attributes, sourcePort: opts.sourcePort, exchange: { ...empty },
         resolve, timer: null, attemptsLeft: opts.retransmit ?? server.retransmit,
       };
       this.rawPending.set(identifier, pending);
@@ -222,11 +232,7 @@ export class RadiusAccountingClient {
   private transmitRaw(pending: PendingRaw, port: number): void {
     const srcIp = this.host.sourceAddressFor(new IPAddress(pending.server.ip));
     if (!srcIp) return;
-    let payload: RadiusPacket = {
-      type: 'radius', code: 'accounting-request', identifier: pending.identifier,
-      authenticator: '00'.repeat(16), attributes: pending.attributes,
-    };
-    payload = withAccountingRequestAuthenticator(payload, pending.server.sharedSecret);
+    const payload = this.signRaw(pending);
     pending.exchange = {
       ...pending.exchange, request: payload, serverPort: port, length: encodeRadiusPacket(payload).length,
       transmissions: pending.exchange.transmissions + 1, localIp: srcIp.toString(),
@@ -235,6 +241,23 @@ export class RadiusAccountingClient {
       destination: new IPAddress(pending.server.ip), destinationPort: port, sourcePort: pending.sourcePort,
       payload, payloadBytes: 12, source: srcIp,
     });
+  }
+
+  private signRaw(pending: PendingRaw): RadiusPacket {
+    if (pending.code === 'accounting-request') {
+      return withAccountingRequestAuthenticator({
+        type: 'radius', code: pending.code, identifier: pending.identifier,
+        authenticator: '00'.repeat(16), attributes: pending.attributes,
+      }, pending.server.sharedSecret);
+    }
+    const unsigned: RadiusPacket = {
+      type: 'radius', code: pending.code, identifier: pending.identifier, authenticator: pending.requestAuthenticator,
+      attributes: [
+        attr('message-authenticator', '00'.repeat(16)),
+        ...pending.attributes.filter((attribute) => attribute.type !== 'message-authenticator'),
+      ],
+    };
+    return withMessageAuthenticator(unsigned, pending.requestAuthenticator, pending.server.sharedSecret);
   }
 
   private armRawTimeout(pending: PendingRaw, timeoutMs: number, port: number): void {
@@ -258,16 +281,20 @@ export class RadiusAccountingClient {
   handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.running) return;
     const payload = udp.payload as RadiusPacket | undefined;
-    if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-response') return;
+    if (!payload || payload.type !== 'radius') return;
     const raw = this.rawPending.get(payload.identifier);
     if (raw && raw.server.ip === srcIp.toString()) {
-      if (!verifyResponseAuthenticator(payload, raw.exchange.request.authenticator, raw.server.sharedSecret)) return;
+      if (raw.code === 'accounting-request' && payload.code !== 'accounting-response') return;
+      const requestAuthenticator = raw.exchange.request.authenticator;
+      if (!verifyResponseAuthenticator(payload, requestAuthenticator, raw.server.sharedSecret)) return;
+      if (!verifyMessageAuthenticator(payload, requestAuthenticator, raw.server.sharedSecret)) return;
       if (raw.timer !== null) (this.scheduler ?? this.getScheduler()).clear(raw.timer);
       this.rawPending.delete(payload.identifier);
       raw.exchange = { ...raw.exchange, reply: payload, replyLength: encodeRadiusPacket(payload).length };
       raw.resolve(raw.exchange);
       return;
     }
+    if (payload.code !== 'accounting-response') return;
     const pending = this.pending.get(payload.identifier);
     if (!pending) return;
     if (pending.server.ip !== srcIp.toString()) return;

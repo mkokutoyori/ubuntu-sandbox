@@ -1,8 +1,9 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { attr, type RadiusAttribute } from '@/network/radius/types';
+import { attr, RADIUS_PACKET_NAME, type RadiusAttribute, type RadiusCode } from '@/network/radius/types';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import type { RadiusExchange } from '@/network/radius/RadiusClientAgent';
+import type { RawRequestCode } from '@/network/radius/RadiusAccountingClient';
 import { IPAddress } from '@/network/core/types';
 import { parsePairList, usersPairToAttribute, type UsersPair } from '../../freeradius/UsersFileParser';
 
@@ -88,8 +89,7 @@ const REFUSED_VALUES: Record<string, string> = {
 };
 
 const REFUSED_COMMANDS: Record<string, string> = {
-  status: 'the client sends authentication requests only',
-  auto: 'the client sends authentication requests only',
+  auto: 'the packet type is not read from the Packet-Type attribute of the input',
 };
 
 interface Packet {
@@ -125,9 +125,20 @@ function describe(exchange: RadiusExchange, shown: string[], debug: boolean): st
   ];
 }
 
-function codeName(code: string): string {
-  return code.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('-');
+function nameOfCode(code: RadiusCode): string {
+  return RADIUS_PACKET_NAME[code];
 }
+
+const ACCEPTED_CODES = new Set<RadiusCode>(['access-accept', 'accounting-response', 'coa-ack', 'disconnect-ack']);
+
+function summary(accepted: number, rejected: number, lost: number, passed: number, failed: number): string[] {
+  return ['Packet summary:', `\tAccepted      : ${accepted}`, `\tRejected      : ${rejected}`, `\tLost          : ${lost}`,
+    `\tPassed filter : ${passed}`, `\tFailed filter : ${failed}`];
+}
+
+const STATUS_EXPECTED_BY_PORT: Record<number, RadiusCode> = {
+  1812: 'access-accept', 1645: 'access-accept', 1813: 'accounting-response', 1646: 'accounting-response',
+};
 
 interface AcctRun {
   server: string;
@@ -142,11 +153,6 @@ interface AcctRun {
 }
 
 const ACCT_SOURCE_PORT = 49998;
-
-const PACKET_CODE_NAMES: Record<string, string> = {
-  'disconnect-request': 'Disconnect-Request', 'disconnect-ack': 'Disconnect-ACK', 'disconnect-nak': 'Disconnect-NAK',
-  'coa-request': 'CoA-Request', 'coa-ack': 'CoA-ACK', 'coa-nak': 'CoA-NAK',
-};
 
 async function runCoa(
   ctx: LinuxCommandContext, packets: Packet[], command: 'coa' | 'disconnect', run: AcctRun,
@@ -174,7 +180,7 @@ async function runCoa(
         if (exchange === null) { lost++; continue; }
         if (!run.quiet) {
           for (let attempt = 0; attempt < Math.max(1, exchange.transmissions); attempt++) {
-            lines.push(`Sent ${PACKET_CODE_NAMES[code]} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
             if (run.debug) lines.push(...attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
           }
         }
@@ -184,30 +190,33 @@ async function runCoa(
           continue;
         }
         if (!run.quiet) {
-          lines.push(`Received ${PACKET_CODE_NAMES[exchange.reply.code] ?? exchange.reply.code} Id ${exchange.reply.identifier} from ${exchange.serverIp}:${exchange.serverPort} to ${exchange.localIp}:${exchange.sourcePort} length ${exchange.replyLength}`);
+          lines.push(`Received ${nameOfCode(exchange.reply.code)} Id ${exchange.reply.identifier} from ${exchange.serverIp}:${exchange.serverPort} to ${exchange.localIp}:${exchange.sourcePort} length ${exchange.replyLength}`);
           if (run.debug) lines.push(...exchange.reply.attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
         }
         if (exchange.reply.code === expected) accepted++;
         else {
           rejected++;
-          if (!run.quiet) lines.push(`(${number}) -: Expected ${PACKET_CODE_NAMES[expected]} got ${PACKET_CODE_NAMES[exchange.reply.code] ?? exchange.reply.code}`);
+          if (!run.quiet) lines.push(`(${number}) -: Expected ${nameOfCode(expected)} got ${nameOfCode(exchange.reply.code)}`);
         }
       }
     }
   } finally {
     client.removeNas(run.server);
   }
-  if (run.summary) {
-    lines.push('Packet summary:', `\tAccepted      : ${accepted}`, `\tRejected      : ${rejected}`, `\tLost          : ${lost}`, '\tPassed filter : 0', `\tFailed filter : ${rejected}`);
-  }
+  if (run.summary) lines.push(...summary(accepted, rejected, lost, accepted, rejected));
   return { output: lines.join('\n'), exitCode: lost > 0 || rejected > 0 ? 1 : 0 };
 }
 
-async function runAcct(ctx: LinuxCommandContext, packets: Packet[], run: AcctRun): Promise<{ output: string; exitCode: number }> {
+async function runRaw(
+  ctx: LinuxCommandContext, packets: Packet[], run: AcctRun, code: RawRequestCode, expected: RadiusCode | null,
+): Promise<{ output: string; exitCode: number }> {
   const client = ctx.radacctClient!;
   const lines: string[] = [];
   let accepted = 0;
+  let rejected = 0;
   let lost = 0;
+  let passed = 0;
+  let failed = 0;
   let number = 0;
   client.addServer(run.server, run.secret, { port: run.port, timeoutMs: run.timeoutMs, retransmit: run.retries });
   try {
@@ -220,11 +229,13 @@ async function runAcct(ctx: LinuxCommandContext, packets: Packet[], run: AcctRun
       }
       for (let repeat = 0; repeat < run.count; repeat++, number++) {
         const exchange = await client.sendAttributes(run.server, attributes, {
-          sourcePort: ACCT_SOURCE_PORT, port: run.port, timeoutMs: run.timeoutMs, retransmit: run.retries,
+          sourcePort: ACCT_SOURCE_PORT, port: run.port, timeoutMs: run.timeoutMs, retransmit: run.retries, code,
         });
+        const autoMessageAuthenticator = code === 'status-server' && !attributes.some((attribute) => attribute.type === 'message-authenticator');
         if (!run.quiet) {
           for (let attempt = 0; attempt < Math.max(1, exchange.transmissions); attempt++) {
-            lines.push(`Sent Accounting-Request Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            if (run.debug && autoMessageAuthenticator) lines.push('\tMessage-Authenticator = 0x');
             if (run.debug) lines.push(...attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
           }
         }
@@ -233,20 +244,24 @@ async function runAcct(ctx: LinuxCommandContext, packets: Packet[], run: AcctRun
           lost++;
           continue;
         }
-        accepted++;
+        const reply = exchange.reply;
+        if (ACCEPTED_CODES.has(reply.code)) accepted++;
+        else if (reply.code !== 'access-challenge') rejected++;
         if (!run.quiet) {
-          lines.push(`Received ${codeName(exchange.reply.code)} Id ${exchange.reply.identifier} from ${exchange.serverIp}:${exchange.serverPort} to ${exchange.localIp}:${exchange.sourcePort} length ${exchange.replyLength}`);
-          if (run.debug) lines.push(...exchange.reply.attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
+          lines.push(`Received ${nameOfCode(reply.code)} Id ${reply.identifier} from ${exchange.serverIp}:${exchange.serverPort} to ${exchange.localIp}:${exchange.sourcePort} length ${exchange.replyLength}`);
+          if (run.debug) lines.push(...reply.attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
         }
+        if (expected !== null && reply.code !== expected) {
+          failed++;
+          if (!run.quiet) lines.push(`(${number}) -: Expected ${nameOfCode(expected)} got ${nameOfCode(reply.code)}`);
+        } else passed++;
       }
     }
   } finally {
     client.removeServer(run.server);
   }
-  if (run.summary) {
-    lines.push('Packet summary:', `\tAccepted      : ${accepted}`, '\tRejected      : 0', `\tLost          : ${lost}`, '\tPassed filter : 0', '\tFailed filter : 0');
-  }
-  return { output: lines.join('\n'), exitCode: lost > 0 ? 1 : 0 };
+  if (run.summary) lines.push(...summary(accepted, rejected, lost, passed, failed));
+  return { output: lines.join('\n'), exitCode: lost > 0 || failed > 0 ? 1 : 0 };
 }
 
 export async function runRadclient(ctx: LinuxCommandContext, args: string[], stdin?: string): Promise<{ output: string; exitCode: number }> {
@@ -267,7 +282,7 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   if (REFUSED_COMMANDS[command] !== undefined) {
     return { output: `radclient: the ${command} command is not implemented in this simulator: ${REFUSED_COMMANDS[command]}.`, exitCode: 1 };
   }
-  if (command !== 'auth' && command !== 'acct' && command !== 'coa' && command !== 'disconnect') return { output: `radclient: Invalid request type "${command}"`, exitCode: 1 };
+  if (command !== 'auth' && command !== 'acct' && command !== 'status' && command !== 'coa' && command !== 'disconnect') return { output: `radclient: Invalid request type "${command}"`, exitCode: 1 };
   if (!ctx.radtestClient || !ctx.radacctClient || !ctx.coaClient) return { output: 'radclient: command not found', exitCode: 127 };
   const count = options.values.has('c') ? Number(options.values.get('c')) : 1;
   const retries = options.values.has('r') ? Number(options.values.get('r')) : RADCLIENT_RETRIES;
@@ -286,7 +301,7 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   }
 
   const [serverName, portText] = serverArg.split(':');
-  const port = portText === undefined ? (command === 'acct' ? 1813 : command === 'auth' ? 1812 : 3799) : Number(portText);
+  const port = portText === undefined ? (command === 'acct' ? 1813 : command === 'auth' || command === 'status' ? 1812 : 3799) : Number(portText);
   if (!serverName || !Number.isInteger(port) || port <= 0 || port > 65535) return { output: RADCLIENT_USAGE, exitCode: 1 };
   const server = IPAddress.tryParse(serverName) ?? (await ctx.net.resolveHostname(serverName));
   if (server === null) return { output: `radclient: Failed to find IP address for host ${serverName}: Name or service not known`, exitCode: 1 };
@@ -307,8 +322,11 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   if (command === 'coa' || command === 'disconnect') {
     return runCoa(ctx, packets, command, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') });
   }
-  if (command === 'acct') {
-    return runAcct(ctx, packets, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') });
+  if (command === 'acct' || command === 'status') {
+    const run = { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') };
+    return command === 'acct'
+      ? runRaw(ctx, packets, run, 'accounting-request', 'accounting-response')
+      : runRaw(ctx, packets, run, 'status-server', STATUS_EXPECTED_BY_PORT[port] ?? null);
   }
   const lines: string[] = [];
   let accepted = 0;
@@ -369,14 +387,14 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
           continue;
         }
         if (!quiet) {
-          lines.push(`Received ${codeName(exchange.reply.code)} Id ${exchange.reply.identifier} from ${exchange.serverIp}:${exchange.serverPort} to ${localIp}:${exchange.sourcePort} length ${exchange.replyLength}`);
+          lines.push(`Received ${nameOfCode(exchange.reply.code)} Id ${exchange.reply.identifier} from ${exchange.serverIp}:${exchange.serverPort} to ${localIp}:${exchange.sourcePort} length ${exchange.replyLength}`);
           if (options.debugLevel > 0) lines.push(...exchange.reply.attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
         }
         if (ok) accepted++;
         else {
           rejected++;
           failed++;
-          if (!quiet) lines.push(`(${number}) -: Expected Access-Accept got ${codeName(exchange.reply.code)}`);
+          if (!quiet) lines.push(`(${number}) -: Expected Access-Accept got ${nameOfCode(exchange.reply.code)}`);
         }
       }
     }
@@ -384,10 +402,7 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
     client.removeServer(server.toString());
     client.setRequestAttributes([]);
   }
-  if (options.flags.has('s')) {
-    lines.push('Packet summary:', `\tAccepted      : ${accepted}`, `\tRejected      : ${rejected}`, `\tLost          : ${lost}`,
-      '\tPassed filter : 0', `\tFailed filter : ${failed - lost}`);
-  }
+  if (options.flags.has('s')) lines.push(...summary(accepted, rejected, lost, accepted, failed - lost));
   return { output: lines.join('\n'), exitCode: lost > 0 || failed > 0 ? 1 : 0 };
 }
 
@@ -399,7 +414,7 @@ export const radclientCommand: LinuxCommand = {
   readsStdin: true,
   manSection: 1,
   usage: '[options] server[:port] <command> [<secret>]',
-  help: 'Send RADIUS authentication requests built from attribute lists and print the replies.',
+  help: 'Send RADIUS requests (auth, acct, status, coa, disconnect) built from attribute lists and print the replies.',
   options: [
     { flag: '-c', description: "Send each packet 'count' times.", takesArg: true, argName: 'count' },
     { flag: '-f', description: 'Read packets from file, not stdin.', takesArg: true, argName: 'file' },

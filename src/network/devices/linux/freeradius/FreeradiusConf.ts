@@ -20,6 +20,16 @@ export type ConfParseResult =
   | { readonly ok: true; readonly root: ConfSection; readonly files: readonly string[] }
   | { readonly ok: false; readonly error: string };
 
+const TRUE_WORDS = new Set(['yes', 'true', 'on']);
+const FALSE_WORDS = new Set(['no', 'false', 'off']);
+
+export function confBoolean(pair: ConfPair): boolean | { error: string } {
+  const word = pair.value.toLowerCase();
+  if (TRUE_WORDS.has(word)) return true;
+  if (FALSE_WORDS.has(word)) return false;
+  return { error: `${pair.file}[${pair.line}]: Invalid value '${pair.value}' for boolean variable ${pair.name}` };
+}
+
 export type ConfFileReader = ((path: string) => string | null) & { list?: (path: string) => readonly string[] | null };
 
 const OPERATORS = ['===', '!==', ':=', '+=', '-=', '==', '!=', '<=', '>=', '=~', '!~', '^=', '=', '<', '>'];
