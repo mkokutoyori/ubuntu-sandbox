@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseClientsConf } from '@/network/devices/linux/freeradius/ClientsConfParser';
-import { parseUsersFile } from '@/network/devices/linux/freeradius/UsersFileParser';
+import { parseUsersFile, matchUsersEntries } from '@/network/devices/linux/freeradius/UsersFileParser';
 
 describe('parseClientsConf', () => {
   const FILE = '/etc/freeradius/3.0/clients.conf';
@@ -51,30 +51,29 @@ describe('parseClientsConf', () => {
 });
 
 describe('parseUsersFile', () => {
+  const parse = (source: string) => parseUsersFile(source, '/etc/freeradius/3.0/users', () => null);
+  const passwordOf = (source: string, name: string) => {
+    const parsed = parse(source);
+    if ('error' in parsed) throw new Error(parsed.error);
+    return matchUsersEntries(parsed.entries, name, () => undefined)?.password;
+  };
+
   it('parses a single Cleartext-Password entry', () => {
-    const source = 'alice Cleartext-Password := "wonderland"\n';
-    expect(parseUsersFile(source)).toEqual([{ username: 'alice', password: 'wonderland' }]);
+    expect(passwordOf('alice Cleartext-Password := "wonderland"\n', 'alice')).toBe('wonderland');
   });
 
   it('parses multiple entries and ignores comments/blank lines', () => {
-    const source = `
-# users file
-alice Cleartext-Password := "wonderland"
-
-bob   Cleartext-Password := "hunter2"
-`;
-    expect(parseUsersFile(source)).toEqual([
-      { username: 'alice', password: 'wonderland' },
-      { username: 'bob', password: 'hunter2' },
-    ]);
+    const source = '\n# users file\nalice Cleartext-Password := "wonderland"\n\nbob   Cleartext-Password := "hunter2"\n';
+    expect(passwordOf(source, 'alice')).toBe('wonderland');
+    expect(passwordOf(source, 'bob')).toBe('hunter2');
   });
 
   it('accepts both := and = as the check-item operator', () => {
-    const source = 'alice Cleartext-Password = "wonderland"\n';
-    expect(parseUsersFile(source)).toEqual([{ username: 'alice', password: 'wonderland' }]);
+    expect(passwordOf('alice Cleartext-Password = "wonderland"\n', 'alice')).toBe('wonderland');
   });
 
-  it('returns an empty array for a file with no recognized entries', () => {
-    expect(parseUsersFile('# nobody here\n')).toEqual([]);
+  it('returns no entry for a file with no recognized entries', () => {
+    const parsed = parse('# nobody here\n');
+    expect('entries' in parsed && parsed.entries).toEqual([]);
   });
 });

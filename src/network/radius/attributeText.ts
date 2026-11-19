@@ -1,0 +1,38 @@
+import type { RadiusAttribute } from './types';
+import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, type RadiusValueType } from './dictionary';
+
+const UPPERCASE_WORDS = new Set(['nas', 'ip', 'chap', 'eap', 'mtu', 'tcp']);
+
+export function radiusAttributeDisplayName(attribute: RadiusAttribute): string {
+  if (attribute.type === 'vendor-specific' && attribute.vendor) return `Vendor-Specific(${attribute.vendor.id}:${attribute.vendor.type})`;
+  return attribute.type.split('-').map((word) => {
+    if (word === 'ipv6') return 'IPv6';
+    if (UPPERCASE_WORDS.has(word)) return word.toUpperCase();
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join('-');
+}
+
+const NAMED_CASE: Record<string, string> = {
+  ppp: 'PPP', slip: 'SLIP', arap: 'ARAP', vlan: 'VLAN', pptp: 'PPTP', l2tp: 'L2TP', gre: 'GRE', esp: 'ESP', ah: 'AH',
+  ip: 'IP', ipv4: 'IPv4', ipv6: 'IPv6', 'ieee-802': 'IEEE-802', isdn: 'ISDN', sdsl: 'SDSL', xdsl: 'xDSL', idsl: 'IDSL',
+  'wireless-802.11': 'Wireless-802.11', 'tcp-clear': 'TCP-Clear', 'tcp-clear-quiet': 'TCP-Clear-Quiet', 'nas-prompt-user': 'NAS-Prompt-User',
+  'callback-nas-prompt': 'Callback-NAS-Prompt', 'radius-request': 'RADIUS-Request', 'van-jacobson-tcp-ip': 'Van-Jacobson-TCP-IP',
+  'min-ip': 'MIN-IP', 'ip-in-ip': 'IP-in-IP',
+};
+
+export function formatRadiusAttributeValue(attribute: RadiusAttribute): string {
+  const valueType: RadiusValueType = attribute.type === 'vendor-specific' ? 'octets' : RADIUS_DICTIONARY[attribute.type].valueType;
+  const raw = String(attribute.value);
+  if (valueType === 'octets') return `0x${raw}`;
+  if (valueType === 'text' || valueType === 'string' || valueType === 'tagged-string') return `"${raw}"`;
+  if (valueType === 'integer' || valueType === 'tagged-integer') {
+    const names = RADIUS_VALUE_NAMES[attribute.type];
+    const key = names ? Object.keys(names).find((name) => names[name] === Number(attribute.value)) : undefined;
+    if (key !== undefined) return NAMED_CASE[key] ?? key.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('-');
+  }
+  return raw;
+}
+
+export function formatRadiusAttribute(attribute: RadiusAttribute): string {
+  return `${radiusAttributeDisplayName(attribute)} = ${formatRadiusAttributeValue(attribute)}`;
+}

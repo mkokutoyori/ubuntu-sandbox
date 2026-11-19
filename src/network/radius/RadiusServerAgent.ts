@@ -112,6 +112,7 @@ interface PendingProxyContext {
 export interface RadiusUserResolverContext {
   /** The requesting NAS's source IP, as seen on this Access-Request. */
   nasIp: string;
+  attributes: RadiusAttribute[];
 }
 
 export class RadiusServerAgent {
@@ -349,7 +350,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    const user = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp });
+    const user = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes });
 
     if (eapAttr) {
       this.handleEapRequest(inPort, srcIp, udp.sourcePort, payload, username, user, dedupKey);
@@ -533,7 +534,7 @@ export class RadiusServerAgent {
     }
     this.eapTlsSessions.delete(state);
     const accepted = ctx.session.result === 'accept';
-    const eapUser = this.config.users.get(ctx.username);
+    const eapUser = this.config.users.get(ctx.username) ?? this.userResolver?.(ctx.username, { nasIp: dstIp.toString(), attributes: request.attributes });
     if (!accepted) this.publishRejected(dstIp.toString(), ctx.username, 'bad-password');
     this.replyEap(inPort, dstIp, clientPort, request, nextRequest, accepted, eapUser, dedupKey);
   }

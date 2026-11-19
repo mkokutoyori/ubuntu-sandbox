@@ -89,7 +89,14 @@ export type RadiusAttrType =
   | 'framed-ipv6-prefix'
   | 'login-ipv6-host'
   | 'framed-ipv6-route'
-  | 'framed-ipv6-pool';
+  | 'framed-ipv6-pool'
+  | 'framed-routing'
+  | 'framed-compression'
+  | 'login-service'
+  | 'login-tcp-port'
+  | 'callback-id'
+  | 'framed-route'
+  | 'port-limit';
 
 export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'user-name': 1,
@@ -146,6 +153,13 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'login-ipv6-host': 98,
   'framed-ipv6-route': 99,
   'framed-ipv6-pool': 100,
+  'framed-routing': 10,
+  'framed-compression': 13,
+  'login-service': 15,
+  'login-tcp-port': 16,
+  'callback-id': 20,
+  'framed-route': 22,
+  'port-limit': 62,
 };
 
 export interface RadiusAttribute {

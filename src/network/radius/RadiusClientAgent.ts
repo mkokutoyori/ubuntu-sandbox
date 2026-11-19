@@ -3,6 +3,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { hexToBytes, bytesToHex, bytesToUtf8 } from '@/crypto/encoding';
+import { encodeRadiusPacket } from './codec';
 import {
   type RadiusClientConfig, type RadiusServerConfig, type RadiusPacket,
   type RadiusAttribute, type RadiusAttributePolicy, defaultAttributePolicy,
@@ -45,6 +46,17 @@ export interface RadiusClientHost {
 type RadiusAuthMethod = 'pap' | 'chap';
 /** Outcome of a single request/response round, distinct from the public accept/reject boolean: only 'timeout' triggers failover to the next server — an explicit reject is authoritative. */
 type RadiusRoundResult = 'accept' | 'reject' | 'timeout';
+
+export interface RadiusExchange {
+  request: RadiusPacket;
+  sourcePort: number;
+  serverIp: string;
+  serverPort: number;
+  secret: string;
+  length: number;
+  reply: RadiusPacket | null;
+  replyLength: number;
+}
 
 interface PendingRequest {
   identifier: number;
@@ -223,6 +235,38 @@ export class RadiusClientAgent {
   /** `radius-server deadtime <minutes>` equivalent, taking milliseconds. 0 (default) disables it. */
   setDeadtimeMs(ms: number): void { this.deadtimeMs = Math.max(0, ms); }
 
+  private requestAttributes: RadiusAttribute[] = [];
+
+  setRequestAttributes(attributes: RadiusAttribute[]): void { this.requestAttributes = attributes.slice(); }
+
+  private mergeRequestAttributes(attrs: RadiusAttribute[]): void {
+    for (const extra of this.requestAttributes) {
+      const at = attrs.findIndex((existing) => existing.type === extra.type && extra.type !== 'vendor-specific');
+      if (at >= 0) attrs[at] = extra;
+      else attrs.push(extra);
+    }
+  }
+
+  private lastExchange: RadiusExchange | null = null;
+
+  getLastExchange(): Readonly<RadiusExchange> | null { return this.lastExchange; }
+
+  private recordRequest(request: RadiusPacket, server: RadiusServerConfig, sourcePort: number): void {
+    this.lastExchange = {
+      request, sourcePort, serverIp: server.ip, serverPort: server.authPort, secret: server.sharedSecret,
+      length: encodeRadiusPacket(request).length, reply: null, replyLength: 0,
+    };
+  }
+
+  private recordReply(reply: RadiusPacket, srcIp: IPAddress): void {
+    const exchange = this.lastExchange;
+    if (exchange === null || exchange.reply !== null || exchange.serverIp !== srcIp.toString()) return;
+    if (exchange.request.identifier !== reply.identifier) return;
+    if (!verifyResponseAuthenticator(reply, exchange.request.authenticator, exchange.secret)) return;
+    exchange.reply = reply;
+    exchange.replyLength = encodeRadiusPacket(reply).length;
+  }
+
   /** See `fixedSourcePort`'s doc comment. */
   setFixedSourcePort(port: number | null): void { this.fixedSourcePort = port; }
 
@@ -370,6 +414,7 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
+    this.recordRequest(payload, server, datagram.sourcePort);
     this.host.sendUdpDatagram(datagram);
   }
 
@@ -445,6 +490,7 @@ export class RadiusClientAgent {
       attr('vendor-specific', bytesToHex(msChap2Response), { id: MICROSOFT_VENDOR_ID, type: 25 }),
     ];
     if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
+    this.mergeRequestAttributes(attrs);
     let payload: RadiusPacket = {
       type: 'radius', code: 'access-request', identifier: pending.identifier,
       authenticator: pending.authenticator, attributes: attrs,
@@ -465,6 +511,7 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
+    this.recordRequest(payload, server, datagram.sourcePort);
     this.host.sendUdpDatagram(datagram);
   }
 
@@ -637,6 +684,7 @@ export class RadiusClientAgent {
     if (!payload || payload.type !== 'radius') return;
     if (payload.code !== 'access-accept' && payload.code !== 'access-reject' && payload.code !== 'access-challenge') return;
 
+    this.recordReply(payload, srcIp);
     const eapPending = this.pendingEap.get(payload.identifier);
     if (eapPending) { this.handleEapUdp(payload, srcIp, eapPending); return; }
 
@@ -780,6 +828,7 @@ export class RadiusClientAgent {
     if (pending.state) attrs.push(attr('state', pending.state));
     const identifier = this.attributePolicy.nasIdentifier?.(srcIp.toString()) ?? this.config.nasIdentifier;
     if (identifier) attrs.push(attr('nas-identifier', identifier));
+    this.mergeRequestAttributes(attrs);
     let payload: RadiusPacket = {
       type: 'radius', code: 'access-request', identifier: pending.identifier,
       authenticator: pending.authenticator,
@@ -810,6 +859,7 @@ export class RadiusClientAgent {
     if (pending.transmissions > 0) sent.retransmissions++;
     pending.transmissions++;
     pending.sentAtMs = PathClock.now();
+    this.recordRequest(payload, server, datagram.sourcePort);
     this.host.sendUdpDatagram(datagram);
   }
 

@@ -20,7 +20,8 @@ import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
 import { parseClientsConf } from './ClientsConfParser';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
-import { parseUsersFile, type ParsedUsersEntry } from './UsersFileParser';
+import { parseUsersFile, matchUsersEntries, type UsersEntry } from './UsersFileParser';
+import type { RadiusUser, RadiusAttribute } from '@/network/radius/types';
 import type { OperationResult } from '../LinuxServiceManager';
 import type { EndHost } from '@/network/devices/EndHost';
 
@@ -33,7 +34,7 @@ export const USERS_FILE_PATH = '/etc/freeradius/3.0/users';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: ParsedUsersEntry[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[] }
   | { ok: false; error: string };
 
 export class RadiusdService {
@@ -97,6 +98,14 @@ export class RadiusdService {
     return { ok: true };
   }
 
+  private readonly fileUsers = new Set<string>();
+
+  private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[]): RadiusUser | undefined {
+    const match = matchUsersEntries(entries, username, (name) => attributes.find((candidate) => candidate.type === name)?.value);
+    if (match === null || match.rejected || match.password === null) return undefined;
+    return { username, password: match.password, replyAttributes: match.reply };
+  }
+
   private loadConfig(): ConfigLoadResult {
     const clientsSource = this.files.read(this.clientsConfPath);
     if (clientsSource === null) return { ok: false, error: `open: ${this.clientsConfPath}: file not found` };
@@ -104,18 +113,26 @@ export class RadiusdService {
     if (usersSource === null) return { ok: false, error: `open: ${this.usersFilePath}: file not found` };
     const parsed = parseClientsConf(clientsSource, this.clientsConfPath, (path) => this.files.read(path));
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
-    return { ok: true, clients: parsed.clients, users: parseUsersFile(usersSource) };
+    const users = parseUsersFile(usersSource, this.usersFilePath, (path) => this.files.read(path));
+    if ('error' in users) return { ok: false, error: users.error };
+    return { ok: true, clients: parsed.clients, users: users.entries };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: ParsedUsersEntry[] }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[] }): void {
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
     this.radiusTcpServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
     for (const client of loaded.clients) this.radiusServer.clientTable.add(client);
-    for (const user of loaded.users) {
-      this.radiusServer.addUser(user.username, user.password);
+    for (const stale of this.fileUsers) this.radiusTcpServer.removeUser(stale);
+    this.fileUsers.clear();
+    for (const entry of loaded.users) {
+      if (entry.name === 'DEFAULT') continue;
+      const user = this.resolveUser(loaded.users, entry.name, []);
+      if (!user) continue;
+      this.fileUsers.add(user.username);
       this.radiusTcpServer.addUser(user.username, user.password);
     }
+    this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? []));
   }
 }

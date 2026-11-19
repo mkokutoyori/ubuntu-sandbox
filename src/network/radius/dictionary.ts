@@ -81,6 +81,13 @@ const VALUE_TYPE_BY_NAME: Record<RadiusAttrType, RadiusValueType> = {
   'login-ipv6-host': 'ipv6addr',
   'framed-ipv6-route': 'text',
   'framed-ipv6-pool': 'text',
+  'framed-routing': 'integer',
+  'framed-compression': 'integer',
+  'login-service': 'integer',
+  'login-tcp-port': 'integer',
+  'callback-id': 'string',
+  'framed-route': 'text',
+  'port-limit': 'integer',
 };
 
 /** Dictionary entry per standard attribute, keyed by name. */
@@ -137,3 +144,29 @@ export function lookupVsa(vendorId: number, vendorType: number): RadiusVsaDef | 
 export function lookupVsaByName(name: string): RadiusVsaDef | undefined {
   return VSA_BY_NAME.get(name);
 }
+
+export const RADIUS_VALUE_NAMES: Readonly<Partial<Record<RadiusAttrType, Readonly<Record<string, number>>>>> = {
+  'service-type': {
+    'login-user': 1, 'framed-user': 2, 'callback-login-user': 3, 'callback-framed-user': 4, 'outbound-user': 5,
+    'administrative-user': 6, 'nas-prompt-user': 7, 'authenticate-only': 8, 'callback-nas-prompt': 9,
+    'call-check': 10, 'callback-administrative': 11,
+  },
+  'framed-protocol': { 'ppp': 1, 'slip': 2, 'arap': 3, 'gandalf-slml': 4, 'xylogics-ipx-slip': 5, 'x.75-synchronous': 6 },
+  'framed-routing': { 'none': 0, 'broadcast': 1, 'listen': 2, 'broadcast-listen': 3 },
+  'framed-compression': { 'none': 0, 'van-jacobson-tcp-ip': 1, 'ipx-header-compression': 2, 'stac-lzs': 3 },
+  'login-service': { 'telnet': 0, 'rlogin': 1, 'tcp-clear': 2, 'portmaster': 3, 'lat': 4, 'x25-pad': 5, 'x25-t3pos': 6, 'tcp-clear-quiet': 8 },
+  'termination-action': { 'default': 0, 'radius-request': 1 },
+  'nas-port-type': {
+    'async': 0, 'sync': 1, 'isdn': 2, 'isdn-v120': 3, 'isdn-v110': 4, 'virtual': 5, 'piafs': 6, 'hdlc-clear-channel': 7,
+    'x.25': 8, 'x.75': 9, 'g.3-fax': 10, 'sdsl': 11, 'adsl-cap': 12, 'adsl-dmt': 13, 'idsl': 14, 'ethernet': 15,
+    'xdsl': 16, 'cable': 17, 'wireless-other': 18, 'wireless-802.11': 19,
+  },
+  'tunnel-type': {
+    'pptp': 1, 'l2f': 2, 'l2tp': 3, 'atmp': 4, 'vtp': 5, 'ah': 6, 'ip': 7, 'min-ip': 8, 'esp': 9, 'gre': 10, 'dvs': 11,
+    'ip-in-ip': 12, 'vlan': 13,
+  },
+  'tunnel-medium-type': {
+    'ip': 1, 'ipv4': 1, 'ipv6': 2, 'nsap': 3, 'hdlc': 4, 'bbn-1822': 5, 'ieee-802': 6, 'e.163': 7, 'e.164': 8, 'f.69': 9,
+    'x.121': 10, 'ipx': 11, 'appletalk': 12, 'decnet-iv': 13, 'banyan-vines': 14, 'e.164-nsap': 15,
+  },
+};
