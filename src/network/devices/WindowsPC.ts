@@ -4899,6 +4899,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       isElevated: () => this.userMgr.isCurrentUserAdmin(),
       firewallRules: this.firewallRules,
       firewallProfiles: this.firewallProfiles,
+      firewallReset: () => this.getBus().publish({ topic: 'windows.firewall.reset', payload: { deviceId: this.id } }),
       firewallRuleChanged: (change, rule) => this.announceFirewallRuleChange(change, rule),
       firewallProfileChanged: (profile, patch) => this.announceFirewallProfileChange(profile, patch),
       currentFirewallProfile: () =>

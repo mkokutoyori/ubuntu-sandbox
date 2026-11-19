@@ -332,6 +332,7 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4946: firewallRule('A change has been made to Windows Firewall exception list. A rule was added.', 'Added Rule:'),
   4947: firewallRule('A change has been made to Windows Firewall exception list. A rule was modified.', 'Modified Rule:'),
   4948: firewallRule('A change has been made to Windows Firewall exception list. A rule was deleted.', 'Deleted Rule:'),
+  4949: () => 'Windows Firewall settings were restored to the default values.',
   4950: firewallSettingChanged,
   1102: auditCleared,
 };

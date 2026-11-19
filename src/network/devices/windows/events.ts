@@ -252,6 +252,7 @@ export type WindowsDomainEvent =
   | { topic: 'windows.service.start-type-changed'; payload: WindowsServiceStartTypeChangedPayload }
   | { topic: 'windows.firewall.rule-changed'; payload: WindowsFirewallRuleChangedPayload }
   | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload }
+  | { topic: 'windows.firewall.reset'; payload: WindowsDeviceRef }
   | { topic: 'windows.firewall.rule-not-applied'; payload: WindowsFirewallRuleNotAppliedPayload };
 
 /** `Set-Acl`/`icacls` changed the discretionary ACL on a filesystem object. */

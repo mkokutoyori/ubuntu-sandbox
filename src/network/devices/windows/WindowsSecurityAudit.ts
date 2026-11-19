@@ -93,6 +93,7 @@ export const SECURITY_EVENT = {
   FIREWALL_RULE_MODIFIED: 4947,
   FIREWALL_RULE_DELETED: 4948,
   FIREWALL_SETTING_CHANGED: 4950,
+  FIREWALL_RESET: 4949,
   EVENT_LOG_CLEARED: 104,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
@@ -727,6 +728,10 @@ export class WindowsSecurityAudit {
 
   firewallRuleNotApplied(ruleId: string, ruleName: string, attribute: string): void {
     this.record(SECURITY_EVENT.FIREWALL_RULE_NOT_APPLIED, 'FailureAudit', { RuleId: ruleId, RuleName: ruleName, RuleAttr: attribute });
+  }
+
+  firewallReset(): void {
+    this.record(SECURITY_EVENT.FIREWALL_RESET, 'SuccessAudit', {});
   }
 
   firewallSettingChanged(profile: string, setting: string, value: string): void {
