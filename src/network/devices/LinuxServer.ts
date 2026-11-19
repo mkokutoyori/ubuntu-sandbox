@@ -22,6 +22,7 @@ import type { HostCapableDevice } from '@/network';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
+import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
@@ -34,6 +35,7 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 
 /** Dedicated UDP port for the `radtest` probe client's replies — see `radtestClient`'s doc comment. */
 const RADTEST_SOURCE_PORT = 49999;
+const RADCLIENT_ACCT_SOURCE_PORT = 49998;
 
 const SMTPD_FIRST_PID = 3100;
 
@@ -46,6 +48,7 @@ export class LinuxServer extends LinuxMachine {
   private readonly radiusd: RadiusdService;
   /** Backs the `radtest` CLI tool (freeradius-utils) — a one-shot probe client, not persistent NAS config. */
   private readonly radtestClient: RadiusClientAgent;
+  private readonly radacctClient: RadiusAccountingClient;
   /** MTA-to-MTA relay reception + local delivery (RFC 5321), port 25. */
   private readonly smtpServer: SmtpServer;
   /** Message submission (RFC 6409) — AUTH mandatory, same engine as port 25. */
@@ -112,6 +115,11 @@ export class LinuxServer extends LinuxMachine {
 
     this.radtestClient = new RadiusClientAgent(radiusHost, () => this.getBus());
     this.radtestClient.start();
+    this.radacctClient = new RadiusAccountingClient(radiusHost, () => this.getBus());
+    this.radacctClient.start();
+    this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
+      if (dgram.sourceIP instanceof IPAddress) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+    }, 'radclient');
     // A standalone client agent has no destination port of its own to be
     // dispatched to on this host's socket-table-based UDP model (unlike a
     // router, which inline-checks every packet regardless of port) — pin
@@ -279,7 +287,7 @@ export class LinuxServer extends LinuxMachine {
   }
 
   protected override buildCommandContext(outputPiped = false, invokedAs?: string): LinuxCommandContext {
-    return { ...super.buildCommandContext(outputPiped, invokedAs), radtestClient: this.radtestClient, radiusd: this.radiusd };
+    return { ...super.buildCommandContext(outputPiped, invokedAs), radtestClient: this.radtestClient, radacctClient: this.radacctClient, radiusd: this.radiusd };
   }
 
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }

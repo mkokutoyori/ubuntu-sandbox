@@ -2,8 +2,9 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { type RadiusPacket, type RadiusAttributePolicy, defaultAttributePolicy, UDP_PORT_RADIUS_ACCT } from './types';
+import { type RadiusPacket, type RadiusAttribute, type RadiusAttributePolicy, defaultAttributePolicy, UDP_PORT_RADIUS_ACCT } from './types';
 import { withAccountingRequestAuthenticator, verifyResponseAuthenticator } from './authenticators';
+import { encodeRadiusPacket } from './codec';
 import { acctAttributesFor, generateAcctSessionId, type AcctRecord, type AcctTerminateCause } from './accounting';
 import {
   MACAddress, IPAddress,
@@ -31,6 +32,29 @@ export interface RadiusAccountingHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
+}
+
+export interface RawAcctExchange {
+  request: RadiusPacket;
+  sourcePort: number;
+  serverIp: string;
+  serverPort: number;
+  length: number;
+  transmissions: number;
+  reply: RadiusPacket | null;
+  replyLength: number;
+  localIp: string;
+}
+
+interface PendingRaw {
+  identifier: number;
+  server: RadiusAcctServerConfig;
+  attributes: RadiusAttribute[];
+  sourcePort: number;
+  exchange: RawAcctExchange;
+  resolve: (exchange: RawAcctExchange) => void;
+  timer: TimerHandle | null;
+  attemptsLeft: number;
 }
 
 export interface RadiusAcctSessionInfo {
@@ -172,10 +196,78 @@ export class RadiusAccountingClient {
     this.sessions.delete(sessionId);
   }
 
+  sendAttributes(
+    serverIp: string, attributes: RadiusAttribute[], opts: { sourcePort: number; port?: number; timeoutMs?: number; retransmit?: number },
+  ): Promise<RawAcctExchange> {
+    const server = this.servers.find((candidate) => candidate.ip === serverIp);
+    const empty: RawAcctExchange = {
+      request: { type: 'radius', code: 'accounting-request', identifier: 0, authenticator: '00'.repeat(16), attributes },
+      sourcePort: opts.sourcePort, serverIp, serverPort: opts.port ?? UDP_PORT_RADIUS_ACCT, length: 0, transmissions: 0,
+      reply: null, replyLength: 0, localIp: '0.0.0.0',
+    };
+    if (!server) return Promise.resolve(empty);
+    const identifier = this.nextIdentifier;
+    this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
+    return new Promise<RawAcctExchange>((resolve) => {
+      const pending: PendingRaw = {
+        identifier, server, attributes, sourcePort: opts.sourcePort, exchange: { ...empty },
+        resolve, timer: null, attemptsLeft: opts.retransmit ?? server.retransmit,
+      };
+      this.rawPending.set(identifier, pending);
+      this.transmitRaw(pending, opts.port ?? server.acctPort);
+      this.armRawTimeout(pending, opts.timeoutMs ?? server.timeoutMs, opts.port ?? server.acctPort);
+    });
+  }
+
+  private transmitRaw(pending: PendingRaw, port: number): void {
+    const srcIp = this.host.sourceAddressFor(new IPAddress(pending.server.ip));
+    if (!srcIp) return;
+    let payload: RadiusPacket = {
+      type: 'radius', code: 'accounting-request', identifier: pending.identifier,
+      authenticator: '00'.repeat(16), attributes: pending.attributes,
+    };
+    payload = withAccountingRequestAuthenticator(payload, pending.server.sharedSecret);
+    pending.exchange = {
+      ...pending.exchange, request: payload, serverPort: port, length: encodeRadiusPacket(payload).length,
+      transmissions: pending.exchange.transmissions + 1, localIp: srcIp.toString(),
+    };
+    this.host.sendUdpDatagram({
+      destination: new IPAddress(pending.server.ip), destinationPort: port, sourcePort: pending.sourcePort,
+      payload, payloadBytes: 12, source: srcIp,
+    });
+  }
+
+  private armRawTimeout(pending: PendingRaw, timeoutMs: number, port: number): void {
+    const s = this.getScheduler();
+    this.scheduler = s;
+    pending.timer = s.setTimeout(() => {
+      if (!this.rawPending.has(pending.identifier)) return;
+      if (pending.attemptsLeft > 0) {
+        pending.attemptsLeft--;
+        this.transmitRaw(pending, port);
+        this.armRawTimeout(pending, timeoutMs, port);
+      } else {
+        this.rawPending.delete(pending.identifier);
+        pending.resolve(pending.exchange);
+      }
+    }, timeoutMs);
+  }
+
+  private readonly rawPending = new Map<number, PendingRaw>();
+
   handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.running) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-response') return;
+    const raw = this.rawPending.get(payload.identifier);
+    if (raw && raw.server.ip === srcIp.toString()) {
+      if (!verifyResponseAuthenticator(payload, raw.exchange.request.authenticator, raw.server.sharedSecret)) return;
+      if (raw.timer !== null) (this.scheduler ?? this.getScheduler()).clear(raw.timer);
+      this.rawPending.delete(payload.identifier);
+      raw.exchange = { ...raw.exchange, reply: payload, replyLength: encodeRadiusPacket(payload).length };
+      raw.resolve(raw.exchange);
+      return;
+    }
     const pending = this.pending.get(payload.identifier);
     if (!pending) return;
     if (pending.server.ip !== srcIp.toString()) return;

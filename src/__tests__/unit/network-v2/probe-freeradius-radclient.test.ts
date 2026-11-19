@@ -4,10 +4,10 @@
  * the attribute lists and "Message-Authenticator = 0x" only with -x, "Expected Access-Accept got ..." and exit 1 when the expected
  * code does not come back, "No reply from server for ID %d socket %d", -c/-r/-t/-q/-s/-S/-f, the summary block, the version string)
  * and radtest.sh (which pipes its arguments to `radclient -x`). radtest now builds that input and runs the same engine, so the two
- * print one notation. Only the auth command is implemented; acct, status, coa, disconnect and auto are refused naming the missing
- * brick (the client agent sends authentication requests only), as are -6, -b, -F, -D, -n, -p, -P.
+ * print one notation. The auth and acct commands are implemented (acct through the accounting client's new generic send);
+ * status, coa, disconnect and auto are refused naming the missing brick, as are -6, -b, -F, -D, -n, -p, -P.
  *
- * Discriminated with git stash on src: 13 of 14 fall before the fix; one passes either way and is named: the witness (radtest, now a
+ * Discriminated with git stash on src: 16 of 17 fall before the fix; one passes either way and is named: the witness (radtest, now a
  * wrapper, still accepts a right login).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -136,10 +136,35 @@ describe('radclient', () => {
     expect((await status((await lab()).client, 'radclient -v')).output).toBe('radclient version 3.2.11');
   });
 
-  it('the acct command is refused naming what is missing', async () => {
+  it('acct sends the packet as an Accounting-Request to port 1813 and prints the Accounting-Response', async () => {
+    const { client, target } = await lab();
+    const result = await status(client, `printf 'User-Name = "alice"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "abc123"\\nCalling-Station-Id = "aa-bb"\\n' | radclient -x 10.0.0.2 acct shared`);
+    expect(result.output).toMatch(/^Sent Accounting-Request Id \d+ from 0\.0\.0\.0:\d+ to 10\.0\.0\.2:1813 length \d+/);
+    expect(result.output).toContain('\tAcct-Status-Type = Start');
+    expect(result.output).toMatch(/Received Accounting-Response Id \d+ from 10\.0\.0\.2:1813 to 10\.0\.0\.1:\d+ length 20/);
+    expect(result.code).toBe('0');
+    expect(target.getRadiusServer().listAccountingSessions().map((session) => session.sessionId)).toContain('abc123');
+  });
+
+  it('every attribute of the acct packet is on the wire: the detail file of the server carries them', async () => {
+    const { client, target } = await lab();
+    await client.executeCommand(`printf 'User-Name = "alice"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "abc123"\\nCalling-Station-Id = "aa-bb"\\n' | radclient 10.0.0.2 acct shared`);
+    const dir = '/var/log/freeradius/radacct/10.0.0.1';
+    const name = (await target.executeCommand(`ls ${dir}`)).trim().split(/\s+/).find((entry) => entry.startsWith('detail-')) ?? '';
+    expect(vfsOf(target).readFile(`${dir}/${name}`) ?? '').toContain('\tCalling-Station-Id = "aa-bb"');
+  });
+
+  it('acct with a wrong secret gets no reply: the loss is reported, exit 1', async () => {
     const { client } = await lab();
-    expect((await status(client, `${ALICE} | radclient 10.0.0.2 acct shared`)).output)
-      .toContain('the acct command is not implemented in this simulator');
+    const result = await status(client, `printf 'User-Name = "alice"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "x"\\n' | radclient -t 1 -r 1 10.0.0.2 acct wrong`);
+    expect(result.output).toMatch(/\(0\) No reply from server for ID \d+ socket 3/);
+    expect(result.code).toBe('1');
+  });
+
+  it('the status command is refused naming what is missing', async () => {
+    const { client } = await lab();
+    expect((await status(client, `${ALICE} | radclient 10.0.0.2 status shared`)).output)
+      .toContain('the status command is not implemented in this simulator');
   });
 
   it('a packet without User-Name is refused rather than sent', async () => {
