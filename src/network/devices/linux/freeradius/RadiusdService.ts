@@ -28,6 +28,7 @@ import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
+import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, type PreprocessFiles } from './PreprocessModule';
 import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
 import { RadiusClientTable } from '@/network/radius/ClientTable';
@@ -90,7 +91,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; files: readonly string[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; files: readonly string[] }
   | { ok: false; error: string };
 
 export class RadiusdService {
@@ -209,6 +210,7 @@ export class RadiusdService {
     const authPort = specs.find((spec) => spec.type === 'auth' || spec.type === 'auth+acct')?.port ?? UDP_PORT_RADIUS_AUTH;
     const acctPort = specs.find((spec) => spec.type === 'acct')?.port ?? authPort;
     this.activeListeners = specs;
+    this.portServers = new Map(specs.map((spec) => [spec.port, spec.server]));
     this.radiusServer.setAnyPort(true);
 
     this.applyConfig(loaded);
@@ -259,10 +261,23 @@ export class RadiusdService {
 
   appendLog(path: string, text: string): void { this.files.append(path, text); }
 
+  private pipelines = new Map<string, Pipeline>();
+  private portServers = new Map<number, string>();
+
+  private sectionPresent(port: number, section: ProcessingSection, module: string): boolean {
+    const names = this.pipelines.get(this.portServers.get(port) ?? 'default')?.sections.get(section);
+    return names?.has(module) === true;
+  }
+
+  private sectionAllows(port: number, section: ProcessingSection, module: string): boolean {
+    const server = this.portServers.get(port) ?? 'default';
+    return pipelineAllows(this.pipelines.get(server), section, module);
+  }
+
   private writeDetail(record: DetailRecord): void {
     const settings = this.logConfig?.detail ?? null;
-    if (settings === null) return;
-    this.files.append(detailPath(settings, record), detailEntry(settings, record), ~settings.permissions & 0o777);
+    if (settings === null || !this.sectionAllows(record.destinationPort, 'accounting', 'detail')) return;
+    this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique')), ~settings.permissions & 0o777);
   }
 
   private boundPorts: number[] = [];
@@ -309,17 +324,22 @@ export class RadiusdService {
 
   private preprocessFiles: PreprocessFiles = { hints: null, huntgroups: null };
 
-  private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = ''): RadiusUser | undefined {
+  private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH): RadiusUser | undefined {
     const groupsOf = (name: string) => this.wallClock.groupsOf(name);
-    const prepared = applyPreprocess(this.preprocessFiles, username, attributes, nasIp, groupsOf);
+    if (this.sectionPresent(listenPort, 'authorize', 'reject')) return undefined;
+    const prepared = this.sectionAllows(listenPort, 'authorize', 'preprocess')
+      ? applyPreprocess(this.preprocessFiles, username, attributes, nasIp, groupsOf)
+      : { extra: [] as RadiusAttribute[], overlay: new Map<string, string>(), rejected: false };
     if (prepared.rejected) return undefined;
+    if (!this.sectionAllows(listenPort, 'authorize', 'files')) return undefined;
     const match = matchUsersEntries(entries, username, requestViewOf([...attributes, ...prepared.extra], prepared.overlay, groupsOf, username));
     if (match === null || match.rejected) return undefined;
     const known = knownGoodPassword(match.knownGood);
     if (known === null && !match.acceptAny) return undefined;
     return {
       username, password: known?.cleartext ?? match.password ?? '', verify: known?.verify,
-      acceptAny: match.acceptAny, replyAttributes: match.reply, ...(match.loginTime === null ? {} : { loginTime: match.loginTime }),
+      acceptAny: match.acceptAny, replyAttributes: match.reply,
+      ...(match.loginTime === null || !this.sectionAllows(listenPort, 'authorize', 'logintime') ? {} : { loginTime: match.loginTime }),
       ...(match.simultaneousUse === null ? {} : { simultaneousUse: match.simultaneousUse }),
     };
   }
@@ -346,6 +366,8 @@ export class RadiusdService {
     if ('error' in site) return { ok: false, error: site.error };
     const preprocess = readPreprocess(main.root, (path) => this.files.read(path));
     if ('error' in preprocess) return { ok: false, error: preprocess.error };
+    const pipelines = readPipelines(main.root);
+    if ('error' in pipelines) return { ok: false, error: pipelines.error };
     const clientsSource = this.files.read(clientsPath);
     if (clientsSource === null) return { ok: false, error: `open: ${clientsPath}: file not found` };
     const usersSource = this.files.read(usersPath);
@@ -354,12 +376,19 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, files: main.files };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, files: main.files };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline> }): void {
     this.logConfig = loaded.log;
     this.preprocessFiles = loaded.preprocess;
+    this.pipelines = loaded.pipelines;
+    this.radiusServer.setFeaturePolicy((feature, port) => {
+      const both = (name: string) => this.sectionAllows(port, 'authorize', name) && this.sectionAllows(port, 'authenticate', name);
+      if (feature === 'session') return this.sectionAllows(port, 'session', 'radutmp');
+      if (feature === 'accounting-utmp') return this.sectionAllows(port, 'accounting', 'radutmp');
+      return both(feature);
+    });
     this.radiusServer.setStatusServer(loaded.security.statusServer);
     this.radiusServer.setDeniedMessage(loaded.log.msgDenied);
     this.radiusServer.setWallClock(() => this.wallClock.nowMs(), (epochMs) => {
@@ -371,6 +400,6 @@ export class RadiusdService {
     this.radiusServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
     for (const client of loaded.clients) this.radiusServer.clientTable.add(client);
-    this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? ''));
+    this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? '', context?.listenPort));
   }
 }

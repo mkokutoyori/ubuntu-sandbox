@@ -137,7 +137,10 @@ export interface RadiusPacketTrace {
   length: number;
 }
 
+export type RequestFeature = 'pap' | 'chap' | 'mschap' | 'eap' | 'session' | 'accounting-utmp';
+
 export interface RadiusUserResolverContext {
+  listenPort?: number;
   /** The requesting NAS's source IP, as seen on this Access-Request. */
   nasIp: string;
   attributes: RadiusAttribute[];
@@ -194,8 +197,16 @@ export class RadiusServerAgent {
 
   setDeniedMessage(message: string): void { this.config.deniedMessage = message; }
 
+  private featurePolicy: (feature: RequestFeature, listenPort: number) => boolean = () => true;
+
+  setFeaturePolicy(policy: (feature: RequestFeature, listenPort: number) => boolean): void { this.featurePolicy = policy; }
+
+  private allows(feature: RequestFeature): boolean {
+    return this.featurePolicy(feature, this.servedPort ?? this.config.port);
+  }
+
   private simultaneousUseDenial(user: RadiusUser | undefined, username: string): { reply: RadiusAttribute[]; note: string } | null {
-    if (user?.simultaneousUse === undefined) return null;
+    if (user?.simultaneousUse === undefined || !this.allows('session')) return null;
     const maximum = user.simultaneousUse;
     const active = this.utmpSessions().filter((record) => record.username === username);
     if (active.length < maximum) return null;
@@ -490,7 +501,7 @@ export class RadiusServerAgent {
     const existing = this.acctSessions.get(sessionKey);
     const nasPortAttribute = getAttr(payload, 'nas-port');
     const framedProtocol = Number(getAttr(payload, 'framed-protocol')?.value);
-    const utmp: UtmpFields | undefined = existing?.utmp ?? (nasPortAttribute === undefined || username === '!root' || status === 'stop' ? undefined : {
+    const utmp: UtmpFields | undefined = existing?.utmp ?? (nasPortAttribute === undefined || username === '!root' || status === 'stop' || !this.allows('accounting-utmp') ? undefined : {
       nasPort: Number(nasPortAttribute.value),
       protocol: framedProtocol === 1 ? 'P' : framedProtocol === 2 ? 'S' : 'T',
       portType: UTMP_PORT_TYPES[Number(getAttr(payload, 'nas-port-type')?.value)] ?? 'A',
@@ -596,7 +607,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes });
+    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes, listenPort: this.servedPort ?? this.config.port });
     const loginTime = this.loginTimeVerdict(resolved);
     if (!loginTime.allowed) {
       this.publishRejected(senderIp, username, 'outside-login-time');
@@ -605,12 +616,22 @@ export class RadiusServerAgent {
     }
     const user = loginTime.secondsLeft === 0 || resolved === undefined ? resolved : this.withSessionTimeout(resolved, loginTime.secondsLeft);
 
+    if (eapAttr && !this.allows('eap')) {
+      this.publishRejected(senderIp, username, 'bad-password');
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey);
+      return;
+    }
     if (eapAttr) {
       this.handleEapRequest(inPort, srcIp, udp.sourcePort, payload, username, user, dedupKey);
       return;
     }
 
     const msChap2ResponseVsa = getVsa(payload, MICROSOFT_VENDOR_ID, 25);
+    if (msChap2ResponseVsa && !this.allows('mschap')) {
+      this.publishRejected(senderIp, username, 'bad-password');
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey);
+      return;
+    }
     if (msChap2ResponseVsa) {
       this.handleMsChapV2Request(inPort, srcIp, udp.sourcePort, payload, username, user, msChap2ResponseVsa, dedupKey);
       return;
@@ -649,12 +670,12 @@ export class RadiusServerAgent {
       const parsed = parseChapPasswordHex(String(chapAttr.value));
       const challengeAttr = getAttr(payload, 'chap-challenge');
       const challenge = challengeAttr ? hexToBytes(String(challengeAttr.value)) : hexToBytes(payload.authenticator);
-      accepted = !!user && (user.acceptAny === true || (!!parsed && user.password !== '' && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge)));
+      accepted = !!user && (user.acceptAny === true || (this.allows('chap') && !!parsed && user.password !== '' && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge)));
       reason = !user ? 'unknown-user' : 'bad-password';
     } else {
       const decrypted = decryptUserPassword(String(passwordAttr!.value), this.secretFor(srcIp), payload.authenticator);
       const secretLooksWrong = !isPrintablePassword(decrypted);
-      accepted = !secretLooksWrong && !!user && (user.acceptAny === true || (user.verify ? user.verify(decrypted) : user.password === decrypted));
+      accepted = !secretLooksWrong && !!user && (user.acceptAny === true || (this.allows('pap') && (user.verify ? user.verify(decrypted) : user.password === decrypted)));
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
     }
 
