@@ -165,7 +165,7 @@ function run(ctx: LinuxCommandContext, args: string[]): { output: string; exitCo
   const report = ctx.radiusd.checkConfigReport(paths);
   const sink = makeSink(ctx, parsed, report);
   if (parsed.debugLevel > 0) for (const text of BANNER_LINES) sink.line(text, 'info');
-  sink.debug(`including configuration file ${mainFile}`, 2);
+  for (const file of report.files) sink.debug(`including configuration file ${file}`, 2);
 
   if (!report.ok) {
     for (const message of report.errors) sink.line(message, 'error');

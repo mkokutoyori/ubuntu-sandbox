@@ -42,6 +42,7 @@ export interface RadiusdCheckReport {
   logFile: string | null;
   errors: string[];
   mainFile: string;
+  files: readonly string[];
 }
 
 export interface RadiusdListenOverride {
@@ -64,7 +65,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; files: readonly string[] }
   | { ok: false; error: string };
 
 export class RadiusdService {
@@ -91,7 +92,7 @@ export class RadiusdService {
   checkConfigReport(paths?: RadiusdConfigPaths): RadiusdCheckReport {
     const main = paths?.main ?? RADIUSD_CONF_PATH;
     const loaded = this.loadConfig(paths);
-    if (loaded.ok) return { ok: true, logFile: loaded.log.destination === 'files' ? loaded.log.file : null, errors: [], mainFile: main };
+    if (loaded.ok) return { ok: true, logFile: loaded.log.destination === 'files' ? loaded.log.file : null, errors: [], mainFile: main, files: loaded.files };
     const error = 'error' in loaded ? loaded.error : 'failed to start';
     const inMain = error.startsWith(main) || error.includes(`'${main}'`) || error.startsWith('radiusd: Error:');
     return {
@@ -99,6 +100,7 @@ export class RadiusdService {
       logFile: inMain ? null : this.logConfig?.file ?? DEFAULT_RADIUS_LOG_FILE,
       errors: inMain ? [error, `Errors reading or parsing ${main}`] : [error],
       mainFile: main,
+      files: [main],
     };
   }
 
@@ -247,7 +249,7 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, files: main.files };
   }
 
   private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig }): void {

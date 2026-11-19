@@ -17,7 +17,7 @@ export interface ConfSection {
 }
 
 export type ConfParseResult =
-  | { readonly ok: true; readonly root: ConfSection }
+  | { readonly ok: true; readonly root: ConfSection; readonly files: readonly string[] }
   | { readonly ok: false; readonly error: string };
 
 export type ConfFileReader = ((path: string) => string | null) & { list?: (path: string) => readonly string[] | null };
@@ -61,9 +61,10 @@ function logicalLines(source: string): Array<{ text: string; line: number }> {
 
 export function parseFreeradiusConf(source: string, fileName: string, readFile: ConfFileReader = () => null): ConfParseResult {
   const root: ConfSection = { name1: '', name2: null, pairs: [], sections: [], file: fileName, line: 0 };
+  const files: string[] = [fileName];
   try {
-    readInto(source, fileName, readFile, [root], 0);
-    return { ok: true, root };
+    readInto(source, fileName, readFile, [root], 0, files);
+    return { ok: true, root, files };
   } catch (error) {
     if (error instanceof ParseFailure) return { ok: false, error: error.message };
     throw error;
@@ -177,7 +178,7 @@ function tokenize(text: string, file: string, line: number): Token[] {
 }
 
 function readInto(
-  source: string, file: string, readFile: ConfFileReader, stack: ConfSection[], depth: number,
+  source: string, file: string, readFile: ConfFileReader, stack: ConfSection[], depth: number, files: string[],
 ): void {
   const baseStackLength = stack.length;
   let lastLine = 0;
@@ -199,7 +200,10 @@ function readInto(
         for (const name of [...names].sort()) {
           if (name.startsWith('.') || name.endsWith('~')) continue;
           const child = readFile(`${path}${name}`);
-          if (child !== null) readInto(child, `${path}${name}`, readFile, stack, depth + 1);
+          if (child !== null) {
+            files.push(`${path}${name}`);
+            readInto(child, `${path}${name}`, readFile, stack, depth + 1, files);
+          }
         }
         continue;
       }
@@ -209,7 +213,8 @@ function readInto(
         throw new ParseFailure(`${file}[${line}]: Unable to open file '${path}': No such file or directory`);
       }
       if (depth > 16) throw new ParseFailure(`${file}[${line}]: Directories too deep.`);
-      readInto(included, path, readFile, stack, depth + 1);
+      files.push(path);
+      readInto(included, path, readFile, stack, depth + 1, files);
       continue;
     }
     const tokens = tokenize(text, file, line);

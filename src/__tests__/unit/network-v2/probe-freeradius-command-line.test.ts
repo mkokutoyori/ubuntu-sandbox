@@ -9,7 +9,7 @@
  * src/main/process.c ("Ready to process requests", "Listening on %s"). The version number is the branch's VERSION file (3.2.11);
  * the host triple is the simulator's own build identity, reproducible builds print no build date.
  *
- * Discriminated with git stash on src: 17 of 18 fall before the fix; one passes either way and is named: the witness
+ * Discriminated with git stash on src: 18 of 19 fall before the fix; one passes either way and is named: the witness
  * (the unit answers active, so a second daemon has something to collide with).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -166,4 +166,13 @@ describe('the freeradius command', () => {
     const server = new LinuxServer('linux-server', 'AAA');
     expect(await server.executeCommand('systemctl cat freeradius')).toContain('ExecReload=/usr/sbin/freeradius -Cm -lstdout');
   });
+
+  it('-CX names every configuration file read, in the order conffile.c reads them', async () => {
+    const out = (await status(new LinuxServer('linux-server', 'AAA'), 'freeradius -CX')).output.split('\n');
+    const main = out.indexOf('including configuration file /etc/freeradius/3.0/radiusd.conf');
+    const detail = out.indexOf('including configuration file /etc/freeradius/3.0/mods-enabled/detail');
+    expect(main).toBeGreaterThanOrEqual(0);
+    expect(detail).toBeGreaterThan(main);
+  });
 });
+
