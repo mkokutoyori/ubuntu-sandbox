@@ -270,7 +270,7 @@ export class CiscoRouter extends Router {
     this.coaListener.setSessionHandler(this.defaultCoaSessionHandler());
     this.coaClient = new CoaClient(hostBase, () => this.getBus());
     this.radiusTcpClient = new RadiusTcpClient(hostBase, () => this.getBus(), () => this.tcpv2);
-    this.radiusTcpServer = new RadiusTcpServer(hostBase, () => this.getBus(), () => this.tcpv2);
+    this.radiusTcpServer = new RadiusTcpServer(hostBase, () => this.getBus(), () => this.tcpv2, this.radiusServer);
     this.greAgent = new GreAgent(hostBase, () => this.getBus());
     this.snmpAgent = new SnmpAgent({
       ...hostBase,

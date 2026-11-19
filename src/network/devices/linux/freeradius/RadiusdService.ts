@@ -284,7 +284,6 @@ export class RadiusdService {
     return tables;
   }
   private debugMode = false;
-  private readonly fileUsers = new Set<string>();
   private logConfig: RadiusdLogConfig | null = null;
 
   private writeAuthLog(payload: RadiusAuthDecidedPayload): void {
@@ -360,18 +359,8 @@ export class RadiusdService {
     this.radiusServer.setRejectReplyMessage(null);
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
-    this.radiusTcpServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
     for (const client of loaded.clients) this.radiusServer.clientTable.add(client);
-    for (const stale of this.fileUsers) this.radiusTcpServer.removeUser(stale);
-    this.fileUsers.clear();
-    for (const entry of loaded.users) {
-      if (entry.name === 'DEFAULT') continue;
-      const user = this.resolveUser(loaded.users, entry.name, []);
-      if (!user) continue;
-      this.fileUsers.add(user.username);
-      this.radiusTcpServer.addUser(user.username, user.password);
-    }
     this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? []));
   }
 }

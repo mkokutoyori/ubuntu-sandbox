@@ -24,6 +24,7 @@ import {
 } from './authenticators';
 import type { TcpStack, TcpSocket } from '../tcp/TcpStack';
 import { Logger } from '../core/Logger';
+import { IPAddress } from '../core/types';
 
 export interface RadiusTcpHost {
   readonly id: string;
@@ -142,17 +143,23 @@ export class RadiusTcpClient {
 
 // ─── Server side ────────────────────────────────────────────────────
 
+export interface RadiusStreamEngine {
+  handleStreamRequest(
+    srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    request: RadiusPacket, reply: (response: RadiusPacket) => void,
+  ): void;
+  addUser(username: string, password: string): void;
+  removeUser(username: string): void;
+  setSharedSecret(secret: string): void;
+}
+
 export interface RadiusTcpServerAgentConfig {
   enabled: boolean;
   port: number;
-  sharedSecret: string;
-  users: Map<string, RadiusUser>;
 }
 
 export class RadiusTcpServer {
-  private config: RadiusTcpServerAgentConfig = {
-    enabled: true, port: UDP_PORT_RADIUS_AUTH, sharedSecret: 'shared', users: new Map(),
-  };
+  private config: RadiusTcpServerAgentConfig = { enabled: true, port: UDP_PORT_RADIUS_AUTH };
   private running = false;
   private listenerInstalled = false;
 
@@ -160,6 +167,7 @@ export class RadiusTcpServer {
     private readonly host: RadiusTcpHost,
     private readonly getBus: () => IEventBus,
     private readonly getTcpStack: () => TcpStack,
+    private readonly engine: RadiusStreamEngine,
   ) {}
 
   start(): void {
@@ -189,13 +197,11 @@ export class RadiusTcpServer {
     }
   }
 
-  setSharedSecret(secret: string): void { this.config.sharedSecret = secret; }
+  setSharedSecret(secret: string): void { this.engine.setSharedSecret(secret); }
 
-  addUser(username: string, password: string): void {
-    this.config.users.set(username, { username, password });
-  }
+  addUser(username: string, password: string): void { this.engine.addUser(username, password); }
 
-  removeUser(username: string): void { this.config.users.delete(username); }
+  removeUser(username: string): void { this.engine.removeUser(username); }
 
   private installListener(): void {
     if (this.listenerInstalled) return;
@@ -209,37 +215,29 @@ export class RadiusTcpServer {
         socket.onData((data) => {
           if (!this.config.enabled) { socket.close(); return; }
           const request = data as RadiusPacket | undefined;
-          if (!request || request.type !== 'radius' || request.code !== 'access-request') {
+          const accepted = request?.type === 'radius'
+            && (request.code === 'access-request' || request.code === 'accounting-request' || request.code === 'status-server');
+          if (!request || !accepted) {
             socket.close();
             return;
           }
-          const usernameAttr = getAttr(request, 'user-name');
-          const passwordAttr = getAttr(request, 'user-password');
-          const username = usernameAttr ? String(usernameAttr.value) : '';
-          const user = this.config.users.get(username);
-
-          let accepted = false;
-          if (passwordAttr) {
-            const decrypted = decryptUserPassword(String(passwordAttr.value), this.config.sharedSecret, request.authenticator);
-            accepted = isPrintablePassword(decrypted) && !!user && user.password === decrypted;
-          }
-
-          let response: RadiusPacket = {
-            type: 'radius', code: accepted ? 'access-accept' : 'access-reject',
-            identifier: request.identifier, authenticator: '00'.repeat(16),
-            attributes: accepted ? [] : [attr('reply-message', 'Authentication failed')],
-          };
-          response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
-          this.getBus().publish({
-            topic: 'radius.tcp.completed',
-            payload: {
-              deviceId: this.host.id, hostname: this.host.getHostname(),
-              serverIp: socket.remoteIp, username, result: accepted ? 'accept' : 'reject',
+          const username = String(getAttr(request, 'user-name')?.value ?? '');
+          this.engine.handleStreamRequest(
+            new IPAddress(socket.remoteIp), socket.remotePort, new IPAddress(socket.localIp), socket.localPort, request,
+            (response) => {
+              const result = response.code === 'access-accept' || response.code === 'accounting-response' ? 'accept' : 'reject';
+              this.getBus().publish({
+                topic: 'radius.tcp.completed',
+                payload: {
+                  deviceId: this.host.id, hostname: this.host.getHostname(),
+                  serverIp: socket.remoteIp, username, result,
+                },
+              });
+              Logger.info(this.host.id, 'radius:tcp',
+                `${this.host.name}: ${response.code} (TCP) for ${username || '(unknown)'}`);
+              socket.send(response);
             },
-          });
-          Logger.info(this.host.id, 'radius:tcp',
-            `${this.host.name}: ${response.code} (TCP) for ${username || '(unknown)'}`);
-          socket.send(response);
+          );
           socket.close();
         });
       },

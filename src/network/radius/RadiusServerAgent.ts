@@ -398,9 +398,31 @@ export class RadiusServerAgent {
   setUserResolver(fn: ((username: string, context?: RadiusUserResolverContext) => RadiusUser | undefined) | null): void { this.userResolver = fn; }
 
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
-  handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleStreamRequest(
+    srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    request: RadiusPacket, reply: (response: RadiusPacket) => void,
+  ): void {
+    const inPort = this.host.getPorts().find((candidate) => candidate.getIPAddress()?.toString() === localIp.toString());
+    if (!inPort) return;
+    const udp = { type: 'udp', sourcePort: srcPort, destinationPort: localPort, length: 0, checksum: 0, payload: request } as UDPPacket;
+    const previousSink = this.streamSink;
+    const previousPort = this.servedPort;
+    this.streamSink = reply;
+    this.servedPort = localPort;
+    try {
+      if (request.code === 'accounting-request') this.handleAcctUdp(inPort.getName(), srcIp, udp, true);
+      else this.handleUdp(inPort.getName(), srcIp, udp, true);
+    } finally {
+      this.streamSink = previousSink;
+      this.servedPort = previousPort;
+    }
+  }
+
+  private streamSink: ((response: RadiusPacket) => void) | null = null;
+
+  handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
-    if (!this.anyPort && udp.destinationPort !== this.config.acctPort) return;
+    if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.acctPort) return;
     if (this.anyPort) this.servedPort = udp.destinationPort;
     const payload = udp.payload as RadiusPacket | undefined;
     if (payload?.type === 'radius' && payload.code === 'status-server') {
@@ -502,9 +524,9 @@ export class RadiusServerAgent {
     this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
   }
 
-  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
-    if (!this.anyPort && udp.destinationPort !== this.config.port) return;
+    if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.port) return;
     if (this.anyPort) this.servedPort = udp.destinationPort;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
@@ -1249,6 +1271,10 @@ export class RadiusServerAgent {
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
     this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
+    if (this.streamSink !== null) {
+      this.streamSink(response);
+      return;
+    }
     if (dstIp.isLoopback() || dstIp.toString() === srcIp.toString()) {
       this.host.sendUdpDatagram({
         destination: dstIp, destinationPort: clientPort, sourcePort, payload: response, payloadBytes: 20 + 16 - 8, source: srcIp,

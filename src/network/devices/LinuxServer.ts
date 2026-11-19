@@ -90,7 +90,7 @@ export class LinuxServer extends LinuxMachine {
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
     };
     this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());
-    this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack());
+    this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack(), this.radiusServer);
     this.radiusd = new RadiusdService(this, this.radiusServer, this.radiusTcpServer, {
       read: (path) => this.executor.vfs.readFile(path),
       append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
