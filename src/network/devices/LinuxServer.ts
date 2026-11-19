@@ -24,6 +24,7 @@ import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
 import { CoaClient } from '../radius/CoaClient';
+import { formatRadiusAttribute } from '../radius/attributeText';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
@@ -302,6 +303,17 @@ export class LinuxServer extends LinuxMachine {
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
   getRadiusTcpServer(): RadiusTcpServer { return this.radiusTcpServer; }
   getRadiusd(): RadiusdService { return this.radiusd; }
+
+  followRadiusDebug(sink: (line: string) => void): () => void {
+    this.radiusServer.setPacketTrace((event) => {
+      const prefix = `(${event.number})`;
+      const name = event.packet.code.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('-');
+      sink(`${prefix} ${event.direction === 'received' ? 'Received' : 'Sent'} ${name} Id ${event.packet.identifier} from ${event.sourceIp}:${event.sourcePort} to ${event.destinationIp}:${event.destinationPort} length ${event.length}`);
+      for (const attribute of event.packet.attributes) sink(`${prefix}   ${formatRadiusAttribute(attribute)}`);
+      if (event.direction === 'sent') sink(`${prefix} Finished request`);
+    });
+    return () => this.radiusServer.setPacketTrace(null);
+  }
 
   getSmtpServer(): SmtpServer { return this.smtpServer; }
   getSmtpSubmissionServer(): SmtpServer { return this.smtpSubmissionServer; }

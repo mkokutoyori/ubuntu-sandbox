@@ -3,6 +3,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import type { RadiusAuthDecidedPayload } from './events';
+import { encodeRadiusPacket } from './codec';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@/crypto/encoding';
 import { md4 } from '@/crypto/hash';
@@ -110,6 +111,17 @@ interface PendingProxyContext {
 }
 
 /** Extra context a `setUserResolver` callback may need beyond the username itself. */
+export interface RadiusPacketTrace {
+  number: number;
+  direction: 'received' | 'sent';
+  packet: RadiusPacket;
+  sourceIp: string;
+  sourcePort: number;
+  destinationIp: string;
+  destinationPort: number;
+  length: number;
+}
+
 export interface RadiusUserResolverContext {
   /** The requesting NAS's source IP, as seen on this Access-Request. */
   nasIp: string;
@@ -197,6 +209,41 @@ export class RadiusServerAgent {
   }
 
   private requestNumber = -1;
+
+  private packetTrace: ((event: RadiusPacketTrace) => void) | null = null;
+  private traceOpen = false;
+
+  setPacketTrace(listener: ((event: RadiusPacketTrace) => void) | null): void {
+    this.packetTrace = listener;
+    this.traceOpen = false;
+  }
+
+  private traceReceived(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstPort: number, inPort: string, decrypt: boolean): void {
+    if (this.packetTrace === null) return;
+    const attributes = decrypt
+      ? packet.attributes.map((attribute) => {
+        if (attribute.type !== 'user-password') return attribute;
+        const clear = decryptUserPassword(String(attribute.value), this.secretFor(srcIp), packet.authenticator);
+        return isPrintablePassword(clear) ? { ...attribute, value: clear } : attribute;
+      })
+      : packet.attributes;
+    this.traceOpen = true;
+    this.packetTrace({
+      number: this.requestNumber, direction: 'received', packet: { ...packet, attributes },
+      sourceIp: srcIp.toString(), sourcePort: srcPort, destinationIp: srcIpOfPort(this.host.getPort(inPort)), destinationPort: dstPort,
+      length: encodeRadiusPacket(packet).length,
+    });
+  }
+
+  private traceSent(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstIp: IPAddress, dstPort: number): void {
+    if (this.packetTrace === null || !this.traceOpen) return;
+    this.traceOpen = false;
+    this.packetTrace({
+      number: this.requestNumber, direction: 'sent', packet,
+      sourceIp: srcIp.toString(), sourcePort: srcPort, destinationIp: dstIp.toString(), destinationPort: dstPort,
+      length: encodeRadiusPacket(packet).length,
+    });
+  }
 
   private decisionListener: ((payload: RadiusAuthDecidedPayload) => void) | null = null;
 
@@ -288,6 +335,8 @@ export class RadiusServerAgent {
       return;
     }
 
+    this.requestNumber++;
+    this.traceReceived(payload, srcIp, udp.sourcePort, udp.destinationPort, inPort, false);
     const sessionIdAttr = getAttr(payload, 'acct-session-id');
     const usernameAttr = getAttr(payload, 'user-name');
     const statusAttr = getAttr(payload, 'acct-status-type');
@@ -370,6 +419,7 @@ export class RadiusServerAgent {
     }
 
     this.requestNumber++;
+    this.traceReceived(payload, srcIp, udp.sourcePort, udp.destinationPort, inPort, true);
     this.getBus().publish({
       topic: 'radius.packet.received',
       payload: {
@@ -977,6 +1027,7 @@ export class RadiusServerAgent {
     inPort: string, port: Port, srcIp: IPAddress, dstIp: IPAddress,
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
+    this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
     const ipPkt = buildUdpOverIpv4(srcIp, {
       destination: dstIp,
       destinationPort: clientPort, sourcePort,
