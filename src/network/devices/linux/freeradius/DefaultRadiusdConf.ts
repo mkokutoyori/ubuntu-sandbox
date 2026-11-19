@@ -33,4 +33,6 @@ export const DEFAULT_RADIUSD_CONF = [
   '\tmsg_denied = "You are already logged in - access denied"',
   '}',
   '',
+  '$INCLUDE sites-enabled/',
+  '',
 ].join('\n');

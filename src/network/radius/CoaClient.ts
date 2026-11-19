@@ -1,3 +1,4 @@
+import { clientSourceAddress } from './sourceAddress';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -205,7 +206,7 @@ export class CoaClient {
   }
 
   private transmit(pending: PendingCoa): void {
-    const srcIp = this.host.sourceAddressFor(new IPAddress(pending.nas.ip));
+    const srcIp = clientSourceAddress(this.host, new IPAddress(pending.nas.ip));
     if (!srcIp) return;
     const sourcePort = this.fixedSourcePort ?? 49220 + (pending.identifier & 0x3fff);
     const previous = this.lastExchange !== null && this.lastExchange.request.identifier === pending.identifier ? this.lastExchange : null;

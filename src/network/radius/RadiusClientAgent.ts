@@ -1,3 +1,4 @@
+import { clientSourceAddress } from './sourceAddress';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
@@ -383,7 +384,7 @@ export class RadiusClientAgent {
   }
 
   private transmitEap(server: RadiusServerConfig, pending: PendingEapRound): void {
-    const srcIp = this.host.sourceAddressFor(new IPAddress(server.ip));
+    const srcIp = clientSourceAddress(this.host, new IPAddress(server.ip));
     if (!srcIp) return;
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
@@ -474,7 +475,7 @@ export class RadiusClientAgent {
   }
 
   private transmitMsChap(server: RadiusServerConfig, pending: PendingMsChapRound): void {
-    const srcIp = this.host.sourceAddressFor(new IPAddress(server.ip));
+    const srcIp = clientSourceAddress(this.host, new IPAddress(server.ip));
     if (!srcIp) return;
     const msChap2Response = new Uint8Array(50);
     msChap2Response[0] = pending.identifier & 0xff; // Ident
@@ -812,7 +813,7 @@ export class RadiusClientAgent {
   }
 
   private transmit(server: RadiusServerConfig, pending: PendingRequest): void {
-    const srcIp = this.host.sourceAddressFor(new IPAddress(server.ip));
+    const srcIp = clientSourceAddress(this.host, new IPAddress(server.ip));
     if (!srcIp) return;
     const attrs: RadiusAttribute[] = [attr('user-name', pending.username)];
     if (pending.authMethod === 'chap') {

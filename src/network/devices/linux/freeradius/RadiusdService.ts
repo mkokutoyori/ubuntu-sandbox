@@ -28,6 +28,8 @@ import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
+import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
+import { RadiusClientTable } from '@/network/radius/ClientTable';
 import { formatCtime } from '../time/ctime';
 import { formatLocalTime } from '../system/SystemInfo';
 import { simulationNowMs } from '@/network/core/SystemClock';
@@ -86,7 +88,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; files: readonly string[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; files: readonly string[] }
   | { ok: false; error: string };
 
 export class RadiusdService {
@@ -154,11 +156,12 @@ export class RadiusdService {
       return started.ok ? { ok: true } : { ok: false, errors: [started.error ?? 'failed to start'] };
     }
     if (this.running) {
+      const first = this.activeListeners.find((spec) => spec.type === 'auth' || spec.type === 'auth+acct') ?? this.activeListeners[0];
       return {
         ok: false,
         errors: [
-          'Failed binding to auth address * port 1812 bound to server default: Address already in use ',
-          `${DEFAULT_SITE_FILE}[${DEFAULT_SITE_AUTH_LISTEN_LINE}]: Error binding to port for 0.0.0.0 port 1812`,
+          `Failed binding to ${describeListener(first)}: Address already in use `,
+          `${first.file === '' ? DEFAULT_SITE_FILE : first.file}[${first.file === '' ? DEFAULT_SITE_AUTH_LISTEN_LINE : first.line}]: Error binding to port for ${first.address ?? '0.0.0.0'} port ${first.port}`,
         ],
       };
     }
@@ -170,30 +173,41 @@ export class RadiusdService {
     if (this.running) return { ok: true };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
-    const authPort = listen.authPort ?? UDP_PORT_RADIUS_AUTH;
-    const acctPort = listen.authPort === undefined ? UDP_PORT_RADIUS_ACCT : listen.authPort + 1;
-    const owner = listen.address === undefined ? {} : { acceptsDestination: (destination: { toString(): string }) => destination.toString() === listen.address };
+    const specs: ListenerSpec[] = listen.authPort === undefined ? loaded.site.listeners : [
+      { type: 'auth', address: listen.address ?? null, port: listen.authPort, server: 'default', file: '', line: 0 },
+      { type: 'acct', address: listen.address ?? null, port: listen.authPort + 1, server: 'default', file: '', line: 0 },
+    ];
     const bound: number[] = [];
-    const bind = (port: number, handler: (dgram: { inPort: string; sourceIP: unknown; udp: never }) => void): boolean => {
+    const tables = this.serverClientTables(loaded.site);
+    const handlerOf = (spec: ListenerSpec) => (dgram: { inPort: string; sourceIP: unknown; udp: never }): void => {
+      if (!(dgram.sourceIP instanceof IPAddress)) return;
+      const udp = dgram.udp as { payload?: { code?: string } };
+      if (spec.type === 'auth') this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      else if (spec.type === 'acct') this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      else if (spec.type === 'status') this.radiusServer.handleStatusUdp(dgram.inPort, dgram.sourceIP, dgram.udp, tables.get(spec.server) ?? this.radiusServer.clientTable);
+      else if (udp.payload?.code === 'accounting-request') this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      else this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+    };
+    for (const spec of specs) {
+      const owner = spec.address === null ? {} : { acceptsDestination: (destination: { toString(): string }) => destination.toString() === spec.address };
+      let bindFailed = false;
       try {
-        if (this.host.udpBind(port, handler as never, PROCESS_NAME, owner as never) === false) return false;
+        bindFailed = this.host.udpBind(spec.port, handlerOf(spec) as never, PROCESS_NAME, owner as never) === false;
       } catch (error) {
-        if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
-        throw error;
+        if (!(error instanceof Error && error.message.startsWith('EADDRINUSE'))) throw error;
+        bindFailed = true;
       }
-      bound.push(port);
-      return true;
-    };
-    const failed = (port: number, what: string): OperationResult => {
-      for (const taken of bound) this.host.udpClose(taken);
-      return { ok: false, error: `There appears to be another RADIUS server running on the ${what} port ${port}` };
-    };
-    if (!bind(authPort, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    })) return failed(authPort, 'authentication');
-    if (!bind(acctPort, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    })) return failed(acctPort, 'accounting');
+      if (bindFailed) {
+        for (const taken of bound) this.host.udpClose(taken);
+        const what = spec.type === 'acct' ? 'accounting' : spec.type === 'status' ? 'status' : 'authentication';
+        return { ok: false, error: `There appears to be another RADIUS server running on the ${what} port ${spec.port}` };
+      }
+      bound.push(spec.port);
+    }
+    const authPort = specs.find((spec) => spec.type === 'auth' || spec.type === 'auth+acct')?.port ?? UDP_PORT_RADIUS_AUTH;
+    const acctPort = specs.find((spec) => spec.type === 'acct')?.port ?? authPort;
+    this.activeListeners = specs;
+    this.radiusServer.setAnyPort(true);
 
     this.applyConfig(loaded);
     this.radiusServer.setPorts(authPort, acctPort);
@@ -203,7 +217,7 @@ export class RadiusdService {
     this.radiusServer.setAccountingListener((record) => this.writeDetail(record));
     this.radiusServer.setWarningListener((message) => this.writeLogLine('Warning', message));
     this.radiusServer.setUnknownClientListener((event) => this.writeLogLine('Error',
-      `Ignoring request to ${event.kind} address ${listen.address ?? '*'} port ${event.port} bound to server default from unknown client ${event.clientIp} port ${event.clientPort} proto udp`));
+      `Ignoring request to ${this.listenerNamed(event.kind, event.port)} from unknown client ${event.clientIp} port ${event.clientPort} proto udp`));
     this.boundPorts = bound;
     this.running = true;
     this.debugMode = listen.debug === true;
@@ -250,6 +264,25 @@ export class RadiusdService {
   }
 
   private boundPorts: number[] = [];
+  private activeListeners: ListenerSpec[] = [];
+
+  listeners(): readonly ListenerSpec[] { return this.activeListeners; }
+
+  private listenerNamed(kind: 'auth' | 'acct', port: number): string {
+    const spec = this.activeListeners.find((candidate) => candidate.port === port && (candidate.type === kind || candidate.type === 'auth+acct'))
+      ?? { type: kind, address: null, port, server: 'default' } as ListenerSpec;
+    return describeListener(spec);
+  }
+
+  private serverClientTables(site: SiteConfig): Map<string, RadiusClientTable> {
+    const tables = new Map<string, RadiusClientTable>();
+    for (const [name, entries] of site.serverClients) {
+      const table = new RadiusClientTable();
+      for (const entry of entries) table.add(entry);
+      tables.set(name, table);
+    }
+    return tables;
+  }
   private debugMode = false;
   private readonly fileUsers = new Set<string>();
   private logConfig: RadiusdLogConfig | null = null;
@@ -303,6 +336,8 @@ export class RadiusdService {
     if ('error' in log) return { ok: false, error: log.error };
     const security = readRadiusdSecurityConfig(main.root);
     if ('error' in security) return { ok: false, error: security.error };
+    const site = readSiteConfig(main.root);
+    if ('error' in site) return { ok: false, error: site.error };
     const clientsSource = this.files.read(clientsPath);
     if (clientsSource === null) return { ok: false, error: `open: ${clientsPath}: file not found` };
     const usersSource = this.files.read(usersPath);
@@ -311,7 +346,7 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, files: main.files };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, files: main.files };
   }
 
   private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig }): void {

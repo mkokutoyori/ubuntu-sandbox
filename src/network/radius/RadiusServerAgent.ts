@@ -226,6 +226,14 @@ export class RadiusServerAgent {
     return { allowed: true, secondsLeft: left };
   }
 
+  private anyPort = false;
+  private servedPort: number | null = null;
+
+  setAnyPort(on: boolean): void { this.anyPort = on; }
+
+  private authSource(): number { return this.servedPort ?? this.config.port; }
+  private acctSource(): number { return this.servedPort ?? this.config.acctPort; }
+
   private unknownClientListener: ((event: { kind: 'auth' | 'acct'; port: number; clientIp: string; clientPort: number }) => void) | null = null;
   private lastUnknownClientSecond = -1;
 
@@ -233,14 +241,14 @@ export class RadiusServerAgent {
     this.unknownClientListener = listener;
   }
 
-  private reportUnknownClient(kind: 'auth' | 'acct', senderIp: string, clientPort: number): void {
+  private reportUnknownClient(kind: 'auth' | 'acct', senderIp: string, clientPort: number, listenPort: number): void {
     if (this.unknownClientListener === null) return;
     if (this.packetTrace === null) {
       const second = Math.floor(simulationNowMs() / 1000);
       if (second === this.lastUnknownClientSecond) return;
       this.lastUnknownClientSecond = second;
     }
-    this.unknownClientListener({ kind, port: kind === 'auth' ? this.config.port : this.config.acctPort, clientIp: senderIp, clientPort });
+    this.unknownClientListener({ kind, port: listenPort, clientIp: senderIp, clientPort });
   }
 
   private warningListener: ((message: string) => void) | null = null;
@@ -392,7 +400,8 @@ export class RadiusServerAgent {
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.running || !this.config.enabled) return;
-    if (udp.destinationPort !== this.config.acctPort) return;
+    if (!this.anyPort && udp.destinationPort !== this.config.acctPort) return;
+    if (this.anyPort) this.servedPort = udp.destinationPort;
     const payload = udp.payload as RadiusPacket | undefined;
     if (payload?.type === 'radius' && payload.code === 'status-server') {
       this.handleStatusServer(inPort, srcIp, udp, payload, 'accounting-response', this.recentAcctReplies);
@@ -402,7 +411,7 @@ export class RadiusServerAgent {
 
     const senderIp = srcIp.toString();
     if (this.clientRefused(senderIp)) {
-      this.reportUnknownClient('acct', senderIp, udp.sourcePort);
+      this.reportUnknownClient('acct', senderIp, udp.sourcePort, udp.destinationPort);
       return;
     }
     if (!verifyAccountingRequestAuthenticator(payload, this.secretFor(srcIp))) {
@@ -495,7 +504,8 @@ export class RadiusServerAgent {
 
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.running || !this.config.enabled) return;
-    if (udp.destinationPort !== this.config.port) return;
+    if (!this.anyPort && udp.destinationPort !== this.config.port) return;
+    if (this.anyPort) this.servedPort = udp.destinationPort;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
 
@@ -545,7 +555,7 @@ export class RadiusServerAgent {
     });
 
     if (this.clientRefused(senderIp)) {
-      this.reportUnknownClient('auth', senderIp, udp.sourcePort);
+      this.reportUnknownClient('auth', senderIp, udp.sourcePort, udp.destinationPort);
       this.publishRejected(senderIp, getAttr(payload, 'user-name')?.value as string ?? '', 'client-not-authorized');
       return;
     }
@@ -636,14 +646,23 @@ export class RadiusServerAgent {
     this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, user, dedupKey);
   }
 
+  handleStatusUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, clients: RadiusClientTable): void {
+    if (!this.running || !this.config.enabled) return;
+    const payload = udp.payload as RadiusPacket | undefined;
+    if (!payload || payload.type !== 'radius' || payload.code !== 'status-server') return;
+    this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies, clients);
+  }
+
   private handleStatusServer(
     inPort: string, srcIp: IPAddress, udp: UDPPacket, request: RadiusPacket,
     replyCode: 'access-accept' | 'accounting-response',
     cache: Map<string, { response: RadiusPacket; sentAt: number }>,
+    clients: RadiusClientTable | null = null,
   ): void {
     const senderIp = srcIp.toString();
-    if (this.clientRefused(senderIp)) {
-      this.reportUnknownClient(replyCode === 'access-accept' ? 'auth' : 'acct', senderIp, udp.sourcePort);
+    const refused = clients === null ? this.clientRefused(senderIp) : clients.find(srcIp) === null;
+    if (refused) {
+      this.reportUnknownClient(replyCode === 'access-accept' ? 'auth' : 'acct', senderIp, udp.sourcePort, udp.destinationPort);
       return;
     }
     if (this.config.statusServer !== true) {
@@ -657,7 +676,7 @@ export class RadiusServerAgent {
         `${this.host.name}: Insecure packet from host ${senderIp}:  Packet does not contain required Message-Authenticator attribute.  You may need to set 'require_message_authenticator = no' in the configuration`);
       return;
     }
-    const secret = this.secretFor(srcIp);
+    const secret = clients === null ? this.secretFor(srcIp) : clients.find(srcIp)!.secret;
     if (!verifyMessageAuthenticator(request, request.authenticator, secret)) {
       Logger.warn(this.host.id, 'radius:bad-message-authenticator',
         `${this.host.name}: Received packet from ${senderIp} with invalid Message-Authenticator!  (Shared secret is incorrect.)`);
@@ -911,7 +930,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user.username,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:mschapv2',
       `${this.host.name}: ${dstIp} access-accept (MS-CHAPv2) for ${user.username}`);
   }
@@ -941,7 +960,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: null,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap', `${this.host.name}: ${dstIp} EAP-Request/MD5-Challenge issued`);
   }
 
@@ -979,7 +998,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user?.username ?? null,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap',
       `${this.host.name}: ${dstIp} ${response.code} (EAP-${eapResult.code}) for ${user?.username ?? '(unknown)'}`);
   }
@@ -1025,7 +1044,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user.username,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:challenge',
       `${this.host.name}: ${dstIp} Access-Challenge for ${user.username}`);
   }
@@ -1067,7 +1086,7 @@ export class RadiusServerAgent {
         username: user?.username ?? null,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:reply',
       `${this.host.name}: ${dstIp} ${response.code} for ${user?.username ?? '(unknown)'}`);
   }
@@ -1078,7 +1097,7 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:resend',
       `${this.host.name}: retransmission from ${dstIp} → cached ${response.code}`);
   }
@@ -1097,7 +1116,7 @@ export class RadiusServerAgent {
     };
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentAcctReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.acctSource(), response);
   }
 
   private resendAcct(inPort: string, dstIp: IPAddress, clientPort: number, response: RadiusPacket): void {
@@ -1105,7 +1124,7 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.acctSource(), response);
     Logger.info(this.host.id, 'radius:resend',
       `${this.host.name}: accounting retransmission from ${dstIp} → cached ${response.code}`);
   }
@@ -1230,6 +1249,12 @@ export class RadiusServerAgent {
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
     this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
+    if (dstIp.isLoopback() || dstIp.toString() === srcIp.toString()) {
+      this.host.sendUdpDatagram({
+        destination: dstIp, destinationPort: clientPort, sourcePort, payload: response, payloadBytes: 20 + 16 - 8, source: srcIp,
+      });
+      return;
+    }
     const ipPkt = buildUdpOverIpv4(srcIp, {
       destination: dstIp,
       destinationPort: clientPort, sourcePort,

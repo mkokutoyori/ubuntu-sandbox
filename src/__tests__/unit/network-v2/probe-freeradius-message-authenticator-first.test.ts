@@ -72,7 +72,7 @@ describe('Message-Authenticator first', () => {
 
   it('an Access-Reject that carries a Reply-Message starts with the Message-Authenticator too', async () => {
     const { client } = await labFor('alice Cleartext-Password := "wonderland", Simultaneous-Use := 1\n');
-    await client.executeCommand(`printf 'User-Name = "alice"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "s1"\\n' | radclient 10.0.0.2 acct shared`);
+    await client.executeCommand(`printf 'User-Name = "alice"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "s1"\\nNAS-Port = 1\\n' | radclient 10.0.0.2 acct shared`);
     const out = await client.executeCommand(`${ALICE} | radclient -x 10.0.0.2 auth shared`);
     expect(out).toContain('Received Access-Reject');
     expect(replyAttributes(out)).toEqual(['Message-Authenticator', 'Reply-Message']);

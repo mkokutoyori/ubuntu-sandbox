@@ -1,3 +1,4 @@
+import { describeListener } from '../../freeradius/RadiusdSiteConfig';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { formatCtime } from '../../time/ctime';
@@ -181,10 +182,7 @@ function run(ctx: LinuxCommandContext, args: string[]): { output: string; exitCo
     for (const message of started.errors) sink.line(message, 'error');
     return { ...sink.flush(), exitCode: 1 };
   }
-  const where = address ?? '*';
-  const auth = authPort ?? 1812;
-  sink.debug(`Listening on auth address ${where} port ${auth} bound to server default`, 1);
-  sink.debug(`Listening on acct address ${where} port ${auth + 1} bound to server default`, 1);
+  for (const spec of ctx.radiusd.listeners()) sink.debug(`Listening on ${describeListener(spec)}`, 1);
   sink.line('Ready to process requests', 'info');
   return { ...sink.flush(), exitCode: 0 };
 }
