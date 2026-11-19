@@ -85,7 +85,7 @@ const DEDUP_TTL_MS = 30_000;
 /** How long an issued Access-Challenge's State stays redeemable (RFC 2865 §4.4). */
 const CHALLENGE_TTL_MS = 60_000;
 
-type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time';
+type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time' | 'simultaneous-use';
 
 const LOGIN_TIME_MINIMUM_TIMEOUT_SECONDS = 60;
 
@@ -179,6 +179,21 @@ export class RadiusServerAgent {
   setRejectReplyMessage(message: string | null): void { this.config.rejectReplyMessage = message; }
 
   setStatusServer(on: boolean): void { this.config.statusServer = on; }
+
+  setDeniedMessage(message: string): void { this.config.deniedMessage = message; }
+
+  private simultaneousUseDenial(user: RadiusUser | undefined, username: string): { reply: RadiusAttribute[]; note: string } | null {
+    if (user?.simultaneousUse === undefined) return null;
+    const maximum = user.simultaneousUse;
+    const active = Array.from(this.acctSessions.values()).filter((record) => record.username === username && record.status !== 'stop');
+    if (active.length < maximum) return null;
+    for (const record of active) {
+      const nasType = this.clientTable.find(new IPAddress(record.nasIp))?.nasType ?? 'other';
+      if (nasType !== 'other' && nasType !== '') return null;
+    }
+    const denied = this.config.deniedMessage ?? 'You are already logged in - access denied';
+    return { reply: [attr('reply-message', maximum > 1 ? `${denied} (${maximum})` : denied)], note: `Multiple logins (max ${maximum}) ` };
+  }
 
   private minuteOfWeek: () => number = () => {
     const date = new Date(simulationNowMs());
@@ -290,7 +305,7 @@ export class RadiusServerAgent {
 
   setDecisionListener(listener: ((payload: RadiusAuthDecidedPayload) => void) | null): void { this.decisionListener = listener; }
 
-  private publishDecision(request: RadiusPacket, clientIp: IPAddress, accepted: boolean): void {
+  private publishDecision(request: RadiusPacket, clientIp: IPAddress, accepted: boolean, precedingMessage?: string): void {
     const passwordAttr = getAttr(request, 'user-password');
     const chapAttr = getAttr(request, 'chap-password');
     let password = '<no User-Password attribute>';
@@ -303,6 +318,7 @@ export class RadiusServerAgent {
       username: getAttr(request, 'user-name')?.value ?? null,
       password, nasPort: Number(getAttr(request, 'nas-port')?.value ?? 0),
       callingStationId: getAttr(request, 'calling-station-id')?.value ?? null,
+      ...(precedingMessage === undefined ? {} : { precedingMessage }),
     };
     this.getBus().publish({ topic: 'radius.auth.decided', payload });
     this.decisionListener?.(payload);
@@ -387,6 +403,22 @@ export class RadiusServerAgent {
     const sessionIdAttr = getAttr(payload, 'acct-session-id');
     const usernameAttr = getAttr(payload, 'user-name');
     const statusAttr = getAttr(payload, 'acct-status-type');
+    const nasRebootStatus = statusAttr === undefined ? undefined : ACCT_STATUS_BY_NUMBER.get(Number(statusAttr.value));
+    if (nasRebootStatus === 'accounting-on' || nasRebootStatus === 'accounting-off') {
+      const rebootedNas = String(getAttr(payload, 'nas-ip-address')?.value ?? senderIp);
+      const at = simulationNowMs();
+      for (const record of this.acctSessions.values()) {
+        if (record.nasIp === rebootedNas && record.status !== 'stop') {
+          Object.assign(record, { status: 'stop', updatedAt: at, terminateCause: 'nas-reboot' });
+        }
+      }
+      this.accountingListener?.({
+        sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
+        packet: payload, atMs: at,
+      });
+      this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
+      return;
+    }
     if (!sessionIdAttr || !usernameAttr || !statusAttr) return; // malformed — nothing sane to journal or ack
     const status = ACCT_STATUS_BY_NUMBER.get(Number(statusAttr.value));
     if (status !== 'start' && status !== 'interim-update' && status !== 'stop') return;
@@ -402,8 +434,9 @@ export class RadiusServerAgent {
       ? ACCT_TERMINATE_CAUSE_BY_NUMBER.get(Number(terminateCauseAttr.value)) : undefined;
 
     const now = simulationNowMs();
-    const existing = this.acctSessions.get(sessionId);
-    this.acctSessions.set(sessionId, {
+    const sessionKey = `${nasIp}|${sessionId}`;
+    const existing = this.acctSessions.get(sessionKey);
+    this.acctSessions.set(sessionKey, {
       sessionId, username, nasIp, status,
       startedAt: status === 'start' ? now : (existing?.startedAt ?? now),
       updatedAt: now, sessionTimeSec, inputOctets, outputOctets, terminateCause,
@@ -561,6 +594,12 @@ export class RadiusServerAgent {
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
     }
 
+    const denial = accepted ? this.simultaneousUseDenial(user, username) : null;
+    if (denial !== null) {
+      this.publishRejected(senderIp, username, 'simultaneous-use');
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey, denial);
+      return;
+    }
     if (!accepted) this.publishRejected(senderIp, username, reason);
     this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, user, dedupKey);
   }
@@ -786,6 +825,12 @@ export class RadiusServerAgent {
       return;
     }
 
+    const denial = this.simultaneousUseDenial(user, username);
+    if (denial !== null) {
+      this.publishRejected(dstIp.toString(), username, 'simultaneous-use');
+      this.reply(inPort, dstIp, clientPort, request, false, user, dedupKey, denial);
+      return;
+    }
     this.replyMsChapV2Success(inPort, dstIp, clientPort, request, username, user, peerChallenge, authChallenge, ntResponse, dedupKey);
   }
 
@@ -877,8 +922,15 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
+    const denial = accepted && user ? this.simultaneousUseDenial(user, user.username) : null;
+    if (denial !== null) {
+      accepted = false;
+      eapResult = { type: 'eap', code: 'failure', identifier: eapResult.identifier };
+      this.publishRejected(dstIp.toString(), user!.username, 'simultaneous-use');
+    }
     const attrs: RadiusAttribute[] = [attr('eap-message', eapPacketToWireHex(eapResult))];
-    this.publishDecision(request, dstIp, accepted);
+    this.publishDecision(request, dstIp, accepted, denial?.note);
+    if (denial !== null) attrs.push(...denial.reply);
     if (accepted && user?.replyAttributes) attrs.push(...user.replyAttributes);
     let response: RadiusPacket = {
       type: 'radius', code: accepted ? 'access-accept' : 'access-reject', identifier: request.identifier,
@@ -949,6 +1001,7 @@ export class RadiusServerAgent {
   private reply(
     inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
     accepted: boolean, user: RadiusUser | undefined, dedupKey: string,
+    denial: { reply: RadiusAttribute[]; note: string } | null = null,
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
@@ -957,8 +1010,9 @@ export class RadiusServerAgent {
     const replyAttrs: RadiusAttribute[] = [];
     if (accepted && user?.replyAttributes) replyAttrs.push(...user.replyAttributes);
     const rejectMessage = this.config.rejectReplyMessage === undefined ? 'Authentication failed' : this.config.rejectReplyMessage;
-    if (!accepted && rejectMessage !== null) replyAttrs.push(attr('reply-message', rejectMessage));
-    this.publishDecision(request, dstIp, accepted);
+    if (denial !== null) replyAttrs.push(...denial.reply);
+    else if (!accepted && rejectMessage !== null) replyAttrs.push(attr('reply-message', rejectMessage));
+    this.publishDecision(request, dstIp, accepted, denial?.note);
     let response: RadiusPacket = {
       type: 'radius',
       code: accepted ? 'access-accept' : 'access-reject',

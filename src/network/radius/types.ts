@@ -212,6 +212,7 @@ export interface RadiusUser {
   verify?: (clear: string) => boolean;
   acceptAny?: boolean;
   loginTime?: string;
+  simultaneousUse?: number;
   serviceType?: number;
   replyAttributes?: RadiusAttribute[];
   /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
@@ -252,6 +253,7 @@ export interface RadiusServerAgentConfig {
   requireAuthorizedClient?: boolean;
   rejectReplyMessage?: string | null;
   statusServer?: boolean;
+  deniedMessage?: string;
 }
 
 export function createDefaultClientConfig(): RadiusClientConfig {

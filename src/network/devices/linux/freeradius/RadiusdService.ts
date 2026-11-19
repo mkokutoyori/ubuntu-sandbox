@@ -233,11 +233,12 @@ export class RadiusdService {
     if (log === null || log.destination !== 'files') return;
     const logged = payload.accepted ? log.auth || log.authAccept : log.auth || log.authReject;
     if (!logged) return;
-    const withPassword = payload.accepted ? log.authGoodpass : log.authBadpass;
     const cli = payload.callingStationId === null ? '' : ` cli ${payload.callingStationId}`;
     const user = payload.username === null ? '<no User-Name attribute>' : String(payload.username);
-    this.writeLogLine('Auth', `(${payload.number}) ${payload.accepted ? 'Login OK' : 'Login incorrect'}: `
+    const line = (message: string, withPassword: boolean): void => this.writeLogLine('Auth', `(${payload.number}) ${message}: `
       + `[${user}${withPassword ? `/${payload.password}` : ''}] (from client ${payload.clientShortname} port ${payload.nasPort}${cli})`);
+    if (payload.precedingMessage !== undefined) line(payload.precedingMessage, log.authGoodpass);
+    line(payload.accepted ? 'Login OK' : 'Login incorrect', payload.accepted ? log.authGoodpass : log.authBadpass);
   }
 
   private writeLogLine(level: string, message: string): void {
@@ -254,6 +255,7 @@ export class RadiusdService {
     return {
       username, password: known?.cleartext ?? match.password ?? '', verify: known?.verify,
       acceptAny: match.acceptAny, replyAttributes: match.reply, ...(match.loginTime === null ? {} : { loginTime: match.loginTime }),
+      ...(match.simultaneousUse === null ? {} : { simultaneousUse: match.simultaneousUse }),
     };
   }
 
@@ -289,6 +291,7 @@ export class RadiusdService {
   private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig }): void {
     this.logConfig = loaded.log;
     this.radiusServer.setStatusServer(loaded.security.statusServer);
+    this.radiusServer.setDeniedMessage(loaded.log.msgDenied);
     this.radiusServer.setMinuteOfWeekClock(() => {
       const [day, hour, minute] = formatLocalTime('%w %H %M', this.wallClock.nowMs(), this.wallClock.zone()).split(' ').map(Number);
       return day * 1440 + hour * 60 + minute;

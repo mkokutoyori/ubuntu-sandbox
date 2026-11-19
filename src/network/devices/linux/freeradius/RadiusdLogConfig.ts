@@ -9,9 +9,11 @@ export interface RadiusdLogConfig {
   authReject: boolean;
   authBadpass: boolean;
   authGoodpass: boolean;
+  msgDenied: string;
   detail: DetailSettings | null;
 }
 
+export const DEFAULT_MSG_DENIED = 'You are already logged in - access denied';
 export const DEFAULT_RADIUS_LOG_FILE = '/var/log/freeradius/radius.log';
 
 const DESTINATIONS = new Set(['files', 'syslog', 'stdout', 'stderr']);
@@ -20,7 +22,7 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
   const config: RadiusdLogConfig = {
     destination: 'files', file: DEFAULT_RADIUS_LOG_FILE,
     auth: false, authAccept: false, authReject: false, authBadpass: false, authGoodpass: false,
-    detail: null,
+    msgDenied: DEFAULT_MSG_DENIED, detail: null,
   };
   const section = root.sections.find((candidate) => candidate.name1 === 'log');
   if (!section) return withDetail(root, config);
@@ -36,6 +38,8 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
     } else if (pair.name === 'destination') {
       if (!DESTINATIONS.has(pair.value)) return { error: `radiusd: Error: Unknown log_destination ${pair.value}` };
       config.destination = pair.value as RadiusdLogConfig['destination'];
+    } else if (pair.name === 'msg_denied') {
+      config.msgDenied = pair.value;
     } else if (pair.name === 'file') {
       config.file = pair.value;
     }
