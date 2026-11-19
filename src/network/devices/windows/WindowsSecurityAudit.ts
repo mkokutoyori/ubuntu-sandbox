@@ -51,6 +51,7 @@ export const SECURITY_EVENT = {
   ACCOUNT_DISABLED: 4725,
   ACCOUNT_DELETED: 4726,
   ACCOUNT_CHANGED: 4738,
+  ACCOUNT_RENAMED: 4781,
   ACCOUNT_LOCKED_OUT: 4740,
   ACCOUNT_UNLOCKED: 4767,
   GROUP_MEMBER_ADDED: 4732,
@@ -249,6 +250,15 @@ export class WindowsSecurityAudit {
 
   accountChanged(name: string, subjectUserName = 'Administrator', changed: Record<string, string> = {}): void {
     this.accountEvent(SECURITY_EVENT.ACCOUNT_CHANGED, name, subjectUserName, { PrivilegeList: '-', ...changed });
+  }
+
+  accountRenamed(oldName: string, newName: string, subjectUserName = 'Administrator'): void {
+    const { TargetDomainName, TargetSid } = this.targetFields(newName);
+    this.record(SECURITY_EVENT.ACCOUNT_RENAMED, 'SuccessAudit', {
+      OldTargetUserName: oldName.slice(oldName.indexOf('\\') + 1),
+      NewTargetUserName: newName.slice(newName.indexOf('\\') + 1),
+      TargetDomainName, TargetSid, ...this.subjectFields(subjectUserName), PrivilegeList: '-',
+    });
   }
 
   // ─── Group lifecycle ───────────────────────────────────────────────────

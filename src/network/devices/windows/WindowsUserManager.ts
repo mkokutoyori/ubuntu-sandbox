@@ -202,12 +202,15 @@ export class WindowsUserManager {
 
   /** Publish an account-change event on the central bus. */
   private publishAccount(
-    account: string, change: WindowsAccountChange, changed?: Record<string, string>,
+    account: string, change: WindowsAccountChange, changed?: Record<string, string>, previousName?: string,
   ): void {
     const actor = change === 'locked-out' ? 'SYSTEM' : this.currentUser;
     this.bus?.publish({
       topic: 'windows.account.changed',
-      payload: { deviceId: this.deviceId, account, change, actor, ...(changed === undefined ? {} : { changed }) },
+      payload: {
+        deviceId: this.deviceId, account, change, actor,
+        ...(changed === undefined ? {} : { changed }), ...(previousName === undefined ? {} : { previousName }),
+      },
     });
   }
 
@@ -943,6 +946,7 @@ export class WindowsUserManager {
       if (idx !== -1) group.members[idx] = newName;
     }
     if (this.currentUser.toLowerCase() === name.toLowerCase()) this.currentUser = newName;
+    this.publishAccount(newName, 'renamed', undefined, name);
     return '';
   }
 

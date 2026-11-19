@@ -151,6 +151,15 @@ function accountChanged(d: EventFields): string {
   ].join('\n\n');
 }
 
+function accountRenamed(d: EventFields): string {
+  return [
+    'The name of an account was changed:',
+    subject(d),
+    `Target Account:\n\tSecurity ID:\t\t${field(d, 'TargetSid')}\n\tAccount Domain:\t\t${field(d, 'TargetDomainName')}\n\tOld Account Name:\t${field(d, 'OldTargetUserName')}\n\tNew Account Name:\t${field(d, 'NewTargetUserName')}`,
+    additionalPrivileges(d),
+  ].join('\n\n');
+}
+
 function accountLockedOut(d: EventFields): string {
   return [
     'A user account was locked out.',
@@ -314,6 +323,7 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4754: groupLifecycle('A security-enabled universal group was created.', 'New Group:'),
   4758: groupLifecycle('A security-enabled universal group was deleted.', 'Deleted Group:'),
   4738: accountChanged,
+  4781: accountRenamed,
   4740: accountLockedOut,
   4767: accountChange('A user account was unlocked.'),
   4944: firewallPolicyActive,

@@ -159,6 +159,7 @@ export class WindowsSecurityAuditProjection {
       case 'modified': this.audit.accountChanged(p.account, actor, p.changed); break;
       case 'locked-out': this.audit.accountLockedOut(p.account); break;
       case 'unlocked': this.audit.accountUnlocked(p.account, actor); break;
+      case 'renamed': this.audit.accountRenamed(p.previousName ?? p.account, p.account, actor); break;
     }
   }
 

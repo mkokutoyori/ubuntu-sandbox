@@ -87,13 +87,14 @@ export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
 
 /** The kind of change applied to a local account. */
 export type WindowsAccountChange =
-  | 'created' | 'deleted' | 'password-reset' | 'password-changed' | 'enabled' | 'disabled' | 'modified' | 'locked-out' | 'unlocked';
+  | 'created' | 'deleted' | 'password-reset' | 'password-changed' | 'enabled' | 'disabled' | 'modified' | 'locked-out' | 'unlocked' | 'renamed';
 
 export interface WindowsAccountChangedPayload extends WindowsDeviceRef {
   account: string;
   change: WindowsAccountChange;
   /** Le compte qui a exécuté la commande (SYSTEM pour un verrouillage). */
   actor?: string;
+  previousName?: string;
   /** Les attributs modifiés, pour le 4738. */
   changed?: Record<string, string>;
 }
