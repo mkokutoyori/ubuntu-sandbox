@@ -3024,6 +3024,7 @@ function handleNetshAdvfirewall(ctx: WinCommandContext, args: string[]): string 
     ctx.firewallRules.clear();
     seedBuiltInFirewallRules(ctx.firewallRules);
     resetFirewallProfiles(ctx.firewallProfiles);
+    ctx.firewallReset?.();
     return 'Ok.';
   }
   if (sub === 'show')     return 'Ok.';

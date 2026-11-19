@@ -12,6 +12,7 @@ export type RadiusCode =
   | 'access-accept'
   | 'access-reject'
   | 'access-challenge'
+  | 'status-server'
   | 'accounting-request'
   | 'accounting-response'
   | 'disconnect-request'
@@ -26,6 +27,7 @@ export const RADIUS_CODE: Record<RadiusCode, number> = {
   'access-accept': 2,
   'access-reject': 3,
   'access-challenge': 11,
+  'status-server': 12,
   'accounting-request': 4,
   'accounting-response': 5,
   'disconnect-request': 40,
@@ -34,6 +36,22 @@ export const RADIUS_CODE: Record<RadiusCode, number> = {
   'coa-request': 43,
   'coa-ack': 44,
   'coa-nak': 45,
+};
+
+export const RADIUS_PACKET_NAME: Record<RadiusCode, string> = {
+  'access-request': 'Access-Request',
+  'access-accept': 'Access-Accept',
+  'access-reject': 'Access-Reject',
+  'access-challenge': 'Access-Challenge',
+  'status-server': 'Status-Server',
+  'accounting-request': 'Accounting-Request',
+  'accounting-response': 'Accounting-Response',
+  'disconnect-request': 'Disconnect-Request',
+  'disconnect-ack': 'Disconnect-ACK',
+  'disconnect-nak': 'Disconnect-NAK',
+  'coa-request': 'CoA-Request',
+  'coa-ack': 'CoA-ACK',
+  'coa-nak': 'CoA-NAK',
 };
 
 export type RadiusAttrType =
@@ -89,7 +107,14 @@ export type RadiusAttrType =
   | 'framed-ipv6-prefix'
   | 'login-ipv6-host'
   | 'framed-ipv6-route'
-  | 'framed-ipv6-pool';
+  | 'framed-ipv6-pool'
+  | 'framed-routing'
+  | 'framed-compression'
+  | 'login-service'
+  | 'login-tcp-port'
+  | 'callback-id'
+  | 'framed-route'
+  | 'port-limit';
 
 export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'user-name': 1,
@@ -146,6 +171,13 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'login-ipv6-host': 98,
   'framed-ipv6-route': 99,
   'framed-ipv6-pool': 100,
+  'framed-routing': 10,
+  'framed-compression': 13,
+  'login-service': 15,
+  'login-tcp-port': 16,
+  'callback-id': 20,
+  'framed-route': 22,
+  'port-limit': 62,
 };
 
 export interface RadiusAttribute {
@@ -177,6 +209,9 @@ export interface RadiusServerConfig {
 export interface RadiusUser {
   username: string;
   password: string;
+  verify?: (clear: string) => boolean;
+  acceptAny?: boolean;
+  loginTime?: string;
   serviceType?: number;
   replyAttributes?: RadiusAttribute[];
   /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
@@ -215,6 +250,8 @@ export interface RadiusServerAgentConfig {
   users: Map<string, RadiusUser>;
   clients: Set<string>;
   requireAuthorizedClient?: boolean;
+  rejectReplyMessage?: string | null;
+  statusServer?: boolean;
 }
 
 export function createDefaultClientConfig(): RadiusClientConfig {

@@ -15,6 +15,7 @@ import { nextLogonId } from './WindowsSecurityAudit';
 import { BOOT_PRIVILEGE_LIST } from './PSEventLogProvider';
 import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
+  WindowsDeviceRef,
   WindowsAccountChangedPayload,
   WindowsServiceEventPayload,
   WindowsLogonEventPayload,
@@ -77,6 +78,7 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.service.started', (e) => this.onServiceStarted(e.payload)),
       bus.subscribe('windows.firewall.rule-changed', (e) => this.onFirewallRuleChanged(e.payload)),
       bus.subscribe('windows.firewall.setting-changed', (e) => this.onFirewallSettingChanged(e.payload)),
+      bus.subscribe('windows.firewall.reset', (e) => this.onFirewallReset(e.payload)),
       bus.subscribe('windows.firewall.rule-not-applied', (e) => this.onFirewallRuleNotApplied(e.payload)),
     );
   }
@@ -109,6 +111,12 @@ export class WindowsSecurityAuditProjection {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('MPSSVC Rule-Level Policy Change', 'failure')) return;
     this.audit.firewallRuleNotApplied(p.ruleId, p.ruleName, p.attribute);
+  }
+
+  private onFirewallReset(p: WindowsDeviceRef): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('MPSSVC Rule-Level Policy Change', 'success')) return;
+    this.audit.firewallReset();
   }
 
   private onFirewallSettingChanged(p: WindowsFirewallSettingChangedPayload): void {
@@ -159,6 +167,7 @@ export class WindowsSecurityAuditProjection {
       case 'modified': this.audit.accountChanged(p.account, actor, p.changed); break;
       case 'locked-out': this.audit.accountLockedOut(p.account); break;
       case 'unlocked': this.audit.accountUnlocked(p.account, actor); break;
+      case 'renamed': this.audit.accountRenamed(p.previousName ?? p.account, p.account, actor); break;
     }
   }
 

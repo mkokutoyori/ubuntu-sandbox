@@ -256,6 +256,7 @@ export interface WinCommandContext {
     import('./netFirewallProfile').FirewallProfileName,
     import('./netFirewallProfile').NetFirewallProfileRow>;
   currentFirewallProfile?(): import('./netFirewallProfile').FirewallProfileName;
+  firewallReset?: () => void;
   firewallRuleChanged?: (change: 'added' | 'modified' | 'deleted', rule: import('./netFirewallRule').NetFirewallRuleEntry) => void;
   firewallProfileChanged?: (
     profile: import('./netFirewallProfile').NetFirewallProfileRow,

@@ -44,6 +44,12 @@ export function isPSCredential(value: unknown): value is PSCredentialValue {
     && (value as Record<string, unknown>).PSTypeName === PS_CREDENTIAL_TYPE_NAME;
 }
 
+export function isSecureStringValue(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length === 2 && keys.includes('SecureString') && keys.includes('Length');
+}
+
 export interface NetworkCredential {
   readonly userName: string;
   readonly password: string;

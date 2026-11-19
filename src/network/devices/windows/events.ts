@@ -33,7 +33,7 @@ export interface WindowsServiceEventPayload extends WindowsDeviceRef {
 export interface WindowsServiceControlSentPayload extends WindowsDeviceRef {
   serviceName: string;
   displayName: string;
-  control: 'start' | 'stop';
+  control: 'start' | 'stop' | 'pause' | 'continue';
 }
 
 /** A service's hosting process died out from under it (not a graceful stop). */
@@ -87,13 +87,14 @@ export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
 
 /** The kind of change applied to a local account. */
 export type WindowsAccountChange =
-  | 'created' | 'deleted' | 'password-reset' | 'password-changed' | 'enabled' | 'disabled' | 'modified' | 'locked-out' | 'unlocked';
+  | 'created' | 'deleted' | 'password-reset' | 'password-changed' | 'enabled' | 'disabled' | 'modified' | 'locked-out' | 'unlocked' | 'renamed';
 
 export interface WindowsAccountChangedPayload extends WindowsDeviceRef {
   account: string;
   change: WindowsAccountChange;
   /** Le compte qui a exécuté la commande (SYSTEM pour un verrouillage). */
   actor?: string;
+  previousName?: string;
   /** Les attributs modifiés, pour le 4738. */
   changed?: Record<string, string>;
 }
@@ -221,6 +222,8 @@ export interface WindowsPortProxyEventPayload extends WindowsDeviceRef {
 
 export type WindowsDomainEvent =
   | { topic: 'windows.service.control-sent'; payload: WindowsServiceControlSentPayload }
+  | { topic: 'windows.service.paused'; payload: WindowsServiceEventPayload }
+  | { topic: 'windows.service.resumed'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.started'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.stopped'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.crashed'; payload: WindowsServiceCrashedPayload }
@@ -249,6 +252,7 @@ export type WindowsDomainEvent =
   | { topic: 'windows.service.start-type-changed'; payload: WindowsServiceStartTypeChangedPayload }
   | { topic: 'windows.firewall.rule-changed'; payload: WindowsFirewallRuleChangedPayload }
   | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload }
+  | { topic: 'windows.firewall.reset'; payload: WindowsDeviceRef }
   | { topic: 'windows.firewall.rule-not-applied'; payload: WindowsFirewallRuleNotAppliedPayload };
 
 /** `Set-Acl`/`icacls` changed the discretionary ACL on a filesystem object. */

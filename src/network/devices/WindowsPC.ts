@@ -776,10 +776,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       accountDisabled: (account, actor) => accounts(() => audit().accountDisabled(account, actor)),
       accountChanged: (account, actor) => accounts(() => audit().accountChanged(account, actor)),
       accountDeleted: (account, actor) => accounts(() => audit().accountDeleted(account, actor)),
+      accountRenamed: (account, newName, actor) => accounts(() => audit().accountRenamed(account, newName, actor)),
       accountUnlocked: (account, actor) => accounts(() => audit().accountUnlocked(account, actor)),
       passwordReset: (account, actor) => accounts(() => audit().passwordReset(account, actor)),
       groupCreated: (group, scope, actor) => groups(() => audit().groupCreated(group, actor, scope)),
       groupDeleted: (group, scope, actor) => groups(() => audit().groupDeleted(group, actor, scope)),
+      groupChanged: (group, scope, actor, samAccountName) => groups(() => audit().groupChanged(group, actor, scope, samAccountName)),
       groupMemberAdded: (group, member, scope, actor) => groups(() => audit().groupMemberAdded(group, member, scope, actor)),
       groupMemberRemoved: (group, member, scope, actor) => groups(() => audit().groupMemberRemoved(group, member, scope, actor)),
     };
@@ -2258,7 +2260,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
     if (!parsed) return null;
     const result = logonDomainUser(this.getTcpStack(), this.domainMembership, parsed.sam, password);
-    if (!result.ok) return { ok: false, sam: parsed.sam, groups: [] };
+    if (!result.ok) return { ok: false, sam: parsed.sam, groups: [], ...(result.cause ? { cause: result.cause } : {}) };
     return { ok: true, sam: parsed.sam, groups: result.session?.groups ?? [] };
   }
 
@@ -4897,6 +4899,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       isElevated: () => this.userMgr.isCurrentUserAdmin(),
       firewallRules: this.firewallRules,
       firewallProfiles: this.firewallProfiles,
+      firewallReset: () => this.getBus().publish({ topic: 'windows.firewall.reset', payload: { deviceId: this.id } }),
       firewallRuleChanged: (change, rule) => this.announceFirewallRuleChange(change, rule),
       firewallProfileChanged: (profile, patch) => this.announceFirewallProfileChange(profile, patch),
       currentFirewallProfile: () =>

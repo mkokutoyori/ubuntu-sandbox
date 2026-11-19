@@ -223,6 +223,7 @@ function planStage(
     case 'watch': return planWatch(dev, session, commandLine, toks, screen);
     case 'top': return planTop(dev, session, commandLine, toks, screen);
     case 'journalctl': return planJournal(dev, session, commandLine, toks);
+    case 'freeradius': return planFreeradius(dev, session, commandLine, toks);
     case 'ip': return planIpMonitor(dev, commandLine, toks);
     case 'dmesg': return planDmesg(dev, session, commandLine, toks);
     case 'netstat': return planNetstat(dev, session, commandLine, toks);
@@ -234,6 +235,41 @@ function planStage(
     case 'dstat': return planDstat(dev, commandLine, toks);
     default: return null;
   }
+}
+
+interface RadiusDebugHost {
+  followRadiusDebug(sink: (line: string) => void): () => void;
+  getRadiusd(): { isRunning(): boolean; stop(): void };
+}
+
+function hostsRadiusd(dev: LinuxMachine): dev is LinuxMachine & RadiusDebugHost {
+  return typeof (dev as Partial<RadiusDebugHost>).followRadiusDebug === 'function';
+}
+
+function planFreeradius(dev: LinuxMachine, session: LinuxShellSession, commandLine: string, toks: string[]): StreamPlan | null {
+  if (PIPELINE.test(commandLine) || !hostsRadiusd(dev)) return null;
+  const letters = toks.slice(1).filter((token) => token.startsWith('-')).join('');
+  if (!letters.includes('X') || /[Chv]/.test(letters)) return null;
+  const server = dev;
+  let started = false;
+  return job((ctx) => new Promise<void>((resolve) => {
+    if (!started || ctx.cancelled()) { resolve(); return; }
+    const stop = server.followRadiusDebug((line) => ctx.sink.line(line));
+    ctx.onCancel(() => {
+      stop();
+      server.getRadiusd().stop();
+      ctx.sink.line('Exiting normally');
+      resolve();
+    });
+  }), {
+    prepare: (ctx) => {
+      const wasRunning = server.getRadiusd().isRunning();
+      const out = dev.runCommandFrameInSession(commandLine, session).replace(/\n$/, '');
+      if (out.length > 0) emit(ctx, out);
+      started = !wasRunning && server.getRadiusd().isRunning();
+      return true;
+    },
+  });
 }
 
 function planTail(dev: LinuxMachine, session: LinuxShellSession, commandLine: string): StreamPlan {

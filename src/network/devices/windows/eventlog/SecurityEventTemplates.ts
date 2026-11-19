@@ -151,6 +151,15 @@ function accountChanged(d: EventFields): string {
   ].join('\n\n');
 }
 
+function accountRenamed(d: EventFields): string {
+  return [
+    'The name of an account was changed:',
+    subject(d),
+    `Target Account:\n\tSecurity ID:\t\t${field(d, 'TargetSid')}\n\tAccount Domain:\t\t${field(d, 'TargetDomainName')}\n\tOld Account Name:\t${field(d, 'OldTargetUserName')}\n\tNew Account Name:\t${field(d, 'NewTargetUserName')}`,
+    additionalPrivileges(d),
+  ].join('\n\n');
+}
+
 function accountLockedOut(d: EventFields): string {
   return [
     'A user account was locked out.',
@@ -178,6 +187,16 @@ function groupLifecycle(title: string, heading: string) {
     subject(d),
     `${heading}\n\tSecurity ID:\t\t${field(d, 'TargetSid')}\n\tGroup Name:\t\t${field(d, 'TargetUserName')}\n\tGroup Domain:\t\t${field(d, 'TargetDomainName')}`,
     `Attributes:\n\tSAM Account Name:\t${field(d, 'SamAccountName', field(d, 'TargetUserName'))}\n\tSID History:\t\t${field(d, 'SidHistory')}`,
+    additionalPrivileges(d),
+  ].join('\n\n');
+}
+
+function groupChanged(title: string) {
+  return (d: EventFields): string => [
+    title,
+    subject(d),
+    `Group:\n\tSecurity ID:\t\t${field(d, 'TargetSid')}\n\tGroup Name:\t\t${field(d, 'TargetUserName')}\n\tGroup Domain:\t\t${field(d, 'TargetDomainName')}`,
+    `Changed Attributes:\n\tSAM Account Name:\t${field(d, 'SamAccountName', '-')}\n\tSID History:\t\t${field(d, 'SidHistory', '-')}`,
     additionalPrivileges(d),
   ].join('\n\n');
 }
@@ -298,9 +317,13 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4732: membership('A member was added to a security-enabled local group.'),
   4733: membership('A member was removed from a security-enabled local group.'),
   4734: groupLifecycle('A security-enabled local group was deleted.', 'Deleted Group:'),
+  4735: groupChanged('A security-enabled local group was changed.'),
+  4737: groupChanged('A security-enabled global group was changed.'),
+  4755: groupChanged('A security-enabled universal group was changed.'),
   4754: groupLifecycle('A security-enabled universal group was created.', 'New Group:'),
   4758: groupLifecycle('A security-enabled universal group was deleted.', 'Deleted Group:'),
   4738: accountChanged,
+  4781: accountRenamed,
   4740: accountLockedOut,
   4767: accountChange('A user account was unlocked.'),
   4944: firewallPolicyActive,
@@ -309,6 +332,7 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4946: firewallRule('A change has been made to Windows Firewall exception list. A rule was added.', 'Added Rule:'),
   4947: firewallRule('A change has been made to Windows Firewall exception list. A rule was modified.', 'Modified Rule:'),
   4948: firewallRule('A change has been made to Windows Firewall exception list. A rule was deleted.', 'Deleted Rule:'),
+  4949: () => 'Windows Firewall settings were restored to the default values.',
   4950: firewallSettingChanged,
   1102: auditCleared,
 };

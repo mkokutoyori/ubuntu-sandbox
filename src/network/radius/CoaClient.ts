@@ -8,6 +8,7 @@ import {
   withAccountingRequestAuthenticator, verifyResponseAuthenticator,
 } from './authenticators';
 import { type ErrorCause, readErrorCause } from './coa';
+import { encodeRadiusPacket } from './codec';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type UDPPacket,
@@ -32,6 +33,18 @@ export interface CoaClientHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
+}
+
+export interface CoaExchange {
+  request: RadiusPacket;
+  serverIp: string;
+  serverPort: number;
+  sourcePort: number;
+  localIp: string;
+  length: number;
+  transmissions: number;
+  reply: RadiusPacket | null;
+  replyLength: number;
 }
 
 export type CoaResult =
@@ -88,6 +101,17 @@ export class CoaClient {
 
   removeNas(ip: string): void { this.nas = this.nas.filter((n) => n.ip !== ip); }
   listNas(): CoaNasTarget[] { return this.nas.slice(); }
+
+  private fixedSourcePort: number | null = null;
+  private lastExchange: CoaExchange | null = null;
+
+  setFixedSourcePort(port: number | null): void { this.fixedSourcePort = port; }
+
+  getLastExchange(): Readonly<CoaExchange> | null { return this.lastExchange; }
+
+  sendAttributes(nasIp: string, code: 'disconnect-request' | 'coa-request', attributes: RadiusAttribute[]): Promise<CoaResult> {
+    return this.send(nasIp, code, attributes);
+  }
 
   /** RFC 5176 §3.3: terminate a session on the NAS. */
   disconnect(nasIp: string, ids: { username?: string; acctSessionId?: string; callingStationId?: string }): Promise<CoaResult> {
@@ -146,6 +170,7 @@ export class CoaClient {
     }
     if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
     this.pending.delete(payload.identifier);
+    if (this.lastExchange !== null) this.lastExchange = { ...this.lastExchange, reply: payload, replyLength: encodeRadiusPacket(payload).length };
     const ack = payload.code === 'disconnect-ack' || payload.code === 'coa-ack';
     const result: CoaResult = ack ? { kind: 'ack' } : { kind: 'nak', errorCause: readErrorCause(payload) };
     this.completePending(pending, result);
@@ -182,9 +207,15 @@ export class CoaClient {
   private transmit(pending: PendingCoa): void {
     const srcIp = this.host.sourceAddressFor(new IPAddress(pending.nas.ip));
     if (!srcIp) return;
+    const sourcePort = this.fixedSourcePort ?? 49220 + (pending.identifier & 0x3fff);
+    const previous = this.lastExchange !== null && this.lastExchange.request.identifier === pending.identifier ? this.lastExchange : null;
+    this.lastExchange = {
+      request: pending.request, serverIp: pending.nas.ip, serverPort: pending.nas.port, sourcePort, localIp: srcIp.toString(),
+      length: encodeRadiusPacket(pending.request).length, transmissions: (previous?.transmissions ?? 0) + 1, reply: null, replyLength: 0,
+    };
     const datagram = {
       destination: new IPAddress(pending.nas.ip),
-      destinationPort: pending.nas.port, sourcePort: 49220 + (pending.identifier & 0x3fff),
+      destinationPort: pending.nas.port, sourcePort,
       payload: pending.request, payloadBytes: 12,
       source: srcIp,
     };

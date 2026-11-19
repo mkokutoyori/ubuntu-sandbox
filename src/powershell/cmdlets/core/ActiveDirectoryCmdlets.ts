@@ -256,7 +256,7 @@ function dnsSuffixFromDn(dn: string): string {
 function computerToPSObject(c: AdComputerInfo): Record<string, PSValue> {
   const suffix = dnsSuffixFromDn(c.dn);
   return {
-    Name: c.name, DistinguishedName: c.dn, Enabled: c.enabled, ObjectClass: 'computer',
+    Name: c.name, SamAccountName: c.sam ?? `${c.name}$`, DistinguishedName: c.dn, Enabled: c.enabled, ObjectClass: 'computer',
     DNSHostName: suffix ? `${c.name}.${suffix}` : c.name,
     ServicePrincipalNames: [...c.servicePrincipalNames],
   };
@@ -585,13 +585,13 @@ function hashtableProp(ctx: CmdletContext, argKey: string, propName: string): st
 export class SetADUserCmdlet implements ICmdlet {
   readonly name = 'set-aduser';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword', 'Department', 'Title', 'Add', 'Remove', 'Credential', 'ProfilePath', 'HomeDirectory', 'HomeDrive'] as const;
+  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword', 'Department', 'Title', 'Add', 'Remove', 'Credential', 'ProfilePath', 'HomeDirectory', 'HomeDrive', 'SamAccountName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Set-ADUser');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Set-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
-    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string } = {};
+    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string; samAccountName?: string } = {};
     if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
     if (ctx.named['displayname'] !== undefined) opts.fullName = psValueToString(ctx.named['displayname']);
     if (ctx.named['department'] !== undefined) opts.department = psValueToString(ctx.named['department']);
@@ -599,6 +599,7 @@ export class SetADUserCmdlet implements ICmdlet {
     if (ctx.named['profilepath'] !== undefined) opts.profilePath = psValueToString(ctx.named['profilepath']);
     if (ctx.named['homedirectory'] !== undefined) opts.homeDirectory = psValueToString(ctx.named['homedirectory']);
     if (ctx.named['homedrive'] !== undefined) opts.homeDrive = psValueToString(ctx.named['homedrive']);
+    if (ctx.named['samaccountname'] !== undefined) opts.samAccountName = psValueToString(ctx.named['samaccountname']);
     const password = securePasswordOf(ctx, 'accountpassword');
     if (password !== undefined) opts.password = password;
     const addSpns = hashtableProp(ctx, 'add', 'ServicePrincipalNames');
@@ -615,6 +616,7 @@ export class SetADUserCmdlet implements ICmdlet {
     if (opts.enabled === true) audit?.accountEnabled(identity, subject);
     else if (opts.enabled === false) audit?.accountDisabled(identity, subject);
     if (opts.password !== undefined) audit?.passwordReset(identity, subject);
+    if (opts.samAccountName !== undefined && opts.samAccountName.toLowerCase() !== identity.toLowerCase()) audit?.accountRenamed(identity, opts.samAccountName, subject);
     if (opts.fullName !== undefined || opts.department !== undefined || opts.title !== undefined || opts.addSpns || opts.removeSpns
       || opts.profilePath !== undefined || opts.homeDirectory !== undefined || opts.homeDrive !== undefined) {
       audit?.accountChanged(identity, subject);
@@ -825,7 +827,7 @@ export class SetADGroupCmdlet implements ICmdlet {
   readonly name = 'set-adgroup';
   readonly displayName = 'Set-ADGroup';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm',
+  readonly parameters = ['Identity', 'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm', 'SamAccountName',
     ...GROUP_PROPERTY_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -836,8 +838,19 @@ export class SetADGroupCmdlet implements ICmdlet {
       ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
       return null;
     }
-    const res = ad.setGroup(identity, groupAttributesFrom(ctx), remoteTargetOf(ctx));
+    const attributes = groupAttributesFrom(ctx);
+    if (ctx.named['samaccountname'] !== undefined) attributes['sAMAccountName'] = psValueToString(ctx.named['samaccountname']);
+    const before = ad.getGroup(identity);
+    const res = ad.setGroup(identity, attributes, remoteTargetOf(ctx));
     if (!res.ok) { ctx.emitError(`Set-ADGroup : ${res.message}`); return null; }
+    const audited = Object.keys(attributes).some((ldap) => ldap !== 'managedBy');
+    if (before !== null && before.category === 'Security' && audited) {
+      const renamedTo = attributes['sAMAccountName'] !== undefined && attributes['sAMAccountName'].toLowerCase() !== before.sam.toLowerCase()
+        ? attributes['sAMAccountName'] : undefined;
+      const sink = auditSinkFor(ctx);
+      sink?.groupChanged(renamedTo ?? before.sam, before.scope === 'DomainLocal' ? 'Local' : before.scope, subjectUserOf(ctx), renamedTo);
+      if (renamedTo !== undefined) sink?.accountRenamed(before.sam, renamedTo, subjectUserOf(ctx));
+    }
     if (ctx.named['passthru'] !== true) return null;
     const g = ad.getGroup(identity);
     return g ? groupToPSObject(g) : null;
@@ -1459,15 +1472,25 @@ export class SearchADAccountCmdlet implements ICmdlet {
 export class SetADComputerCmdlet implements ICmdlet {
   readonly name = 'set-adcomputer';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'AllowedToDelegateTo'] as const;
+  readonly parameters = ['Identity', 'AllowedToDelegateTo', 'SamAccountName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Set-ADComputer');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError('Set-ADComputer : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
-    const targets = stringArrayOf(ctx, 'allowedtodelegateto');
-    const res = ad.setComputerAllowedToDelegateTo(identity, targets);
-    if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+    if (ctx.named['allowedtodelegateto'] !== undefined || ctx.named['samaccountname'] === undefined) {
+      const res = ad.setComputerAllowedToDelegateTo(identity, stringArrayOf(ctx, 'allowedtodelegateto'));
+      if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+    }
+    const newSam = ctx.named['samaccountname'] === undefined ? undefined : psValueToString(ctx.named['samaccountname']);
+    if (newSam !== undefined) {
+      const oldSam = identity.endsWith('$') ? identity : `${identity}$`;
+      if (newSam.toLowerCase() !== oldSam.toLowerCase()) {
+        const res = ad.setComputerSamAccountName(identity, newSam);
+        if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+        auditSinkFor(ctx)?.accountRenamed(oldSam, newSam, subjectUserOf(ctx));
+      }
+    }
     return null;
   }
 }

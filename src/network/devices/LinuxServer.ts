@@ -22,7 +22,13 @@ import type { HostCapableDevice } from '@/network';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
-import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH } from './linux/freeradius/RadiusdService';
+import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
+import { CoaClient } from '../radius/CoaClient';
+import { formatRadiusAttribute } from '../radius/attributeText';
+import { RADIUS_PACKET_NAME } from '../radius/types';
+import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
+import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
+import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
 import { reverseNameOf } from './linux/network/ReverseName';
@@ -32,6 +38,8 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 
 /** Dedicated UDP port for the `radtest` probe client's replies — see `radtestClient`'s doc comment. */
 const RADTEST_SOURCE_PORT = 49999;
+const RADCLIENT_ACCT_SOURCE_PORT = 49998;
+const RADCLIENT_COA_SOURCE_PORT = 49997;
 
 const SMTPD_FIRST_PID = 3100;
 
@@ -44,6 +52,8 @@ export class LinuxServer extends LinuxMachine {
   private readonly radiusd: RadiusdService;
   /** Backs the `radtest` CLI tool (freeradius-utils) — a one-shot probe client, not persistent NAS config. */
   private readonly radtestClient: RadiusClientAgent;
+  private readonly radacctClient: RadiusAccountingClient;
+  private readonly coaClient: CoaClient;
   /** MTA-to-MTA relay reception + local delivery (RFC 5321), port 25. */
   private readonly smtpServer: SmtpServer;
   /** Message submission (RFC 6409) — AUTH mandatory, same engine as port 25. */
@@ -81,7 +91,9 @@ export class LinuxServer extends LinuxMachine {
     this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack());
     this.radiusd = new RadiusdService(this, this.radiusServer, this.radiusTcpServer, {
       read: (path) => this.executor.vfs.readFile(path),
-    });
+      append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
+      list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
+    }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime() });
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'postfix') return;
@@ -92,7 +104,6 @@ export class LinuxServer extends LinuxMachine {
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'freeradius') return;
       if (event === 'start') this.applyRadiusd(this.radiusd.start());
-      else if (event === 'restart') this.applyRadiusd(this.radiusd.restart());
       else if (event === 'reload') this.applyRadiusd(this.radiusd.reload());
       else if (event === 'stop') this.radiusd.stop();
     });
@@ -108,6 +119,17 @@ export class LinuxServer extends LinuxMachine {
 
     this.radtestClient = new RadiusClientAgent(radiusHost, () => this.getBus());
     this.radtestClient.start();
+    this.radacctClient = new RadiusAccountingClient(radiusHost, () => this.getBus());
+    this.radacctClient.start();
+    this.coaClient = new CoaClient(radiusHost, () => this.getBus());
+    this.coaClient.start();
+    this.coaClient.setFixedSourcePort(RADCLIENT_COA_SOURCE_PORT);
+    this.udpBind(RADCLIENT_COA_SOURCE_PORT, (dgram) => {
+      if (dgram.sourceIP instanceof IPAddress) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+    }, 'radclient');
+    this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
+      if (dgram.sourceIP instanceof IPAddress) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+    }, 'radclient');
     // A standalone client agent has no destination port of its own to be
     // dispatched to on this host's socket-table-based UDP model (unlike a
     // router, which inline-checks every packet regardless of port) — pin
@@ -254,6 +276,14 @@ export class LinuxServer extends LinuxMachine {
         0, 0, 0o022,
       );
     }
+    const modulesDir = `${dir}/mods-enabled`;
+    if (!this.executor.vfs.exists(modulesDir)) this.executor.vfs.mkdirp(modulesDir, 0o755, 0, 0);
+    if (!this.executor.vfs.exists(`${modulesDir}/detail`)) {
+      this.executor.vfs.writeFile(`${modulesDir}/detail`, DEFAULT_DETAIL_MODULE, 0, 0, 0o022);
+    }
+    if (!this.executor.vfs.exists(RADIUSD_CONF_PATH)) {
+      this.executor.vfs.writeFile(RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF, 0, 0, 0o022);
+    }
     if (!this.executor.vfs.exists(USERS_FILE_PATH)) {
       this.executor.vfs.writeFile(USERS_FILE_PATH, '', 0, 0, 0o022);
     }
@@ -267,12 +297,23 @@ export class LinuxServer extends LinuxMachine {
   }
 
   protected override buildCommandContext(outputPiped = false, invokedAs?: string): LinuxCommandContext {
-    return { ...super.buildCommandContext(outputPiped, invokedAs), radtestClient: this.radtestClient };
+    return { ...super.buildCommandContext(outputPiped, invokedAs), radtestClient: this.radtestClient, radacctClient: this.radacctClient, coaClient: this.coaClient, radiusd: this.radiusd };
   }
 
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
   getRadiusTcpServer(): RadiusTcpServer { return this.radiusTcpServer; }
   getRadiusd(): RadiusdService { return this.radiusd; }
+
+  followRadiusDebug(sink: (line: string) => void): () => void {
+    this.radiusServer.setPacketTrace((event) => {
+      const prefix = `(${event.number})`;
+      const name = RADIUS_PACKET_NAME[event.packet.code];
+      sink(`${prefix} ${event.direction === 'received' ? 'Received' : 'Sent'} ${name} Id ${event.packet.identifier} from ${event.sourceIp}:${event.sourcePort} to ${event.destinationIp}:${event.destinationPort} length ${event.length}`);
+      for (const attribute of event.packet.attributes) sink(`${prefix}   ${formatRadiusAttribute(attribute)}`);
+      if (event.direction === 'sent') sink(`${prefix} Finished request`);
+    });
+    return () => this.radiusServer.setPacketTrace(null);
+  }
 
   getSmtpServer(): SmtpServer { return this.smtpServer; }
   getSmtpSubmissionServer(): SmtpServer { return this.smtpSubmissionServer; }

@@ -11,6 +11,7 @@
  * (the server answers a client that knows it), "a wrong password is rejected" and "an Access-Reject is final" (a failure to authenticate looks the
  * same as a rejection from outside, which is the defect, and nothing can fall over to a second server before the fix).
  */
+import { CLIENTS_CONF_PATH } from '@/network/devices/linux/freeradius/RadiusdService';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { FortiShell } from '@/network/devices/firewall/vendors/fortios/FortiShell';
@@ -55,6 +56,9 @@ async function lab(radiusLines: string[]) {
   for (const command of ['ip link set eth0 up', `ip addr add ${CLIENT}/24 dev eth0`, 'ip route add default via 192.168.1.1']) {
     await poste.executeCommand(command);
   }
+  (first as unknown as { executor: { vfs: { writeFile(path: string, content: string, uid: number, gid: number, umask: number): void } } })
+    .executor.vfs.writeFile(CLIENTS_CONF_PATH, 'client firewall {\n  ipaddr = 203.0.113.1\n  secret = testing123\n}\n', 0, 0, 0o022);
+  first.getRadiusd().restart();
   first.getRadiusServer().addUser('jdupont', 'Secret2026!');
   second.getRadiusServer().setSharedSecret('second-secret');
   second.getRadiusServer().addUser('jdupont', 'Secret2026!');

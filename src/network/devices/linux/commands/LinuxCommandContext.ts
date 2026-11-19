@@ -25,11 +25,20 @@ import type { IpXfrmContext, IpLinkOpsContext, IpMaddrContext } from '../LinuxIp
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
 import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
+import type { RadiusAccountingClient } from '@/network/radius/RadiusAccountingClient';
+import type { CoaClient } from '@/network/radius/CoaClient';
 import type { GreAgent } from '@/network/gre/GreAgent';
 import type { LinuxNetworkConfigManager } from '../LinuxNetworkConfigManager';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { SshdServerConfigSnapshot } from '@/network/protocols/ssh/server/SshdServerConfig';
 import type { Signal } from '../LinuxProcessManager';
+import type { RadiusdCheckReport, RadiusdConfigPaths, RadiusdListenOverride } from '../freeradius/RadiusdService';
+
+export interface RadiusdCommandPort {
+  checkConfigReport(paths?: RadiusdConfigPaths): RadiusdCheckReport;
+  startFromCommandLine(listen?: RadiusdListenOverride): { ok: true } | { ok: false; errors: string[] };
+  appendLog(path: string, text: string): void;
+}
 
 export interface LinuxCommandContext {
   /** Kernel-level services: VFS, users, iptables, services, processes. */
@@ -86,6 +95,12 @@ export interface LinuxCommandContext {
    * A one-shot probe client, not persistent NAS configuration.
    */
   readonly radtestClient?: RadiusClientAgent;
+
+  readonly radiusd?: RadiusdCommandPort;
+
+  readonly radacctClient?: RadiusAccountingClient;
+
+  readonly coaClient?: CoaClient;
 
   readonly tlsTrustAnchors: readonly X509Certificate[];
 

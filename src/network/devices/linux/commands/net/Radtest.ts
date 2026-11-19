@@ -1,85 +1,57 @@
-/**
- * `radtest` (freeradius-utils) — send one RADIUS Access-Request and print
- * the reply. Backed by a dedicated, one-shot-per-invocation
- * `RadiusClientAgent` (`ctx.radtestClient`) rather than any persistent NAS
- * configuration — only present on `LinuxServer` (mirrors how the Oracle
- * client tools are server-only in this simulator).
- */
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { runRadclient } from './Radclient';
 
-const USAGE = 'Usage: radtest [-t pap|chap|mschap] <user> <password> <server>[:port] <nas-port> <secret>';
+const USAGE_LINES = [
+  'Usage: radtest [OPTIONS] user passwd radius-server[:port] nas-port-number secret [ppphint] [nasname]',
+  '        -d RADIUS_DIR       Set radius directory',
+  '        -t <type>           Set authentication method',
+  '                            type can be pap, chap, mschap, or eap-md5',
+  '        -P protocol         Select udp (default) or tcp',
+  '        -x                  Enable debug output',
+  '        -4                  Use IPv4 for the NAS address (default)',
+  '        -6                  Use IPv6 for the NAS address',
+  '        -b                  Mandate checks for Blast RADIUS (this is not set by default).',
+];
+const USAGE = USAGE_LINES.join('\n');
 
 type AuthType = 'pap' | 'chap' | 'mschap';
 
-function pickLocalIp(ctx: LinuxCommandContext): string {
-  for (const port of ctx.net.getPorts().values()) {
-    const ip = port.getIPAddress();
-    if (ip) return ip.toString();
-  }
-  return '127.0.0.1';
-}
+const PASSWORD_ATTRIBUTE: Record<AuthType, string> = {
+  pap: 'User-Password', chap: 'CHAP-Password', mschap: 'MS-CHAP-Password',
+};
 
-async function runRadtest(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-  if (!ctx.radtestClient) return 'radtest: command not found';
-
+async function runRadtest(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+  if (args.length < 5) return { output: USAGE, exitCode: 1 };
   let authType: AuthType = 'pap';
-  const positional: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-t') {
-      const t = args[++i];
-      if (t !== 'pap' && t !== 'chap' && t !== 'mschap') return `radtest: invalid -t argument: '${t ?? ''}'`;
-      authType = t;
+  const forwarded: string[] = [];
+  let index = 0;
+  while (index < args.length && args[index].startsWith('-')) {
+    const flag = args[index];
+    if (flag === '-4' || flag === '-6' || flag === '-b' || flag === '-x') { if (flag !== '-x') forwarded.push(flag); index++; continue; }
+    if (flag === '-d' || flag === '-P') { forwarded.push(flag, args[index + 1] ?? ''); index += 2; continue; }
+    if (flag === '-t') {
+      const type = args[index + 1];
+      if (type === 'eap-md5') return { output: "radtest: No 'radeapclient' program was found.  Cannot perform EAP-MD5.", exitCode: 1 };
+      if (type !== 'pap' && type !== 'chap' && type !== 'mschap') return { output: USAGE, exitCode: 1 };
+      authType = type;
+      index += 2;
       continue;
     }
-    positional.push(args[i]);
+    return { output: USAGE, exitCode: 1 };
   }
-  if (positional.length < 5) return USAGE;
-  const [user, password, serverArg, nasPort, secret] = positional;
-  const [serverIp, portStr] = serverArg.split(':');
-  if (!serverIp) return USAGE;
-  const port = portStr ? Number(portStr) : 1812;
-  if (portStr && (!Number.isInteger(port) || port <= 0 || port > 65535)) {
-    return `radtest: invalid port in '${serverArg}'`;
-  }
-
-  const identifier = Math.floor(Math.random() * 256);
-  const lines = [
-    `Sending Access-Request of id ${identifier} to ${serverIp} port ${port}`,
-    `\tUser-Name = "${user}"`,
-    authType === 'pap'
-      ? `\tUser-Password = "${password}"`
-      : `\t${authType === 'chap' ? 'CHAP-Password' : 'MS-CHAP2-Response'} = 0x<hidden>`,
-    `\tNAS-IP-Address = ${pickLocalIp(ctx)}`,
-    `\tNAS-Port = ${nasPort}`,
-  ];
-
-  const client = ctx.radtestClient;
-  client.addServer(serverIp, secret, { timeoutMs: 3000, retransmit: 1, ...(portStr ? { port } : {}) });
-  const timeoutsBefore = client.listServerStatus().find((s) => s.ip === serverIp)?.timeouts ?? 0;
-  try {
-    let accepted: boolean;
-    if (authType === 'chap') {
-      accepted = await client.authenticateChap(user, password, serverIp);
-    } else if (authType === 'mschap') {
-      accepted = (await client.authenticateMsChapV2(user, password, serverIp)).kind === 'accept';
-    } else {
-      accepted = await client.authenticate(user, password, serverIp);
-    }
-    const timeoutsAfter = client.listServerStatus().find((s) => s.ip === serverIp)?.timeouts ?? 0;
-    if (timeoutsAfter > timeoutsBefore) {
-      lines.push(`radtest: no response from server ${serverIp}:${port}`);
-    } else {
-      lines.push(
-        accepted
-          ? `rad_recv: Access-Accept packet from host ${serverIp} port ${port}, id=${identifier}`
-          : `rad_recv: Access-Reject packet from host ${serverIp} port ${port}, id=${identifier}`,
-      );
-    }
-    return lines.join('\n');
-  } finally {
-    client.removeServer(serverIp);
-  }
+  const positional = args.slice(index);
+  if (positional.length < 5 || positional.length > 7) return { output: USAGE, exitCode: 1 };
+  const [user, password, server, nasPort, secret, pppHint, nasName] = positional;
+  const input = [
+    `User-Name = "${user}"`,
+    `${PASSWORD_ATTRIBUTE[authType]} = "${password}"`,
+    ...(nasName ? [`NAS-IP-Address = ${nasName}`] : []),
+    `NAS-Port = ${nasPort}`,
+    ...(pppHint !== undefined && pppHint !== '' && pppHint !== '0' ? ['Framed-Protocol = PPP'] : []),
+    '',
+  ].join('\n');
+  return runRadclient(ctx, [...forwarded, '-x', server, 'auth', secret], input);
 }
 
 export const radtestCommand: LinuxCommand = {
@@ -88,19 +60,21 @@ export const radtestCommand: LinuxCommand = {
   needsNetworkContext: true,
   foregroundClient: true,
   manSection: 1,
-  usage: USAGE,
-  help: 'Send a RADIUS Access-Request to a server and print the reply.',
+  usage: USAGE_LINES[0].replace('Usage: ', ''),
+  help: 'Send a RADIUS Access-Request to a server and print the reply (a wrapper around radclient).',
   options: [
-    { flag: '-t', description: 'Authentication type: pap (default), chap, or mschap.', takesArg: true, argName: 'type' },
+    { flag: '-t', description: 'Authentication type: pap (default), chap, mschap or eap-md5.', takesArg: true, argName: 'type' },
+    { flag: '-P', description: 'Transport protocol: udp.', takesArg: true, argName: 'protocol' },
+    { flag: '-d', description: 'Set the radius directory.', takesArg: true, argName: 'RADIUS_DIR' },
+    { flag: '-x', description: 'Enable debug output.' },
+    { flag: '-4', description: 'Use IPv4 for the NAS address (default).' },
   ],
 
-  run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    return runRadtest(ctx, args);
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    return (await runRadtest(ctx, args)).output;
   },
 
-  async runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
-    const output = await runRadtest(ctx, args);
-    const exitCode = /Access-Accept/.test(output) ? 0 : /no response/.test(output) ? 2 : 1;
-    return { output, exitCode };
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return runRadtest(ctx, args);
   },
 };

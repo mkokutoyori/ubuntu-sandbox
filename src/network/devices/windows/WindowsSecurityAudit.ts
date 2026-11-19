@@ -51,6 +51,7 @@ export const SECURITY_EVENT = {
   ACCOUNT_DISABLED: 4725,
   ACCOUNT_DELETED: 4726,
   ACCOUNT_CHANGED: 4738,
+  ACCOUNT_RENAMED: 4781,
   ACCOUNT_LOCKED_OUT: 4740,
   ACCOUNT_UNLOCKED: 4767,
   GROUP_MEMBER_ADDED: 4732,
@@ -65,6 +66,9 @@ export const SECURITY_EVENT = {
   GROUP_DELETED_GLOBAL: 4730,
   GROUP_DELETED_UNIVERSAL: 4758,
   GROUP_DELETED: 4734,
+  GROUP_CHANGED: 4735,
+  GROUP_CHANGED_GLOBAL: 4737,
+  GROUP_CHANGED_UNIVERSAL: 4755,
   PROCESS_CREATED: 4688,
   PROCESS_TERMINATED: 4689,
   PRIVILEGED_SERVICE_CALLED: 4673,
@@ -89,6 +93,7 @@ export const SECURITY_EVENT = {
   FIREWALL_RULE_MODIFIED: 4947,
   FIREWALL_RULE_DELETED: 4948,
   FIREWALL_SETTING_CHANGED: 4950,
+  FIREWALL_RESET: 4949,
   EVENT_LOG_CLEARED: 104,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
@@ -248,6 +253,15 @@ export class WindowsSecurityAudit {
     this.accountEvent(SECURITY_EVENT.ACCOUNT_CHANGED, name, subjectUserName, { PrivilegeList: '-', ...changed });
   }
 
+  accountRenamed(oldName: string, newName: string, subjectUserName = 'Administrator'): void {
+    const { TargetDomainName, TargetSid } = this.targetFields(newName);
+    this.record(SECURITY_EVENT.ACCOUNT_RENAMED, 'SuccessAudit', {
+      OldTargetUserName: oldName.slice(oldName.indexOf('\\') + 1),
+      NewTargetUserName: newName.slice(newName.indexOf('\\') + 1),
+      TargetDomainName, TargetSid, ...this.subjectFields(subjectUserName), PrivilegeList: '-',
+    });
+  }
+
   // ─── Group lifecycle ───────────────────────────────────────────────────
 
   private groupFields(group: string): Record<string, string> {
@@ -269,6 +283,15 @@ export class WindowsSecurityAudit {
       : scope === 'Universal' ? SECURITY_EVENT.GROUP_DELETED_UNIVERSAL : SECURITY_EVENT.GROUP_DELETED;
     this.record(eventId, 'SuccessAudit', {
       ...this.groupFields(group), ...this.subjectFields(subjectUserName), PrivilegeList: '-',
+    });
+  }
+
+  groupChanged(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local', samAccountName = '-'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_CHANGED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_CHANGED_UNIVERSAL : SECURITY_EVENT.GROUP_CHANGED;
+    this.record(eventId, 'SuccessAudit', {
+      ...this.groupFields(group), ...this.subjectFields(subjectUserName),
+      PrivilegeList: '-', SamAccountName: samAccountName, SidHistory: '-',
     });
   }
 
@@ -705,6 +728,10 @@ export class WindowsSecurityAudit {
 
   firewallRuleNotApplied(ruleId: string, ruleName: string, attribute: string): void {
     this.record(SECURITY_EVENT.FIREWALL_RULE_NOT_APPLIED, 'FailureAudit', { RuleId: ruleId, RuleName: ruleName, RuleAttr: attribute });
+  }
+
+  firewallReset(): void {
+    this.record(SECURITY_EVENT.FIREWALL_RESET, 'SuccessAudit', {});
   }
 
   firewallSettingChanged(profile: string, setting: string, value: string): void {

@@ -29,7 +29,7 @@ export interface RadiusAuthCompletedPayload extends RadiusDeviceRef {
 export interface RadiusAuthRejectedByServerPayload extends RadiusDeviceRef {
   fromIp: string;
   username: string;
-  reason: 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized';
+  reason: 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time';
 }
 
 export interface RadiusAccountingRecordPayload extends RadiusDeviceRef {
@@ -76,11 +76,23 @@ export interface RadiusProxyForwardedPayload extends RadiusDeviceRef {
   homeServerIp: string;
 }
 
+export interface RadiusAuthDecidedPayload extends RadiusDeviceRef {
+  number: number;
+  accepted: boolean;
+  clientIp: string;
+  clientShortname: string;
+  username: string | number | null;
+  password: string;
+  nasPort: number;
+  callingStationId: string | number | null;
+}
+
 export type RadiusDomainEvent =
   | { topic: 'radius.packet.sent'; payload: RadiusPacketSentPayload }
   | { topic: 'radius.packet.received'; payload: RadiusPacketReceivedPayload }
   | { topic: 'radius.auth.completed'; payload: RadiusAuthCompletedPayload }
   | { topic: 'radius.auth.rejected'; payload: RadiusAuthRejectedByServerPayload }
+  | { topic: 'radius.auth.decided'; payload: RadiusAuthDecidedPayload }
   | { topic: 'radius.accounting.record'; payload: RadiusAccountingRecordPayload }
   | { topic: 'radius.server.dead'; payload: RadiusServerHealthPayload }
   | { topic: 'radius.server.alive'; payload: RadiusServerHealthPayload }

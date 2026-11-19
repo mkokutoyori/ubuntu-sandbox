@@ -784,7 +784,7 @@ class WindowsAdAdapter implements IAdProvider {
     const u = store.getUser(store.resolveIdentity(identity));
     return u ? userInfoOf(u) : null;
   }
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult {
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string; samAccountName?: string }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
     const denied = this.requireAdmin('Set-ADUser');
     if (denied) return denied;
@@ -994,10 +994,10 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.requireStore('Get-ADComputer');
     const name = store.resolveIdentity(identity).replace(/\$$/, '');
     const c = store.getComputer(name);
-    return c ? { name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames } : null;
+    return c ? { name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames, sam: c.sam } : null;
   }
   listComputers(): AdComputerInfo[] {
-    return this.requireStore('Get-ADComputer').listComputers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames }));
+    return this.requireStore('Get-ADComputer').listComputers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames, sam: c.sam }));
   }
 
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult {
@@ -1006,6 +1006,13 @@ class WindowsAdAdapter implements IAdProvider {
     if (denied) return denied;
     const name = store.resolveIdentity(identity).replace(/\$$/, '');
     return store.setAllowedToDelegateTo(name, targetServiceNames);
+  }
+
+  setComputerSamAccountName(identity: string, newSam: string): AdOpResult {
+    const store = this.requireStore('Set-ADComputer');
+    const denied = this.requireAdmin('Set-ADComputer');
+    if (denied) return denied;
+    return store.renameComputerSam(store.resolveIdentity(identity).replace(/\$$/, ''), newSam);
   }
 
   moveObject(identity: string, targetPath: string, target?: RemoteDirectoryTarget): AdOpResult {
