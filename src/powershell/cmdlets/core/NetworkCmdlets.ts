@@ -2535,6 +2535,7 @@ export class GetNetFirewallProfileCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Displays the per-profile settings of Windows Firewall.';
   readonly parameters = NET_FW_PROFILE_FILTERS;
+  readonly closedParameterSet = true as const;
   readonly parameterValues = { Name: 'firewallProfile' } as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -2551,6 +2552,7 @@ export class SetNetFirewallProfileCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Configures the per-profile settings of Windows Firewall.';
   readonly parameters = NET_FW_PROFILE_SET_PARAMS;
+  readonly closedParameterSet = true as const;
   readonly parameterValues = { Name: 'firewallProfile' } as const;
 
   execute(ctx: CmdletContext): PSValue {
