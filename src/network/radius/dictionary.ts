@@ -156,6 +156,13 @@ export const RADIUS_VALUE_NAMES: Readonly<Partial<Record<RadiusAttrType, Readonl
   'framed-compression': { 'none': 0, 'van-jacobson-tcp-ip': 1, 'ipx-header-compression': 2, 'stac-lzs': 3 },
   'login-service': { 'telnet': 0, 'rlogin': 1, 'tcp-clear': 2, 'portmaster': 3, 'lat': 4, 'x25-pad': 5, 'x25-t3pos': 6, 'tcp-clear-quiet': 8 },
   'termination-action': { 'default': 0, 'radius-request': 1 },
+  'acct-status-type': { 'start': 1, 'stop': 2, 'alive': 3, 'interim-update': 3, 'accounting-on': 7, 'accounting-off': 8, 'failed': 15 },
+  'acct-authentic': { 'radius': 1, 'local': 2, 'remote': 3, 'diameter': 4 },
+  'acct-terminate-cause': {
+    'user-request': 1, 'lost-carrier': 2, 'lost-service': 3, 'idle-timeout': 4, 'session-timeout': 5, 'admin-reset': 6,
+    'admin-reboot': 7, 'port-error': 8, 'nas-error': 9, 'nas-request': 10, 'nas-reboot': 11, 'port-unneeded': 12,
+    'port-preempted': 13, 'port-suspended': 14, 'service-unavailable': 15, 'callback': 16, 'user-error': 17, 'host-request': 18,
+  },
   'nas-port-type': {
     'async': 0, 'sync': 1, 'isdn': 2, 'isdn-v120': 3, 'isdn-v110': 4, 'virtual': 5, 'piafs': 6, 'hdlc-clear-channel': 7,
     'x.25': 8, 'x.75': 9, 'g.3-fax': 10, 'sdsl': 11, 'adsl-cap': 12, 'adsl-dmt': 13, 'idsl': 14, 'ethernet': 15,

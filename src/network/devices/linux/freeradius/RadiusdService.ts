@@ -21,7 +21,9 @@ import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/typ
 import { parseClientsConf } from './ClientsConfParser';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, type UsersEntry } from './UsersFileParser';
-import type { RadiusUser, RadiusAttribute } from '@/network/radius/types';
+import type { RadiusUser, RadiusAttribute, RadiusPacket } from '@/network/radius/types';
+import { formatRadiusAttribute } from '@/network/radius/attributeText';
+import { formatLocalTime } from '../system/SystemInfo';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
@@ -32,7 +34,7 @@ import type { EndHost } from '@/network/devices/EndHost';
 
 export interface RadiusdFiles {
   read(path: string): string | null;
-  append(path: string, text: string): void;
+  append(path: string, text: string, umask?: number): void;
 }
 
 export interface RadiusdCheckReport {
@@ -160,6 +162,7 @@ export class RadiusdService {
     this.radiusServer.start();
     this.radiusTcpServer.start();
     this.radiusServer.setDecisionListener((payload) => this.writeAuthLog(payload));
+    this.radiusServer.setAccountingListener((record) => this.writeDetail(record));
     this.boundPorts = bound;
     this.running = true;
     return { ok: true };
@@ -168,6 +171,7 @@ export class RadiusdService {
   stop(): void {
     if (!this.running) return;
     this.radiusServer.setDecisionListener(null);
+    this.radiusServer.setAccountingListener(null);
     for (const port of this.boundPorts) this.host.udpClose(port);
     this.boundPorts = [];
     this.radiusServer.stop();
@@ -189,6 +193,19 @@ export class RadiusdService {
   }
 
   appendLog(path: string, text: string): void { this.files.append(path, text); }
+
+  private writeDetail(record: { sourceIp: string; packet: RadiusPacket; atMs: number }): void {
+    const log = this.logConfig;
+    if (log === null) return;
+    const lines = [formatCtime(new Date(record.atMs))];
+    for (const attribute of record.packet.attributes) {
+      if (attribute.type === 'user-password') continue;
+      lines.push(`\t${formatRadiusAttribute(attribute)}`);
+    }
+    lines.push(`\tTimestamp = ${Math.floor(record.atMs / 1000)}`, '', '');
+    const day = formatLocalTime('%Y%m%d', record.atMs);
+    this.files.append(`${log.radacctDir}/${record.sourceIp}/detail-${day}`, lines.join('\n'), 0o177);
+  }
 
   private boundPorts: number[] = [];
   private readonly fileUsers = new Set<string>();

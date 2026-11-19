@@ -82,7 +82,7 @@ export class LinuxServer extends LinuxMachine {
     this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack());
     this.radiusd = new RadiusdService(this, this.radiusServer, this.radiusTcpServer, {
       read: (path) => this.executor.vfs.readFile(path),
-      append: (path, text) => { this.executor.vfs.writeFile(path, text, 0, 0, 0o022, true); },
+      append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
     });
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {

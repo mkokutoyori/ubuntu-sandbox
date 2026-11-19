@@ -8,8 +8,10 @@ export interface RadiusdLogConfig {
   authReject: boolean;
   authBadpass: boolean;
   authGoodpass: boolean;
+  radacctDir: string;
 }
 
+export const DEFAULT_RADACCT_DIR = '/var/log/freeradius/radacct';
 export const DEFAULT_RADIUS_LOG_FILE = '/var/log/freeradius/radius.log';
 
 const TRUE_WORDS = new Set(['yes', 'true', 'on']);
@@ -20,6 +22,7 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
   const config: RadiusdLogConfig = {
     destination: 'files', file: DEFAULT_RADIUS_LOG_FILE,
     auth: false, authAccept: false, authReject: false, authBadpass: false, authGoodpass: false,
+    radacctDir: root.pairs.find((pair) => pair.name === 'radacctdir')?.value ?? DEFAULT_RADACCT_DIR,
   };
   const section = root.sections.find((candidate) => candidate.name1 === 'log');
   if (!section) return config;

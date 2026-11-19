@@ -186,6 +186,12 @@ export class RadiusServerAgent {
 
   readonly clientTable = new RadiusClientTable();
 
+  private accountingListener: ((record: { sourceIp: string; packet: RadiusPacket; atMs: number }) => void) | null = null;
+
+  setAccountingListener(listener: ((record: { sourceIp: string; packet: RadiusPacket; atMs: number }) => void) | null): void {
+    this.accountingListener = listener;
+  }
+
   private requestNumber = -1;
 
   private decisionListener: ((payload: RadiusAuthDecidedPayload) => void) | null = null;
@@ -315,6 +321,7 @@ export class RadiusServerAgent {
     Logger.info(this.host.id, 'radius:accounting',
       `${this.host.name}: ${status} for ${username} (session ${sessionId})`);
 
+    this.accountingListener?.({ sourceIp: senderIp, packet: payload, atMs: now });
     this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
   }
 

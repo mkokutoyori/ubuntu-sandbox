@@ -17,13 +17,19 @@ const NAMED_CASE: Record<string, string> = {
   ip: 'IP', ipv4: 'IPv4', ipv6: 'IPv6', 'ieee-802': 'IEEE-802', isdn: 'ISDN', sdsl: 'SDSL', xdsl: 'xDSL', idsl: 'IDSL',
   'wireless-802.11': 'Wireless-802.11', 'tcp-clear': 'TCP-Clear', 'tcp-clear-quiet': 'TCP-Clear-Quiet', 'nas-prompt-user': 'NAS-Prompt-User',
   'callback-nas-prompt': 'Callback-NAS-Prompt', 'radius-request': 'RADIUS-Request', 'van-jacobson-tcp-ip': 'Van-Jacobson-TCP-IP',
-  'min-ip': 'MIN-IP', 'ip-in-ip': 'IP-in-IP',
+  'min-ip': 'MIN-IP', 'ip-in-ip': 'IP-in-IP', 'radius': 'RADIUS', 'nas-error': 'NAS-Error', 'nas-request': 'NAS-Request', 'nas-reboot': 'NAS-Reboot',
 };
 
 export function formatRadiusAttributeValue(attribute: RadiusAttribute): string {
   const valueType: RadiusValueType = attribute.type === 'vendor-specific' ? 'octets' : RADIUS_DICTIONARY[attribute.type].valueType;
   const raw = String(attribute.value);
   if (valueType === 'octets') return `0x${raw}`;
+  if (valueType === 'time') {
+    const date = new Date(Number(attribute.value) * 1000);
+    const month = date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    return `"${month} ${pad(date.getUTCDate())} ${date.getUTCFullYear()} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())} UTC"`;
+  }
   if (valueType === 'text' || valueType === 'string' || valueType === 'tagged-string') return `"${raw}"`;
   if (valueType === 'integer' || valueType === 'tagged-integer') {
     const names = RADIUS_VALUE_NAMES[attribute.type];
