@@ -8,6 +8,7 @@ export interface XmlEvent {
   readonly index: number;
   readonly message: string;
   readonly data?: Record<string, string>;
+  readonly userSid?: string;
 }
 
 export interface XmlEventContext {
@@ -39,7 +40,7 @@ function systemSection(event: XmlEvent, context: XmlEventContext): string {
     + `<TimeCreated SystemTime='${systemTime(event.timeGenerated)}'/>`
     + `<EventRecordID>${event.index}</EventRecordID><Correlation/>`
     + `<Channel>${xmlEscape(context.channel)}</Channel><Computer>${xmlEscape(context.computer)}</Computer>`
-    + `${audit ? '<Security/>' : ''}</System>`;
+    + `${audit ? '<Security/>' : event.userSid === undefined ? '' : `<Security UserID='${xmlEscape(event.userSid)}'/>`}</System>`;
 }
 
 function dataSection(event: XmlEvent): string {

@@ -19,6 +19,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { PSLexer }  from '@/powershell/lexer/PSLexer';
+import { makePSCredentialFromSecret } from '@/powershell/credential/PSCredential';
 import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
@@ -221,6 +222,10 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     // [regex]::Split(input, pattern) → string[]
     split:   (input: PSValue, pattern: PSValue) =>
       String(input).split(new RegExp(String(pattern))) as PSValue[],
+  } as Record<string, PSValue>,
+
+  pscredential: {
+    new: (userName: PSValue, secret: PSValue) => makePSCredentialFromSecret(String(userName ?? ''), secret) as unknown as PSValue,
   } as Record<string, PSValue>,
 
   guid: {
@@ -479,6 +484,29 @@ function replaySafe(cmdlet: { readonly name: string; readonly nativeProgram?: tr
   if (cmdlet.nativeProgram === true) return false;
   const name = cmdlet.name.toLowerCase();
   return REPLAY_SAFE_NAMES.has(name) || REPLAY_SAFE_VERBS.has(name.split('-')[0]);
+}
+
+function pipedItemOf(value: PSValue): { text: string; properties: Record<string, string> } {
+  const properties: Record<string, string> = {};
+  if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+    for (const [key, member] of Object.entries(value as Record<string, PSValue>)) {
+      if (typeof member === 'function' || (member !== null && typeof member === 'object')) continue;
+      properties[key] = psValueToString(member);
+    }
+  }
+  return { text: positionalText(value), properties };
+}
+
+function positionalText(value: PSValue): string {
+  return (Array.isArray(value) ? value : [value]).map(psValueToString).join(', ');
+}
+
+function boundParameterTexts(cmdlet: ICmdlet, named: Record<string, PSValue>): ReadonlyArray<readonly [string, string]> {
+  const canonical = new Map((cmdlet.parameters ?? []).map((name) => [name.toLowerCase(), name]));
+  return Object.entries(named).map(([key, value]): readonly [string, string] => {
+    const items = Array.isArray(value) ? value : [value];
+    return [canonical.get(key.toLowerCase()) ?? key, items.map(psValueToString).join(', ')];
+  });
 }
 
 export class PSRuntime {
@@ -2397,7 +2425,7 @@ export class PSRuntime {
       return ((initial?: PSValue) => this.newGenericList(kind, genericStatic[1] ?? genericStatic[2],
         Array.isArray(initial) ? initial : [])) as unknown as PSValue;
     }
-    const typeObj = STATIC_TYPES[tname]
+    const typeObj = STATIC_TYPES[tname === 'system.management.automation.pscredential' ? 'pscredential' : tname]
       // Generic list fallback: List[T] for any T
       ?? (tname.match(/^(system\.collections\.generic\.list|collections\.generic\.list)\[.+\]$/)
           ? STATIC_TYPES['list'] : undefined)
@@ -4050,6 +4078,7 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
+    this.providers.pipelineAudit?.commandInvoked(cmdletDisplayName, boundParameterTexts(cmdlet, cmdletNamed), positional.map(positionalText), pipeInput === null || pipeInput === undefined ? [] : (Array.isArray(pipeInput) ? pipeInput : [pipeInput]).map(pipedItemOf));
     const perItem = this.pipelineItemsFor(cmdlet, cmdletNamed, pipeInput);
     const errorsBefore = this.errorsWritten;
     let result: PSValue;

@@ -141,16 +141,22 @@ import {
   isLlmnrEnabled, isMdnsEnabled, type DnsClientQueryOptions,
 } from './windows/WinDnsClientPolicy';
 import {
-  isScriptBlockLoggingEnabled, isTranscriptionEnabled, transcriptDirectory,
-  transcriptFileName, transcriptHeader, scriptBlockId,
-  POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
+  isScriptBlockLoggingEnabled, isScriptBlockInvocationLoggingEnabled, SCRIPT_BLOCK_INVOCATION_STARTED, SCRIPT_BLOCK_INVOCATION_COMPLETED,
+  isTranscriptionEnabled, isInvocationHeaderEnabled, invocationHeader, minimalTranscriptHeader, transcriptEpilogue, transcriptDirectory,
+  transcriptFileName, transcriptHeader, scriptBlockId, type PowerShellPolicySource, type TranscriptHeaderFields,
+  POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED, PIPELINE_EXECUTION_DETAIL,
+  loggedModuleNames, moduleIsLogged, pipelineExecutionDetailMessage,
 } from './windows/WinPowerShellLogging';
+import { psVersionTable, POWERSHELL_PROCESS_ID } from '@/powershell/runtime/PSEnvironment';
+import { moduleOfCommand, positionalParameterNames, pipelineParameterName, pipelinePropertyParameterNames, canonicalCommandName } from './windows/PowerShellModuleExports';
+import type { PipelineAuditPort } from './windows/PipelineAuditPort';
+import type { TranscriptPort } from './windows/TranscriptPort';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
-import { createAuditIdentity } from './windows/eventlog/AuditIdentity';
+import { createAuditIdentity, type AuditDomainView } from './windows/eventlog/AuditIdentity';
 import type { WindowsLogonDetails } from './windows/events';
-import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
+import { WindowsSecurityAuditProjection, type FirewallStartState } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection, type WindowsEndpointDeclaration } from './windows/WindowsServicePortProjection';
 import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection';
@@ -179,6 +185,8 @@ import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
 import { cmdWhoami } from './windows/WinWhoami';
 import { cmdNetUser, cmdNetLocalgroup, type NetUserContext } from './windows/WinNetUser';
+import { renderTaskDefinition } from './windows/ScheduledTaskDefinition';
+import type { DirectoryAuditPort } from './windows/DirectoryAuditPort';
 import { cmdIcacls } from './windows/WinIcacls';
 import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
@@ -204,6 +212,7 @@ import { parseSubscriptionXml, type WecSubscription } from './windows/server/wec
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { selfSignedLdapCert } from './windows/server/ad/ldap/ldapStartTls';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
+import { parseFilter as parseLdapFilter } from './windows/server/ad/ldap/LdapFilterString';
 import { getForestForDomain } from './windows/server/ad/forest/Forest';
 import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
@@ -312,7 +321,7 @@ import type { NetIPAddressEntry } from './windows/netIpAddress';
 import type { NetRouteEntry } from './windows/netRoute';
 import {
   type FirewallPacketFacts, type NetFirewallRuleEntry,
-  firewallRuleMatches, seedBuiltInFirewallRules,
+  firewallRuleMatches, seedBuiltInFirewallRules, addressSetIsEmpty, type FirewallAddressSets,
 } from './windows/netFirewallRule';
 import {
   type FirewallProfileName, type NetFirewallProfileRow,
@@ -677,6 +686,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
     this.eventLog.describeBootEvents(this.hostname.toUpperCase());
+    this.eventLog.attachSourceRegisteredHook((logName, source) => {
+      if (!logName.includes('/')) this.registry.upsertEventSourceKey(logName, source);
+    });
+    this.eventLog.announceExistingSources();
     this.eventLog.attachClearedHook((logName, backupPath) => this.auditLogCleared(logName, backupPath));
     this.auditPolicy.attachChangeListener((subcategory, changes) => {
       if (!this.auditPolicy.isEnabled('Audit Policy Change', 'success')) return;
@@ -748,6 +761,39 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * seule identité (SID de machine, nom NetBIOS, sessions ouvertes) pour
    * tous les événements qu'elle écrit.
    */
+  directoryAudit(): DirectoryAuditPort {
+    const accounts = (write: () => void): void => {
+      if (this.auditPolicy.isEnabled('User Account Management', 'success')) write();
+    };
+    const groups = (write: () => void): void => {
+      if (this.auditPolicy.isEnabled('Security Group Management', 'success')) write();
+    };
+    const audit = (): WindowsSecurityAudit => this.securityAudit();
+    return {
+      actor: () => this.userMgr.currentUser || 'Administrator',
+      accountCreated: (account, actor) => accounts(() => audit().accountCreated(account, actor)),
+      accountEnabled: (account, actor) => accounts(() => audit().accountEnabled(account, actor)),
+      accountDisabled: (account, actor) => accounts(() => audit().accountDisabled(account, actor)),
+      accountChanged: (account, actor) => accounts(() => audit().accountChanged(account, actor)),
+      accountDeleted: (account, actor) => accounts(() => audit().accountDeleted(account, actor)),
+      accountUnlocked: (account, actor) => accounts(() => audit().accountUnlocked(account, actor)),
+      passwordReset: (account, actor) => accounts(() => audit().passwordReset(account, actor)),
+      groupCreated: (group, scope, actor) => groups(() => audit().groupCreated(group, actor, scope)),
+      groupDeleted: (group, scope, actor) => groups(() => audit().groupDeleted(group, actor, scope)),
+      groupMemberAdded: (group, member, scope, actor) => groups(() => audit().groupMemberAdded(group, member, scope, actor)),
+      groupMemberRemoved: (group, member, scope, actor) => groups(() => audit().groupMemberRemoved(group, member, scope, actor)),
+    };
+  }
+
+  private auditDomainView(): AuditDomainView | null {
+    const store = this.getDirectoryStore();
+    if (store) {
+      return { netbios: store.netbiosName, accountSid: (sam) => store.getUser(sam)?.sid || undefined, groupSid: (name) => store.getGroupSid(name) ?? undefined };
+    }
+    const membership = this.domainMembership;
+    return membership === null ? null : { netbios: membership.netbiosName, accountSid: () => undefined, groupSid: () => undefined };
+  }
+
   securityAudit(): WindowsSecurityAudit {
     this.securityAuditInstance ??= new WindowsSecurityAudit(
       this.eventLog,
@@ -755,16 +801,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.hostname.toUpperCase(),
         (account) => this.userMgr.getUser(account)?.sid,
         (group) => this.userMgr.getGroup(group)?.sid,
+        () => this.auditDomainView(),
       ),
     );
     return this.securityAuditInstance;
   }
 
   /** 4698 — `Register-ScheduledTask` laisse désormais une trace. */
-  auditScheduledTaskCreated(taskName: string, command: string): void {
+  auditScheduledTaskCreated(task: WinSys.WinScheduledTask): void {
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
     this.securityAudit().scheduledTaskCreated(
-      taskName, command, this.userMgr.currentUser || 'Administrator');
+      task.taskName, renderTaskDefinition(task, this.simulatedDate()), this.userMgr.currentUser || 'Administrator');
   }
 
   /**
@@ -834,10 +881,73 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * 4104 utile face à une obfuscation : un `-EncodedCommand` doit être
    * décodé pour tourner, et c'est la forme décodée qui atterrit ici.
    */
+  private pipelineDetails: string[] = [];
+  private pipelineSequence = 0;
+
+  pipelineAudit(): PipelineAuditPort {
+    return {
+      commandInvoked: (invoked, parameters, positional, piped) => {
+        const command = canonicalCommandName(invoked);
+        const module = moduleOfCommand(command);
+        if (module === null || !moduleIsLogged(loggedModuleNames(this.powerShellPolicySource()), module)) return;
+        this.pipelineDetails.push(`CommandInvocation(${command}): "${command}"`);
+        const bound = new Set(parameters.map(([name]) => name.toLowerCase()));
+        const free = positionalParameterNames(command).filter((name) => !bound.has(name.toLowerCase()));
+        const bindings = [...parameters, ...positional.slice(0, free.length).map((value, index): readonly [string, string] => [free[index], value])];
+        for (const [name, value] of bindings) {
+          this.pipelineDetails.push(`ParameterBinding(${command}): name="${name}"; value="${value}"`);
+        }
+        const pipeName = pipelineParameterName(command);
+        const given = new Set([...bound, ...bindings.map(([name]) => name.toLowerCase())]);
+        const byProperty = pipelinePropertyParameterNames(command).filter((name) => !given.has(name.toLowerCase()));
+        for (const item of piped) {
+          const matched = byProperty.filter((name) => Object.keys(item.properties).some((key) => key.toLowerCase() === name.toLowerCase()));
+          if (matched.length > 0) {
+            for (const name of matched) {
+              const key = Object.keys(item.properties).find((candidate) => candidate.toLowerCase() === name.toLowerCase()) ?? name;
+              this.pipelineDetails.push(`ParameterBinding(${command}): name="${name}"; value="${item.properties[key]}"`);
+            }
+          } else if (pipeName !== null && !given.has(pipeName.toLowerCase())) {
+            this.pipelineDetails.push(`ParameterBinding(${command}): name="${pipeName}"; value="${item.text}"`);
+          }
+        }
+      },
+    };
+  }
+
+  private flushPipelineDetails(): void {
+    const details = this.pipelineDetails;
+    this.pipelineDetails = [];
+    if (details.length === 0) return;
+    const first = /^CommandInvocation\(([^)]*)\)/.exec(details[0])?.[1] ?? '';
+    const user = this.userMgr.currentUser || 'Administrator';
+    const context: ReadonlyArray<readonly [string, string]> = [
+      ['Severity', 'Informational'], ['Host Name', 'ConsoleHost'], ['Host Version', '7.6.0'],
+      ['Host ID', this.powerShellHostId()], ['Host Application', 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'],
+      ['Engine Version', '7.6.0'], ['Runspace ID', this.powerShellRunspaceId()], ['Pipeline ID', this.newTaskInstanceId().slice(1, -1).toLowerCase()],
+      ['Command Name', first], ['Command Type', 'Cmdlet'], ['Script Name', ''], ['Command Path', ''],
+      ['Sequence Number', String(++this.pipelineSequence)],
+      ['User', `${this.getEnvVars().get('USERDOMAIN') ?? this.getHostname().toUpperCase()}\\${user}`],
+      ['Connected User', ''], ['Shell ID', 'Microsoft.PowerShell'],
+    ];
+    this.eventLog.writeEventLog(
+      POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, PIPELINE_EXECUTION_DETAIL, 'Information',
+      pipelineExecutionDetailMessage(details, context),
+      { Payload: details.map((line) => `${line}\n`).join(''), ContextInfo: context.map(([label, value]) => `${label} = ${value}`).join('\n'), UserData: '' });
+  }
+
+  private hostId: string | null = null;
+
+  private powerShellHostId(): string {
+    this.hostId ??= this.newTaskInstanceId().slice(1, -1).toLowerCase();
+    return this.hostId;
+  }
+
   recordPowerShellExecution(scriptBlock: string, output: string): void {
+    this.flushPipelineDetails();
     const text = scriptBlock.trim();
     if (!text) return;
-    if (isScriptBlockLoggingEnabled(this.registry)) {
+    if (isScriptBlockLoggingEnabled(this.powerShellPolicySource())) {
       this.eventLog.writeEventLog(
         POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, SCRIPT_BLOCK_LOGGED,
         'Information',
@@ -848,25 +958,130 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           ScriptBlockText: text, ScriptBlockId: scriptBlockId(text), Path: '',
         });
     }
-    if (isTranscriptionEnabled(this.registry)) this.appendTranscript(text, output);
+    if (isScriptBlockInvocationLoggingEnabled(this.powerShellPolicySource())) {
+      for (const eventId of [SCRIPT_BLOCK_INVOCATION_STARTED, SCRIPT_BLOCK_INVOCATION_COMPLETED]) {
+        this.eventLog.writeEventLog(
+          POWERSHELL_OPERATIONAL_LOG, POWERSHELL_PROVIDER, eventId, 'Information',
+          `${eventId === SCRIPT_BLOCK_INVOCATION_STARTED ? 'Started' : 'Completed'} invocation of ScriptBlock ID: ${scriptBlockId(text)}\nRunspace ID: ${this.powerShellRunspaceId()}`,
+          { ScriptBlockId: scriptBlockId(text), RunspaceId: this.powerShellRunspaceId() });
+      }
+    }
+    const handled = this.transcriptLineHandled;
+    this.transcriptLineHandled = false;
+    if (handled) return;
+    if (isTranscriptionEnabled(this.powerShellPolicySource())) this.appendTranscript(text, output);
+    for (const session of this.explicitTranscripts) {
+      this.appendToFile(session.path, this.transcriptEntry(text, output, session.invocationHeader));
+    }
+  }
+
+  private powerShellPolicySource(): PowerShellPolicySource {
+    return {
+      registry: this.registry,
+      readFile: (path) => {
+        const file = this.fs.readFile(path);
+        return file.ok && file.content !== undefined ? file.content : null;
+      },
+      userConfigPath: `C:\\Users\\${this.userMgr.currentUser}\\Documents\\PowerShell\\powershell.config.json`,
+    };
+  }
+
+  private runspaceId: string | null = null;
+
+  private powerShellRunspaceId(): string {
+    this.runspaceId ??= this.newTaskInstanceId().slice(1, -1).toLowerCase();
+    return this.runspaceId;
   }
 
   /**
    * Ajoute une commande et sa sortie à la transcription en cours, en
    * créant le fichier — en-tête compris — à la première écriture.
    */
+  private transcriptHeaderFields(startedAt: Date): TranscriptHeaderFields {
+    const user = this.userMgr.currentUser || 'Administrator';
+    const account = `${this.getEnvVars().get('USERDOMAIN') ?? this.getHostname().toUpperCase()}\\${user}`;
+    const os = String(psVersionTable().OS).replace('Windows ', 'Windows NT ');
+    return {
+      startedAt, username: account, runAsUser: account, configurationName: '',
+      machine: this.getHostname().toUpperCase(), osVersion: `${os}.0`,
+      hostApplication: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', processId: POWERSHELL_PROCESS_ID,
+    };
+  }
+
+  private explicitTranscripts: Array<{ path: string; invocationHeader: boolean }> = [];
+  private powerShellPrompt = 'PS> ';
+
+  notePowerShellPrompt(prompt: string): void {
+    this.powerShellPrompt = prompt;
+  }
+  private transcriptLineHandled = false;
+
+  private appendToFile(path: string, text: string): void {
+    const existing = this.fs.readFile(path);
+    this.fs.mkdirp(path.slice(0, path.lastIndexOf('\\')));
+    this.fs.createFile(path, `${existing.ok && existing.content !== undefined ? existing.content : ''}${text}`);
+  }
+
   private appendTranscript(command: string, output: string): void {
-    const dir = transcriptDirectory(this.registry);
+    const dir = transcriptDirectory(this.powerShellPolicySource());
     if (!this.transcriptStartedAt) this.transcriptStartedAt = this.simulatedDate();
     const path = `${dir}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
-    const existing = this.fs.readFile(path);
-    const head = existing.ok && existing.content !== undefined
-      ? existing.content
-      : transcriptHeader(
-        this.getHostname(), this.userMgr.currentUser || 'Administrator',
-        this.transcriptStartedAt);
-    this.fs.mkdirp(dir);
-    this.fs.createFile(path, `${head}PS> ${command}\n${output ? `${output}\n` : ''}`);
+    if (!this.fs.readFile(path).ok) this.appendToFile(path, transcriptHeader(this.transcriptHeaderFields(this.transcriptStartedAt)));
+    this.appendToFile(path, this.transcriptEntry(command, output, isInvocationHeaderEnabled(this.powerShellPolicySource())));
+  }
+
+  private transcriptEntry(command: string, output: string, withInvocationHeader: boolean): string {
+    const header = withInvocationHeader ? invocationHeader(this.simulatedDate()) : '';
+    return `${header}${this.powerShellPrompt}${command}\n${output ? `${output}\n` : ''}`;
+  }
+
+  endPowerShellHost(typedExit: boolean): void {
+    const ended = this.simulatedDate();
+    for (const session of this.explicitTranscripts.reverse()) {
+      this.appendToFile(session.path, `${typedExit ? `${this.powerShellPrompt}exit\n` : ''}${transcriptEpilogue(ended)}`);
+    }
+    this.explicitTranscripts = [];
+    if (this.transcriptStartedAt !== null && isTranscriptionEnabled(this.powerShellPolicySource())) {
+      const path = `${transcriptDirectory(this.powerShellPolicySource())}\\${transcriptFileName(this.getHostname(), this.transcriptStartedAt)}`;
+      if (this.fs.readFile(path).ok) this.appendToFile(path, `${typedExit ? `${this.powerShellPrompt}exit\n` : ''}${transcriptEpilogue(ended)}`);
+    }
+    this.transcriptStartedAt = null;
+  }
+
+  transcriptPort(): TranscriptPort {
+    return {
+      start: (options) => {
+        const startedAt = this.simulatedDate();
+        const dir = options.outputDirectory ?? transcriptDirectory(this.powerShellPolicySource());
+        const path = options.path ?? `${dir}\\${transcriptFileName(this.getHostname(), startedAt)}`;
+        const existing = this.fs.readFile(path);
+        if (existing.ok && !options.append && options.noClobber) {
+          return { error: `File ${path} already exists and NoClobber was specified.` };
+        }
+        const entry = this.fs.resolve(path);
+        if (entry?.type === 'file' && entry.attributes.has('readonly') && !options.append) {
+          if (!options.force) {
+            return { error: `File ${path} is read-only. Cannot write to this file. "Start-Transcript -Force" will clear the read-only attribute.` };
+          }
+          entry.attributes.delete('readonly');
+        }
+        const header = options.useMinimalHeader ? minimalTranscriptHeader(startedAt) : transcriptHeader(this.transcriptHeaderFields(startedAt));
+        if (!(existing.ok && options.append)) {
+          this.fs.mkdirp(path.slice(0, path.lastIndexOf('\\')));
+          this.fs.createFile(path, `${header}Transcript started, output file is ${path}\n`);
+        }
+        this.explicitTranscripts.push({ path, invocationHeader: options.includeInvocationHeader });
+        this.transcriptLineHandled = true;
+        return { path };
+      },
+      stop: () => {
+        const session = this.explicitTranscripts.pop();
+        if (session === undefined) return { error: 'The host is not currently transcribing.' };
+        this.appendToFile(session.path, `${this.powerShellPrompt}Stop-Transcript\n${transcriptEpilogue(this.simulatedDate())}`);
+        this.transcriptLineHandled = true;
+        return { path: session.path };
+      },
+    };
   }
 
   protected override linkLocalAutoconfigurationEnabled(): boolean {
@@ -966,11 +1181,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       bus, this.securityAudit(), this.id, this.auditPolicy,
       () => this.isCommandLineAuditEnabled(),
       (account) => this.userMgr.isAdmin(account),
+      () => this.firewallStartState(),
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
     this.eventLog.attachForwarder((logName, entry) => this.tryForwardMatchingEvent(logName, entry));
-    this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
+    this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy, () => this.userMgr.getUser(this.userMgr.currentUser)?.sid);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.getTcpStack(), this.procMgr);
     this.servicePortProjection.declareEndpoint({
@@ -1108,7 +1324,85 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _processSocketReaperOff: (() => void) | null = null;
   private _portProxyChangesOff: (() => void) | null = null;
 
+  private readonly winsServers = new Map<string, string[]>();
+
+  private siteSubnets: string[] = [];
+
+  private refreshSiteSubnets(): void {
+    const membership = this.domainMembership;
+    if (membership === null || this.getDirectoryStore()) return;
+    const conn = dialLdap(this.getTcpStack(), membership.dcAddress);
+    if (!conn.ok || !conn.client) return;
+    if (conn.client.bind(`${this.getHostname()}$`, membership.machineSecret).ok) {
+      const root = membership.dnsName.split('.').map((label) => `DC=${label}`).join(',');
+      const found = conn.client.search(`CN=Subnets,CN=Sites,CN=Configuration,${root}`, 'one', parseLdapFilter('(objectClass=subnet)'), ['cn']);
+      if (found.ok) {
+        this.siteSubnets = found.entries.flatMap((entry) => entry.attributes.filter((attribute) => attribute.type.toLowerCase() === 'cn').flatMap((attribute) => attribute.values));
+      }
+    }
+    conn.client.unbind();
+  }
+
+  private firewallAddressSets(): FirewallAddressSets {
+    const ports = [...this.getPorts()];
+    const unique = (values: ReadonlyArray<string | null>): string[] => [...new Set(values.filter((value): value is string => value !== null && value !== ''))];
+    return {
+      dns: () => unique(ports.flatMap((port) => this.effectiveDnsServers(port.getName()))),
+      dhcp: () => unique(ports.map((port) => this.getDhcpServer(port.getName()))),
+      wins: () => unique(ports.flatMap((port) => this.winsServers.get(port.getName()) ?? [])),
+      defaultGateway: () => unique([this.getDefaultGatewayString()]),
+      intranet: () => unique([
+        ...ports.map((port) => {
+          const address = port.getIPAddress();
+          const mask = port.getSubnetMask();
+          return address === null || mask === null ? null : `${address.networkAddress(mask)}/${mask.toCIDR()}`;
+        }),
+        ...(this.getDirectoryStore()?.listSubnets().map((subnet) => subnet.cidr) ?? this.siteSubnets),
+      ]),
+      localSubnets: () => unique(ports.map((port) => {
+        const address = port.getIPAddress();
+        const mask = port.getSubnetMask();
+        return address === null || mask === null ? null : `${address.networkAddress(mask)}/${mask.toCIDR()}`;
+      })),
+    };
+  }
+
+  private emptyAddressSetRules(): ReadonlyArray<{ ruleId: string; ruleName: string; attribute: string }> {
+    this.refreshSiteSubnets();
+    const sets = this.firewallAddressSets();
+    return [...this.firewallRules.values()].filter((rule) => rule.enabled).flatMap((rule) => [
+      ...(addressSetIsEmpty(rule.localAddress, sets) ? [{ ruleId: rule.name, ruleName: rule.displayName, attribute: 'Local Address' }] : []),
+      ...(addressSetIsEmpty(rule.remoteAddress, sets) ? [{ ruleId: rule.name, ruleName: rule.displayName, attribute: 'Remote Address' }] : []),
+    ]);
+  }
+
+  private firewallStartState(): FirewallStartState {
+    this.refreshSiteSubnets();
+    const flag = (value: string): 'Enabled' | 'Disabled' => (value === 'True' ? 'Enabled' : 'Disabled');
+    return {
+      profiles: [...this.firewallProfiles.values()].map((row) => ({
+        profile: row.name,
+        operationMode: row.enabled === 'True' ? 'On' : 'Off',
+        multicastFlows: flag(row.allowUnicastResponseToMulticast),
+        logDropped: flag(row.logBlocked),
+        logSuccessful: flag(row.logAllowed),
+      })),
+      rules: [...this.firewallRules.values()]
+        .filter((rule) => rule.enabled && (rule.profile === 'Any' || rule.profile === 'Public'))
+        .map((rule) => ({ ruleId: rule.name, ruleName: rule.displayName })),
+      unappliedRules: this.emptyAddressSetRules(),
+    };
+  }
+
   announceFirewallRuleChange(change: 'added' | 'modified' | 'deleted', rule: NetFirewallRuleEntry): void {
+    if (change !== 'deleted' && rule.enabled) {
+      for (const unapplied of this.emptyAddressSetRules().filter((candidate) => candidate.ruleId === rule.name)) {
+        this.getBus().publish({
+          topic: 'windows.firewall.rule-not-applied',
+          payload: { deviceId: this.id, ruleId: unapplied.ruleId, ruleName: unapplied.ruleName, attribute: unapplied.attribute },
+        });
+      }
+    }
     this.getBus().publish({
       topic: 'windows.firewall.rule-changed',
       payload: {
@@ -1144,7 +1438,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return;
     }
     const clientHost = this.reverseLookupClient(socket.remoteIp);
-    this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
+    this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost, socket.remotePort);
   }
 
   private initDefaultSockets(): void {
@@ -1154,7 +1448,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private serveWinRm(socket: TcpSocket): void {
-    this.getWinRmServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, this.reverseLookupClient(socket.remoteIp));
+    this.getWinRmServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, this.reverseLookupClient(socket.remoteIp), socket.remotePort);
   }
 
   private serveKdc(socket: TcpSocket): void {
@@ -1563,7 +1857,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * as they do for any other TCP client on this device.
    */
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult {
-    return dialSmbShare({ tcpStack: this.getTcpStack(), targetIp, shareName, username, password });
+    return dialSmbShare({ tcpStack: this.getTcpStack(), targetIp, shareName, username, password, workstation: this.hostname });
   }
 
   /** Build a WinRmServerHandler ready to be hooked onto a TcpConnection (one per accept). */
@@ -1664,7 +1958,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     const authentication = this.winRmAuthentication(computerName, credential);
     if (authentication === null) return { ok: false, error: 'Access is denied.' };
-    return runWinRmRequest({ tcpStack: this.getTcpStack(), targetIp: target.toString(), request, ...authentication });
+    return runWinRmRequest({ tcpStack: this.getTcpStack(), targetIp: target.toString(), request, workstation: this.hostname, ...authentication });
   }
 
   private runRemoteTool(command: string, remote: RemoteTarget): string {
@@ -1940,7 +2234,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getKerberosTicketCache(): KerberosTicketCache { return this.kerberosTicketCache; }
 
   /** Domain-qualified credential check for inbound SMB/WinRM auth — real LDAP bind, not a topology shortcut. Returns null when unqualified/not domain-joined (caller should fall back to local auth). */
-  tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[] } | null {
+  tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[]; authoritative?: boolean; cause?: 'unknown-user' | 'bad-password' | 'disabled' } | null {
     // A domain controller holds the directory: it answers for its own
     // domain accounts itself, exactly as a real DC does, instead of
     // dialling out to find an authority it already is. A member machine
@@ -1953,8 +2247,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         || qualifier.toLowerCase() === ownDirectory.netbiosName.toLowerCase()
         || qualifier.toLowerCase() === ownDirectory.dnsName.toLowerCase();
       if (!known) return null;
-      if (!ownDirectory.getBindCheck().checkBind(sam, password)) return { ok: false, sam, groups: [] };
-      return { ok: true, sam, groups: ownDirectory.groupsForUser(sam).map(g => g.name) };
+      if (!ownDirectory.getBindCheck().checkBind(sam, password)) {
+        const account = ownDirectory.getUser(sam);
+        const cause = account === null ? 'unknown-user' : account.enabled ? 'bad-password' : 'disabled';
+        return { ok: false, sam, groups: [], authoritative: true, cause };
+      }
+      return { ok: true, sam, groups: ownDirectory.groupsForUser(sam).map(g => g.name), authoritative: true };
     }
     if (!this.domainMembership) return null;
     const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
@@ -2033,13 +2331,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * credentials all behave exactly as they do for any other TCP client.
    */
   dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
-    return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
+    return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password, workstation: this.hostname });
   }
 
   dialWinRmAsCurrentIdentity(computerName: string, targetIp: string): WinRmDialResult {
     const apReq = this.kerberosApReqFor(computerName.split('.')[0]);
     if (apReq === null) return { ok: false, error: 'Access is denied.' };
-    return dialWinRmWithTicket({ tcpStack: this.getTcpStack(), targetIp, apReq });
+    return dialWinRmWithTicket({ tcpStack: this.getTcpStack(), targetIp, apReq, workstation: this.hostname });
   }
 
   async openWinRmRunspace(computerName: string, credential?: { username: string; password: string }): Promise<WinRmRunspaceOpening> {
@@ -2048,7 +2346,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const authentication = this.winRmAuthentication(computerName, credential);
     if (authentication === null) return { ok: false, error: 'Access is denied.' };
     const targetIp = target.toString();
-    return WinRmRunspace.open({ tcpStack: this.getTcpStack(), targetIp, pathAlive: peerLiveness(this, targetIp), ...authentication });
+    return WinRmRunspace.open({ tcpStack: this.getTcpStack(), targetIp, pathAlive: peerLiveness(this, targetIp), workstation: this.hostname, ...authentication });
   }
 
   /**
@@ -3971,14 +4269,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.commandExitStatus = result.exitCode;
         return result.output;
       }
-      case 'eventcreate': {
-        const result = cmdEventcreate({
-          logNames: () => this.eventLog.getAllLogsStructured().map((log) => log.logName),
-          write: (log, source, id, type, description) => this.eventLog.writeEventLog(log, source, id, type, description),
-        }, args);
-        this.commandExitStatus = result.exitCode;
-        return result.output;
-      }
+      case 'eventcreate': return this.runEventcreate(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'fsutil':  return cmdFsutil(this.buildSystemContext(), args);
       case 'reg':     return this.cmdReg(args);
@@ -4506,6 +4797,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       // DNS management
       getDnsServers: (ifName: string) => this.effectiveDnsServers(ifName),
+      getWinsServers: (ifName: string) => this.winsServers.get(ifName) ?? [],
+      setWinsServers: (ifName: string, servers: string[]) => { this.winsServers.set(ifName, [...servers]); },
       getDohServers: () => this.dnsClientSettings.dohServers(),
       setDnsServers: (ifName: string, servers: string[]) => {
         this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
@@ -4619,10 +4912,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       registry: this.registry,
       localDrives: () => this.fs.listDrives(),
       requestDfsReferral: (targetIp: string, path: string, username: string, password: string) =>
-        requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password }),
+        requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password, workstation: this.hostname }),
       resolveHostnameSync: (name: string) => this.resolveHostnameSync(name),
       requestShareEnum: (targetIp: string, username: string, password: string) =>
-        requestShareEnum({ tcpStack: this.getTcpStack(), targetIp, username, password }),
+        requestShareEnum({ tcpStack: this.getTcpStack(), targetIp, username, password, workstation: this.hostname }),
       registerHostInDomainDns: () => this.registerHostInDomainDns(),
       signedInIdentity: () => (this.domainSession
         ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}`
@@ -4732,6 +5025,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.commandExitStatus ?? commandExitCode(output);
   }
 
+  private runEventcreate(args: string[]): string {
+    const result = cmdEventcreate({
+      logNames: () => this.eventLog.getAllLogsStructured().map((log) => log.logName),
+      write: (log, source, id, type, description) => {
+        if (this.registry.isInstalledEventSource(log, source)) {
+          return 'Source parameter is used to identify custom applications/scripts only (not installed applications).';
+        }
+        this.eventLog.newEventLog(log, source);
+        this.registry.markCustomEventSource(log, source, '%SystemRoot%\\System32\\EventCreate.exe');
+        return this.eventLog.writeEventLog(log, source, id, type, description);
+      },
+    }, args);
+    this.commandExitStatus = result.exitCode;
+    return result.output;
+  }
+
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     this.commandExitStatus = null;
@@ -4748,6 +5057,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'chcp') return this.cmdChcp(args);
     if (lower === 'date') return this.cmdDate(args);
     if (lower === 'time') return this.cmdTime(args);
+    if (lower === 'eventcreate' || lower === 'eventcreate.exe') return this.runEventcreate(args);
     if (lower === 'sc' || lower === 'sc.exe') {
       return cmdSc(
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser },
@@ -4825,9 +5135,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       scheduledTasks: this.scheduledTasks,
       now: () => this.simulatedDate(),
       elevationContext: () => this.resolveElevationForCurrentUser(),
-      onTaskRegistered: (t) => this.announceTaskRegistered(t.taskName, t.command ?? ''),
-      onTaskDeleted: (task) => this.announceTaskDeleted(task.taskName, task.command ?? ''),
-      onTaskStateChanged: (task, enabled) => this.announceTaskStateChange(task.taskName, task.command ?? '', enabled),
+      onTaskRegistered: (t) => this.announceTaskRegistered(t),
+      onTaskDeleted: (task) => this.announceTaskDeleted(task),
+      onTaskStateChanged: (task, enabled) => this.announceTaskStateChange(task, enabled),
+      onTaskUpdated: (task) => this.announceTaskUpdated(task),
+      endTask: (task) => this.endScheduledTask(task),
       runTaskNow: (t) => this.runScheduledTaskNow(t),
     };
   }
@@ -4847,53 +5159,98 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       eventId, 'Information', message, data);
   }
 
-  announceTaskRegistered(taskName: string, command: string): void {
-    this.logTaskRegistered(taskName);
-    this.auditScheduledTaskCreated(taskName, command);
+  announceTaskRegistered(task: WinSys.WinScheduledTask): void {
+    this.logTaskRegistered(task.taskName);
+    this.auditScheduledTaskCreated(task);
   }
 
-  announceTaskDeleted(taskName: string, command: string): void {
-    this.logTaskDeleted(taskName);
+  announceTaskDeleted(task: WinSys.WinScheduledTask): void {
+    this.logTaskDeleted(task.taskName);
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
-    this.securityAudit().scheduledTaskDeleted(taskName, command, this.userMgr.currentUser || 'Administrator');
+    this.securityAudit().scheduledTaskDeleted(task.taskName, renderTaskDefinition(task, this.simulatedDate()), this.userMgr.currentUser || 'Administrator');
   }
 
-  announceTaskStateChange(taskName: string, command: string, enabled: boolean): void {
+  announceTaskUpdated(task: WinSys.WinScheduledTask): void {
+    this.taskEvent(140, `User "${this.taskUserContext()}"  updated Task Scheduler task "\\${task.taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${task.taskName}` });
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    this.securityAudit().scheduledTaskUpdated(task.taskName, renderTaskDefinition(task, this.simulatedDate()), this.userMgr.currentUser || 'Administrator');
+  }
+
+  announceTaskStateChange(task: WinSys.WinScheduledTask, enabled: boolean): void {
+    if (enabled) this.taskEvent(140, `User "${this.taskUserContext()}"  updated Task Scheduler task "\\${task.taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${task.taskName}` });
+    else this.taskEvent(142, `User "${this.taskUserContext()}"  disabled Task Scheduler task "\\${task.taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${task.taskName}` });
     if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
     const actor = this.userMgr.currentUser || 'Administrator';
-    if (enabled) this.securityAudit().scheduledTaskEnabled(taskName, command, actor);
-    else this.securityAudit().scheduledTaskDisabled(taskName, command, actor);
+    const content = renderTaskDefinition(task, this.simulatedDate());
+    if (enabled) this.securityAudit().scheduledTaskEnabled(task.taskName, content, actor);
+    else this.securityAudit().scheduledTaskDisabled(task.taskName, content, actor);
+  }
+
+  private taskUserContext(): string {
+    return `${this.hostname}\\${this.userMgr.currentUser}`;
+  }
+
+  private newTaskInstanceId(): string {
+    return `{${'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    }).toUpperCase()}}`;
   }
 
   private logTaskRegistered(taskName: string): void {
-    this.taskEvent(106, `User "${this.userMgr.currentUser}" registered Task Scheduler task "\\${taskName}"`,
-      { TaskName: `\\${taskName}`, UserContext: this.userMgr.currentUser });
+    this.taskEvent(106, `User "${this.taskUserContext()}"  registered Task Scheduler task "\\${taskName}"`,
+      { UserContext: this.taskUserContext(), TaskName: `\\${taskName}` });
   }
 
   private logTaskDeleted(taskName: string): void {
-    this.taskEvent(141, `User "${this.userMgr.currentUser}" deleted Task Scheduler task "\\${taskName}"`,
-      { TaskName: `\\${taskName}`, UserName: this.userMgr.currentUser });
+    this.taskEvent(141, `User "${this.taskUserContext()}"  deleted Task Scheduler task "\\${taskName}"`,
+      { UserName: this.taskUserContext(), TaskName: `\\${taskName}` });
   }
 
-  /**
-   * Démarrer une tâche à la main — `schtasks /run` et
-   * `Start-ScheduledTask` passent tous deux par ici, pour que l'un ne
-   * puisse pas faire ce que l'autre ne fait pas.
-   */
   runScheduledTaskNow(task: WinSys.WinScheduledTask): void {
-    WinSys.runScheduledProgram(task, this.procMgr, this.simulatedDate());
+    const pid = WinSys.runScheduledProgram(task, this.procMgr, this.simulatedDate());
     this.runScheduledPowerShellScript(task.command);
-    if (task.command) this.logTaskRan(task.taskName, task.command);
+    if (task.command) this.logTaskRan(task, pid, 'user');
   }
 
-  /** 200 puis 201 : l'action démarre, l'action se termine. */
-  private logTaskRan(taskName: string, command: string): void {
-    this.taskEvent(200, `Task Scheduler launched action "${command}" in instance "\\${taskName}"`,
-      { TaskName: `\\${taskName}`, ActionName: command });
-    this.taskEvent(201, `Task Scheduler successfully completed task "\\${taskName}", action "${command}" with return code 0.`,
-      { TaskName: `\\${taskName}`, ActionName: command, ResultCode: '0' });
-    this.taskEvent(102, `Task Scheduler successfully finished "\\${taskName}" instance.`,
-      { TaskName: `\\${taskName}` });
+  endScheduledTask(task: WinSys.WinScheduledTask): boolean {
+    const instance = task.instance;
+    if (instance === undefined) return false;
+    task.instance = undefined;
+    this.procMgr.killProcess(instance.pid, true, true);
+    this.taskEvent(111, `Task Scheduler terminated "${instance.id}"  instance of the "\\${task.taskName}"  task.`,
+      { InstanceId: instance.id, TaskName: `\\${task.taskName}` });
+    return true;
+  }
+
+  private logTaskRan(task: WinSys.WinScheduledTask, pid: number | null, trigger: 'user' | 'time'): void {
+    const command = task.command ?? '';
+    const name = `\\${task.taskName}`;
+    const instanceId = this.newTaskInstanceId();
+    const user = this.taskUserContext();
+    if (pid !== null) task.instance = { id: instanceId, pid };
+    if (trigger === 'user') {
+      this.taskEvent(110, `Task Scheduler launched "${instanceId}"  instance of task "${name}"  for user "${user}" .`,
+        { InstanceId: instanceId, TaskName: name, UserContext: user });
+    } else {
+      this.taskEvent(107, `Task Scheduler launched "${instanceId}"  instance of task "${name}" due to a time trigger condition.`,
+        { InstanceId: instanceId, TaskName: name });
+    }
+    this.taskEvent(100, `Task Scheduler started "${instanceId}" instance of the "${name}" task for user "${user}".`,
+      { InstanceId: instanceId, TaskName: name, UserContext: user });
+    if (pid !== null) {
+      this.taskEvent(129, `Task Scheduler launch task "${name}" ; instance "${command}"  with process ID ${pid}.`,
+        { TaskName: name, Path: command, ProcessID: String(pid) });
+    }
+    this.taskEvent(200, `Task Scheduler launched action "${command}" in instance "${instanceId}" of task "${name}".`,
+      { ActionName: command, TaskInstanceId: instanceId, TaskName: name });
+    this.taskEvent(201, `Task Scheduler successfully completed task "${name}" ; instance "${instanceId}" ; action "${command}" with return code 0.`,
+      { TaskName: name, TaskInstanceId: instanceId, ActionName: command, ResultCode: '0' });
+    this.taskEvent(102, `Task Scheduler successfully finished "${instanceId}" instance of the "${name}" task for user "${user}".`,
+      { InstanceId: instanceId, TaskName: name, UserContext: user });
   }
 
   simulatedDate(): Date {
@@ -4916,15 +5273,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.userMgr.recordGroupEnumeration(kind, target, this.procMgr.getProcessesByName(image)[0]?.pid ?? 0, processName);
   }
 
-  setSystemTime(epochMs: number): void {
+  setSystemTime(epochMs: number, processName = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'): void {
     const previousMs = this.clockPort.wall();
     this.clockPort.set(epochMs);
-    const host = this.procMgr.getProcessesByName('pwsh.exe')[0] ?? this.procMgr.getProcessesByName('powershell.exe')[0];
+    const image = processName.slice(processName.lastIndexOf('\\') + 1);
+    const host = this.procMgr.getProcessesByName(image)[0]
+      ?? (image === 'pwsh.exe' ? this.procMgr.getProcessesByName('powershell.exe')[0] : undefined);
     this.getBus().publish({
       topic: 'windows.system.time-changed',
       payload: {
         deviceId: this.id, previousMs, newMs: this.clockPort.wall(), actor: this.userMgr.currentUser,
-        processId: host?.pid ?? 0, processName: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+        processId: host?.pid ?? 0, processName,
       },
     });
   }
@@ -4987,9 +5346,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (task.state === 'Disabled') continue;
       let guard = 0;
       while (task.runAt && task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
-        WinSys.runScheduledProgram(task, this.procMgr, now);
+        const pid = WinSys.runScheduledProgram(task, this.procMgr, now);
         this.runScheduledPowerShellScript(task.command);
-        if (task.command) this.logTaskRan(task.taskName, task.command);
+        if (task.command) this.logTaskRan(task, pid, 'time');
         task.runAt = task.intervalMs
           ? likeDate(task.runAt, task.runAt.getTime() + task.intervalMs)
           : undefined;
@@ -5214,12 +5573,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return WinSys.cmdChcp(args);
   }
 
+  private cmdClock(): WinSys.SystemClockControl {
+    return { isAdmin: this.userMgr.isCurrentUserAdmin(), set: (epochMs) => this.setSystemTime(epochMs, 'C:\\Windows\\System32\\cmd.exe') };
+  }
+
   private cmdDate(args: string[]): string {
-    return WinSys.cmdDate(args, this.identity.timezone, this.simulatedDate().getTime());
+    return WinSys.cmdDate(args, this.identity.timezone, this.simulatedDate().getTime(), this.cmdClock());
   }
 
   private cmdTime(args: string[]): string {
-    return WinSys.cmdTime(args, this.identity.timezone, this.simulatedDate().getTime());
+    return WinSys.cmdTime(args, this.identity.timezone, this.simulatedDate().getTime(), this.cmdClock());
   }
 
   private cmdStart(args: string[]): string {
@@ -6206,6 +6569,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         // recognized form even though it's a valid Kerberos principal.
         username: `${this.hostname}$@${this.domainMembership.dnsName}`,
         password: this.domainMembership.machineSecret,
+        workstation: this.hostname,
         subscriptionId: sub.subscriptionId,
         sourceMachine: this.hostname,
         event: { eventId: entry.eventId, timeGenerated: entry.timeGenerated.toISOString(), message: entry.message, sourceLogName: logName },
@@ -7160,7 +7524,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!firewallIsOn(profile)) return 'accept';
     const facts = this.firewallFactsFor(portName, ipPkt, direction);
     if (rulesApplyTo(profile, facts.direction)) {
-      const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts));
+      const sets = this.firewallAddressSets();
+      const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts, sets));
       for (const rule of matching) {
         if (rule.action !== 'Block') continue;
         this.publishFirewallDrop(ipPkt, facts, rule.name, rule.protocol);

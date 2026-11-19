@@ -10,8 +10,8 @@
  *
  * Reference (rule 8): Microsoft's security auditing reference, events 4698, 4699, 4700 and 4701 (learn.microsoft.com, previous-versions
  * windows-10 security/threat-protection/auditing/event-469x): subcategory Audit Other Object Access Events, EventData SubjectUser* plus
- * TaskName (written `\Name`) and TaskContent. TaskContent there is the task's XML definition; here it stays the command, as 4698 already
- * wrote it (TODO.md). 4698 now writes its TaskName with the leading backslash the reference shows.
+ * TaskName (written `\Name`) and TaskContent. TaskContent is the task's XML definition (see probe-windows-task-events-carry-the-xml-definition).
+ * 4698 now writes its TaskName with the leading backslash the reference shows.
  *
  * Discrimination (git stash push -- src/network src/powershell, against the commit that first aligned 106, 141 and 4698): 7 of 13 cases fall:
  * schtasks writing 4698, Register-ScheduledTask's 4698 in the reference form (the backslash), 4699 from both interfaces, 4700 and 4701 from
@@ -51,7 +51,7 @@ describe('one task store, one trail', () => {
 
   it('Register-ScheduledTask writes 106 as schtasks does', async () => {
     await ps('Register-ScheduledTask -TaskName T3 -Action (New-ScheduledTaskAction -Execute calc.exe) -Trigger (New-ScheduledTaskTrigger -Daily -At 3am)');
-    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=106})[0].Message')).toBe('User "Administrator" registered Task Scheduler task "\\T3"');
+    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=106})[0].Message')).toBe('User "PC1\\Administrator"  registered Task Scheduler task "\\T3"');
   });
 
   it('Register-ScheduledTask still writes 4698', async () => {
@@ -62,13 +62,13 @@ describe('one task store, one trail', () => {
   it('schtasks /delete writes 141', async () => {
     await cmd('schtasks /create /tn T5 /tr calc.exe /sc daily /st 10:00');
     await cmd('schtasks /delete /tn T5 /f');
-    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "Administrator" deleted Task Scheduler task "\\T5"');
+    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "PC1\\Administrator"  deleted Task Scheduler task "\\T5"');
   });
 
   it('Unregister-ScheduledTask writes 141 as schtasks /delete does', async () => {
     await ps('Register-ScheduledTask -TaskName T6 -Action (New-ScheduledTaskAction -Execute calc.exe) -Trigger (New-ScheduledTaskTrigger -Daily -At 3am)');
     await ps('Unregister-ScheduledTask -TaskName T6 -Confirm:$false');
-    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "Administrator" deleted Task Scheduler task "\\T6"');
+    expect(await ps('(Get-WinEvent -FilterHashtable @{LogName="Microsoft-Windows-TaskScheduler/Operational"; Id=141})[0].Message')).toBe('User "PC1\\Administrator"  deleted Task Scheduler task "\\T6"');
   });
 
   it('schtasks /delete writes 4699 with the task name', async () => {

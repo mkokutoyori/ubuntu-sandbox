@@ -9,20 +9,23 @@
  * System` and `wevtutil` show.
  */
 
+import { nanosecondStamp } from './eventlog/NanosecondStamp';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
-  WindowsServiceEventPayload, WindowsServiceControlSentPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
+  WindowsServiceEventPayload, WindowsServiceControlSentPayload, WindowsServiceCrashedPayload, WindowsSystemTimeChangedPayload,
   WindowsServiceCreatedPayload, WindowsServiceStartTypeChangedPayload,
 } from './events';
 
 /** SCM event ID for a service state transition (System log). */
 const SCM_STATE_CHANGE = 7036;
 const SCM_CONTROL_SENT = 7035;
+const KERNEL_TIME_CHANGED = 1;
 /** SCM event ID for an unexpected service termination (System log). */
 const SCM_UNEXPECTED_TERMINATION = 7034;
 /** SCM event ID announcing the corrective action about to be taken (System log). */
 const SCM_RECOVERY_ACTION = 7031;
+const RECOVERY_ACTION_TEXT = { restart: 'Restart the service', run: 'Run the configured recovery program', reboot: 'Reboot the computer' } as const;
 const SCM_START_TYPE_CHANGED = 7040;
 
 const START_TYPE_WORDS: Readonly<Record<string, string>> = {
@@ -45,6 +48,7 @@ export interface WindowsEventLogSink {
     entryType: 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit',
     message: string,
     data?: Record<string, string>,
+    userSid?: string,
   ): string;
 }
 
@@ -56,15 +60,16 @@ export class WindowsEventLogProjection {
     private readonly sink: WindowsEventLogSink,
     private readonly deviceId: string,
     private readonly auditPolicy?: WindowsAuditPolicy,
+    private readonly requesterSid?: () => string | undefined,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.service.control-sent', (e) => this.onControlSent(e.payload)),
+      bus.subscribe('windows.system.time-changed', (e) => this.onSystemTimeChanged(e.payload)),
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.crashed', (e) => this.onServiceCrashed(e.payload)),
       bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
       bus.subscribe('windows.service.start-type-changed', (e) => this.onStartTypeChanged(e.payload)),
-      bus.subscribe('windows.service.recovery-critical', (e) => this.onRecoveryCritical(e.payload)),
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListener(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpAccepted(e.payload)),
       bus.subscribe('windows.firewall.drop', (e) => this.onFirewallDrop(e.payload)),
@@ -177,11 +182,25 @@ export class WindowsEventLogProjection {
     this.subscriptions.length = 0;
   }
 
+  private onSystemTimeChanged(p: WindowsSystemTimeChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System', 'Microsoft-Windows-Kernel-General', KERNEL_TIME_CHANGED, 'Information',
+      `The system time has changed to ${nanosecondStamp(p.newMs)} from ${nanosecondStamp(p.previousMs)}.\n\n`
+      + `Change Reason: An application or system component changed the time.\nProcess: '${p.processName}' (PID ${p.processId}).`,
+      {
+        NewTime: nanosecondStamp(p.newMs), OldTime: nanosecondStamp(p.previousMs),
+        Reason: 'An application or system component changed the time.', ProcessName: p.processName, ProcessID: String(p.processId),
+      },
+    );
+  }
+
   private onControlSent(p: WindowsServiceControlSentPayload): void {
     if (p.deviceId !== this.deviceId) return;
     this.sink.writeEventLog(
       'System', 'Service Control Manager', SCM_CONTROL_SENT, 'Information',
       `The ${p.displayName} service was successfully sent a ${p.control} control.`,
+      undefined, this.requesterSid?.(),
     );
   }
 
@@ -205,6 +224,7 @@ export class WindowsEventLogProjection {
       'System', 'Service Control Manager', SCM_START_TYPE_CHANGED, 'Information',
       `The start type of the ${p.displayName} service was changed from ${from} to ${to}.`,
       { param1: p.displayName, param2: from, param3: to },
+      this.requesterSid?.(),
     );
   }
 
@@ -213,9 +233,12 @@ export class WindowsEventLogProjection {
     this.sink.writeEventLog(
       'System',
       'Service Control Manager',
-      SCM_UNEXPECTED_TERMINATION,
+      p.recovery === undefined ? SCM_UNEXPECTED_TERMINATION : SCM_RECOVERY_ACTION,
       'Error',
-      `The ${p.displayName} service terminated unexpectedly. It has done this ${p.failureCount} time(s).`,
+      p.recovery === undefined
+        ? `The ${p.displayName} service terminated unexpectedly.  It has done this ${p.failureCount} time(s).`
+        : `The ${p.displayName} service terminated unexpectedly.  It has done this ${p.failureCount} time(s).  `
+          + `The following corrective action will be taken in ${p.recovery.delayMs} milliseconds: ${RECOVERY_ACTION_TEXT[p.recovery.action]}.`,
     );
   }
 
@@ -243,18 +266,7 @@ export class WindowsEventLogProjection {
         StartType: START_TYPE_WORDS[p.startType] ?? p.startType,
         AccountName: p.account,
       },
-    );
-  }
-
-  private onRecoveryCritical(p: WindowsServiceRecoveryCriticalPayload): void {
-    if (p.deviceId !== this.deviceId) return;
-    this.sink.writeEventLog(
-      'System',
-      'Service Control Manager',
-      SCM_RECOVERY_ACTION,
-      'Error',
-      `The ${p.displayName} service terminated unexpectedly. It has done this ${p.rank} time(s). ` +
-      `The configured corrective action is Reboot the Computer — suppressed by the simulator; the service remains stopped.`,
+      this.requesterSid?.(),
     );
   }
 }

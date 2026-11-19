@@ -29,7 +29,7 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { namedCredential } from './RemotingCmdlets';
 import { securePasswordOf } from './SecurePassword';
-import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
+import type { DirectoryAuditPort } from '@/network/devices/windows/DirectoryAuditPort';
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
 import { ACCOUNT_CONTROL_FLAGS, USER_FLAGS, USER_FLAG_PARAMETERS, USER_PROPERTIES, USER_PROPERTY_PARAMETERS, accountExpiresValue } from '@/network/devices/windows/server/ad/adUser';
@@ -46,23 +46,13 @@ function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   return ctx.providers.ad;
 }
 
-/** AD write cmdlets feed the same Security-log audit trail as local account management (WindowsSecurityAudit), so 4720/4738/4728/etc. are real for domain objects too, not just `net user`. */
-function auditSinkFor(ctx: CmdletContext): WindowsSecurityAudit | null {
-  const eventLog = ctx.providers.eventLog;
-  if (!eventLog) return null;
-  const sink: SecurityEventSink = {
-    writeEventLog: (logName, source, eventId, entryType, message, data) => {
-      eventLog.writeEntry(logName, source, eventId, entryType, message, data);
-      return '';
-    },
-  };
-  return new WindowsSecurityAudit(sink);
+function auditSinkFor(ctx: CmdletContext): DirectoryAuditPort | null {
+  return ctx.providers.directoryAudit ?? null;
 }
 
-/** The acting user for the audit trail: the `-Credential "user:pass"` principal when delegated, else Administrator. */
 function subjectUserOf(ctx: CmdletContext): string {
   const credential = namedCredential(ctx, 'credential');
-  if (!credential) return 'Administrator';
+  if (!credential) return ctx.providers.directoryAudit?.actor() ?? 'Administrator';
   const { username } = credential;
   return username.includes('\\') ? username.split('\\').pop()! : username;
 }
@@ -824,6 +814,7 @@ export class NewADGroupCmdlet implements ICmdlet {
       commonName: name, attributes: groupAttributesFrom(ctx), target: remoteTargetOf(ctx),
     });
     if (!res.ok) { ctx.emitError(`New-ADGroup : ${res.message}`); return null; }
+    if (category === 'Security') auditSinkFor(ctx)?.groupCreated(sam, scope === 'DomainLocal' ? 'Local' : scope, subjectUserOf(ctx));
     if (ctx.named['passthru'] !== true) return null;
     const g = ad.getGroup(sam);
     return g ? groupToPSObject(g) : null;
@@ -885,8 +876,12 @@ export class RemoveADGroupCmdlet implements ICmdlet {
     const ad = requireAd(ctx, 'Remove-ADGroup');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Remove-ADGroup : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const existing = ad.getGroup(identity);
     const res = ad.removeGroup(identity);
     if (!res.ok) { ctx.emitError(`Remove-ADGroup : ${res.message}`); return null; }
+    if (existing !== null && existing.category === 'Security') {
+      auditSinkFor(ctx)?.groupDeleted(existing.sam, existing.scope === 'DomainLocal' ? 'Local' : existing.scope, subjectUserOf(ctx));
+    }
     return null;
   }
 }

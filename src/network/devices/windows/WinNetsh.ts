@@ -29,6 +29,7 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { dhcpEnabledFor } from './WinAdapterFacts';
+import { handleWins, isWinsCommand } from './WinNetshWins';
 import { requireWindowsService } from './WinFeatureGate';
 import { IPAddress, MACAddress, SubnetMask, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
@@ -621,15 +622,18 @@ function handleNetshInterfaceIp(ctx: WinCommandContext, args: string[]): string 
   }
 
   if (sub === 'set') {
-    return handleInterfaceIpSet(ctx, args.slice(1).join(' '));
+    const rest = args.slice(1).join(' ');
+    return isWinsCommand(rest) ? handleWins(ctx, 'set', rest) : handleInterfaceIpSet(ctx, rest);
   }
 
   if (sub === 'add') {
-    return handleInterfaceIpAdd(ctx, args.slice(1).join(' '));
+    const rest = args.slice(1).join(' ');
+    return isWinsCommand(rest) ? handleWins(ctx, 'add', rest) : handleInterfaceIpAdd(ctx, rest);
   }
 
   if (sub === 'delete') {
-    return handleInterfaceIpDelete(ctx, args.slice(1).join(' '));
+    const rest = args.slice(1).join(' ');
+    return isWinsCommand(rest) ? handleWins(ctx, 'delete', rest) : handleInterfaceIpDelete(ctx, rest);
   }
 
   if (sub === 'reset') {
@@ -689,6 +693,10 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
 
   if (sub === 'dns' || sub === 'dnsservers') {
     return handleShowDns(ctx, ifFilter);
+  }
+
+  if (sub === 'wins' || sub === 'winsservers') {
+    return handleWins(ctx, 'show', args.join(' '));
   }
 
   if (sub === 'route') {

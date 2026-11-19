@@ -82,10 +82,9 @@ describe('the Event Log is one store behind two interfaces', () => {
     expect(await collector.executeCommand('grep "queue depth above threshold" /var/log/syslog')).toContain('WIN-LAB LabApp');
   }, 60_000);
 
-  it('an entry written by Write-EventLog (PowerShell) is read back by wevtutil (cmd)', async () => {
+  it('an entry written by eventcreate (PowerShell) is read back by wevtutil (cmd)', async () => {
     const { windows, shell } = await lab();
-    await run(shell, 'New-EventLog -LogName Application -Source LabTool');
-    await run(shell, 'Write-EventLog -LogName Application -Source LabTool -EventId 777 -EntryType Information -Message "nightly job done"');
+    await run(shell, 'eventcreate /l Application /so LabTool /id 777 /t INFORMATION /d "nightly job done"');
     expect(await windows.executeCommand('wevtutil qe Application /c:5 /rd:true /f:text')).toContain('nightly job done');
   }, 60_000);
 });

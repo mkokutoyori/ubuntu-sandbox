@@ -1,13 +1,9 @@
 /**
  * PSEventLogProvider — In-memory Windows Event Log simulation.
  *
- * Supports:
- *   - Get-EventLog -List / -LogName / -Newest / -EntryType / -Source
- *   - Write-EventLog (adds entries to the store)
- *   - Clear-EventLog (empties a log)
- *   - New-EventLog (registers a source)
- *   - Get-WinEvent -LogName / -MaxEvents / -ListLog
- *   - Limit-EventLog (silently accepted)
+ * Read by Get-WinEvent and wevtutil, written by eventcreate and the audit
+ * projections, cleared by wevtutil cl. The *-EventLog cmdlets of Windows
+ * PowerShell 5.1 do not exist in PowerShell 7.
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -28,6 +24,7 @@ export interface EventLogEntry {
   message: string;
   /** Structured EventData fields (TargetUserName, SubjectUserName, IpAddress, Status, …) as real Windows Security events carry — surfaced via Get-WinEvent's ToXml(). */
   data?: Record<string, string>;
+  userSid?: string;
 }
 
 export interface EventLogMetadata {
@@ -108,11 +105,10 @@ function entry(
 function buildSystemLog(next: () => number): EventLogEntry[] {
   return [
     entry(next, 'Information', 'Microsoft-Windows-Kernel-General', 12, 'The operating system started at system time 2024-01-15T08:00:00.', 7),
-    entry(next, 'Information', 'Microsoft-Windows-Kernel-Boot', 20, 'The last shutdown\'s success status was true.', 7),
+    entry(next, 'Information', 'Microsoft-Windows-Kernel-Boot', 20, 'The last shutdown\'s success status was true. The last boot\'s success status was true.', 7),
     entry(next, 'Information', 'Service Control Manager', 7036, 'The Windows Update service entered the running state.', 4),
     entry(next, 'Information', 'Service Control Manager', 7036, 'The DHCP Client service entered the running state.', 3),
-    entry(next, 'Information', 'Microsoft-Windows-Winlogon', 7001, 'User Logon Notification for Customer Experience Improvement Program.', 1),
-    entry(next, 'Information', 'Microsoft-Windows-Kernel-General', 1, 'The system uptime is 86400 seconds.', 0, 12),
+    entry(next, 'Information', 'Microsoft-Windows-Winlogon', 7001, 'User Logon Notification for Customer Experience Improvement Program', 1),
     entry(next, 'Information', 'EventLog', 6005, 'The Event log service was started.', 0, 2),
   ];
 }
@@ -241,22 +237,6 @@ export class PSEventLogProvider {
     });
   }
 
-  // ─── Get-EventLog ─────────────────────────────────────────────────
-
-  getEventLogList(): string {
-    const lines: string[] = [
-      '',
-      '  Max(K) Retain OverflowAction        Entries Log',
-      '  ------ ------ --------------        ------- ---',
-    ];
-    for (const [, meta] of this.logs) {
-      const entries = padToWidth(String(meta.entries.length), 7, 'right');
-      const maxK = padToWidth(String(meta.maxSizeKB), 7, 'right');
-      lines.push(`${maxK}      0 ${padToWidth(meta.overflow, 22)}${entries} ${meta.logName}`);
-    }
-    return lines.join('\n') + '\n';
-  }
-
   /**
    * Structured accessor used by the new ICmdlet path. Same filtering as
    * getEventLog() but returns the raw entries instead of a formatted string.
@@ -372,43 +352,6 @@ export class PSEventLogProvider {
     if (cfg.levelFilter !== undefined) meta.levelFilter = cfg.levelFilter === '0' ? undefined : cfg.levelFilter;
     if (cfg.keywordsFilter !== undefined) meta.keywordsFilter = cfg.keywordsFilter;
     return null;
-  }
-
-  getEventLog(logName: string, opts: { newest?: number; entryType?: string; source?: string }): string {
-    const key = logName.toLowerCase();
-    const meta = this.logs.get(key);
-    if (!meta) return `Get-EventLog : Cannot open log "${logName}". The log name "${logName}" does not exist on this computer.`;
-
-    let entries = [...meta.entries].reverse(); // newest first
-
-    if (opts.entryType) {
-      const et = opts.entryType.toLowerCase();
-      entries = entries.filter(e => e.entryType.toLowerCase() === et);
-    }
-    if (opts.source) {
-      const src = opts.source.toLowerCase();
-      entries = entries.filter(e => e.source.toLowerCase().includes(src));
-    }
-    if (opts.newest !== undefined) {
-      entries = entries.slice(0, opts.newest);
-    }
-
-    if (entries.length === 0) return '';
-
-    const lines: string[] = [
-      '',
-      '   Index Time          EntryType   Source                 InstanceID Message',
-      '   ----- ----          ---------   ------                 ---------- -------',
-    ];
-    for (const e of entries) {
-      const time = this.formatTime(e.timeGenerated);
-      const type = padToWidth(e.entryType.substring(0, 11), 11);
-      const source = padToWidth(e.source.substring(0, 22), 22);
-      const id = padToWidth(String(e.eventId), 10, 'right');
-      const msg = e.message.substring(0, 40) + (e.message.length > 40 ? '...' : '');
-      lines.push(`${padToWidth(String(e.index), 7, 'right')} ${time} ${type} ${source} ${id} ${msg}`);
-    }
-    return lines.join('\n') + '\n';
   }
 
   /**
@@ -548,7 +491,7 @@ export class PSEventLogProvider {
     }
   }
 
-  writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string, data?: Record<string, string>): string {
+  writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string, data?: Record<string, string>, userSid?: string): string {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
     const meta = this.logs.get(key)!;
@@ -567,8 +510,10 @@ export class PSEventLogProvider {
       category: '(0)',
       message,
       data,
+      ...(userSid === undefined ? {} : { userSid }),
     };
     meta.entries.push(entry);
+    this.announceSource(meta.logName, source);
     this.materialize();
     if (this.forwarder && key !== 'forwardedevents') this.forwarder(meta.logName, entry);
     if (this.bus && this.deviceId) {
@@ -646,6 +591,8 @@ export class PSEventLogProvider {
   }
 
   private clearedHook: ((logName: string, backupPath: string | null) => void) | null = null;
+  private sourceRegisteredHook: ((logName: string, source: string) => void) | null = null;
+  private readonly announcedSources = new Set<string>();
 
   /**
    * Le service EventLog consigne lui-même l'effacement d'un journal
@@ -655,6 +602,25 @@ export class PSEventLogProvider {
    */
   attachClearedHook(hook: (logName: string, backupPath: string | null) => void): void {
     this.clearedHook = hook;
+  }
+
+  attachSourceRegisteredHook(hook: (logName: string, source: string) => void): void {
+    this.sourceRegisteredHook = hook;
+  }
+
+  private announceSource(logName: string, source: string): void {
+    if (this.sourceRegisteredHook === null) return;
+    const key = `${logName}\\${source}`.toLowerCase();
+    if (this.announcedSources.has(key)) return;
+    this.announcedSources.add(key);
+    this.sourceRegisteredHook?.(logName, source);
+  }
+
+  announceExistingSources(): void {
+    for (const meta of this.logs.values()) {
+      for (const entry of meta.entries) this.announceSource(meta.logName, entry.source);
+      for (const source of meta.sources ?? []) this.announceSource(meta.logName, source);
+    }
   }
 
   clearEventLog(logName: string, backupPath: string | null = null): string {
@@ -682,6 +648,7 @@ export class PSEventLogProvider {
     }
     const meta = this.logs.get(key)!;
     if (!(meta.sources ?? []).some((known) => known.toLowerCase() === source.toLowerCase())) meta.sources = [...(meta.sources ?? []), source];
+    this.announceSource(meta.logName, source);
     return '';
   }
 

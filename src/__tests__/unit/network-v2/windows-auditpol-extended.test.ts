@@ -86,7 +86,7 @@ describe('auditpol — P10 options globales LSA', () => {
       expect(out).toMatch(/STOP: C0000244 \{Audit Failed\}/);
     });
 
-    it('un administrateur peut toujours remédier (Clear-EventLog) et débloque la session', async () => {
+    it('un administrateur peut toujours remédier (effacement du journal) et débloque la session', async () => {
       const pc = admin();
       await pc.executeCmdCommand('auditpol /set /option:CrashOnAuditFail /value:enable');
       pc.eventLog.limitEventLog('Security', { maximumSizeKB: 1, overflowAction: 'DoNotOverwrite' });

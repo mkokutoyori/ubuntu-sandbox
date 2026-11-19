@@ -35,17 +35,17 @@ async function execPS(pc: WindowsPC, line: string): Promise<string> {
 }
 
 describe('renderPSCellValue', () => {
-  it('formats Date in PowerShell short date + short time (en-US)', () => {
-    // 2026-05-15T11:10:12  →  "5/15/2026 11:10 AM"
+  it('formats Date as the en-US general date, seconds included, and drops them for FileSystem rows', () => {
     const d = new Date(2026, 4, 15, 11, 10, 12);
-    expect(renderPSCellValue(d)).toBe('5/15/2026 11:10 AM');
+    expect(renderPSCellValue(d)).toBe('5/15/2026 11:10:12 AM');
+    expect(renderPSCellValue(d, true)).toBe('5/15/2026 11:10 AM');
   });
 
   it('uses 12-hour clock with AM/PM markers', () => {
-    expect(renderPSCellValue(new Date(2026, 0, 1, 0, 5))).toBe('1/1/2026 12:05 AM');
-    expect(renderPSCellValue(new Date(2026, 0, 1, 12, 0))).toBe('1/1/2026 12:00 PM');
-    expect(renderPSCellValue(new Date(2026, 0, 1, 13, 7))).toBe('1/1/2026 1:07 PM');
-    expect(renderPSCellValue(new Date(2026, 0, 1, 23, 59))).toBe('1/1/2026 11:59 PM');
+    expect(renderPSCellValue(new Date(2026, 0, 1, 0, 5))).toBe('1/1/2026 12:05:00 AM');
+    expect(renderPSCellValue(new Date(2026, 0, 1, 12, 0))).toBe('1/1/2026 12:00:00 PM');
+    expect(renderPSCellValue(new Date(2026, 0, 1, 13, 7))).toBe('1/1/2026 1:07:00 PM');
+    expect(renderPSCellValue(new Date(2026, 0, 1, 23, 59))).toBe('1/1/2026 11:59:00 PM');
   });
 
   it('renders null/undefined as empty, booleans as True/False', () => {
@@ -102,7 +102,7 @@ describe('formatTable — Length column on DirectoryEntry rows', () => {
     ];
     const table = formatTable(rows, 'LastWriteTime, Name');
     // The date string ends right before the gap to Name
-    expect(table).toMatch(/5\/15\/2026 11:10 AM a/);
+    expect(table).toMatch(/5\/15\/2026 11:10:00 AM a/);
   });
 });
 
@@ -112,7 +112,7 @@ describe('formatList — Date rendering', () => {
       { Name: 'nums.txt', LastWriteTime: new Date(2026, 4, 15, 14, 7), Length: 9 },
     ];
     const out = formatList(rows, '');
-    expect(out).toContain('LastWriteTime : 5/15/2026 2:07 PM');
+    expect(out).toContain('LastWriteTime : 5/15/2026 2:07:00 PM');
     expect(out).not.toContain('GMT');
   });
 });

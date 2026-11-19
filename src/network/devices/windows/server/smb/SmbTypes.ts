@@ -47,7 +47,7 @@ export interface SmbSessionView {
 // ── Wire PDUs (client → server) ─────────────────────────────────────────────
 
 export interface SmbNegotiateRequest { op: 'negotiate' }
-export interface SmbSessionSetupRequest { op: 'session_setup'; username: string; password: string }
+export interface SmbSessionSetupRequest { op: 'session_setup'; username: string; password: string; workstation?: string }
 export interface SmbTreeConnectRequest { op: 'tree_connect'; share: string }
 export interface SmbTreeDisconnectRequest { op: 'tree_disconnect'; treeId: number }
 export interface SmbReadRequest { op: 'read'; treeId: number; path: string }

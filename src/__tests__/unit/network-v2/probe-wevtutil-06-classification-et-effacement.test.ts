@@ -149,14 +149,11 @@ describe('effacer un journal', () => {
     expect(xml).toContain('<BackupPath>C:\\Bak\\App.evtx</BackupPath>');
   });
 
-  it('Clear-EventLog et wevtutil cl écrivent la même trace (un seul chemin)', async () => {
-    const viaTool = new WindowsServer('DC01');
-    await wevtutil(viaTool, 'cl Application');
-    const viaCmdlet = new WindowsServer('DC02');
-    await run(powershell(viaCmdlet), 'Clear-EventLog -LogName Application');
-    const count = async (dc: WindowsServer): Promise<string> =>
-      field(await wevtutil(dc, 'gli System'), 'numberOfLogRecords');
-    expect(await count(viaCmdlet)).toBe(await count(viaTool));
+  it('Clear-EventLog is not a PowerShell 7 cmdlet, and wevtutil cl is the one path that clears', async () => {
+    const dc = new WindowsServer('DC01');
+    expect(await run(powershell(dc), 'Clear-EventLog -LogName Application')).toMatch(/not recognized/);
+    await wevtutil(dc, 'cl Application');
+    expect(await wevtutil(dc, 'qe System /q:"*[System[EventID=104]]" /c:1 /f:xml')).toContain('<Channel>Application</Channel>');
   });
 });
 

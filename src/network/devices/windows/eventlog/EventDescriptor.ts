@@ -68,15 +68,40 @@ const ACCOUNT_MANAGEMENT_EXTRA = new Map<number, string>([
   [4719, 'Audit Policy Change'],
   [4697, 'Security System Extension'],
   [4698, 'Other Object Access Events'],
+  [4699, 'Other Object Access Events'],
+  [4700, 'Other Object Access Events'],
+  [4701, 'Other Object Access Events'],
   [4670, 'Authorization Policy Change'],
   [4647, 'Logoff'],
   [4648, 'Logon'],
+  [4702, 'Other Object Access Events'],
 ]);
 
 const EVENTLOG_PROVIDER = 'microsoft-windows-eventlog';
 const AUDITING_PROVIDER = 'microsoft-windows-security-auditing';
+const TASK_SCHEDULER_PROVIDER = 'microsoft-windows-taskscheduler';
+const TASK_SCHEDULER_EVENTS: Record<number, { task: string; opcode?: { id: number; name: string }; version?: number }> = {
+  100: { task: 'Task Started', opcode: { id: 1, name: 'Start' } },
+  102: { task: 'Task completed', opcode: { id: 2, name: 'Stop' } },
+  106: { task: 'Task registered' },
+  107: { task: 'Task triggered on scheduler' },
+  108: { task: 'Task triggered on event' },
+  110: { task: 'Task triggered by user' },
+  111: { task: 'Task terminated', opcode: { id: 0, name: 'Termination' } },
+  129: { task: 'Created Task Process' },
+  140: { task: 'Task registration updated' },
+  141: { task: 'Task registration deleted' },
+  142: { task: 'Task disabled' },
+  200: { task: 'Action started', opcode: { id: 1, name: 'Start' }, version: 1 },
+  201: { task: 'Action completed', opcode: { id: 2, name: 'Stop' }, version: 2 },
+};
 const POWERSHELL_PROVIDER = 'powershellcore';
 const SCRIPT_BLOCK_EVENT = 4104;
+const PIPELINE_EXECUTION_DETAIL_EVENT = 4103;
+const SCRIPT_BLOCK_INVOCATION: Record<number, { taskId: number; taskName: string }> = {
+  4105: { taskId: 0x66, taskName: 'CommandStart' },
+  4106: { taskId: 0x67, taskName: 'CommandStop' },
+};
 
 const EVENT_VERSIONS: Record<number, number> = { 4616: 1, 4624: 2, 4625: 0, 4776: 0, 4634: 0, 4672: 0, 4688: 2, 4689: 0 };
 
@@ -119,6 +144,31 @@ export function describeEvent(event: EventClassified): EventDescriptor {
   } else if (!audit && !provider.startsWith('microsoft-windows-')) {
     keywords = '0x80000000000000';
     keywordNames = ['Classic'];
+  }
+
+  const scheduled = provider === TASK_SCHEDULER_PROVIDER ? TASK_SCHEDULER_EVENTS[event.eventId] : undefined;
+  if (scheduled !== undefined) {
+    return {
+      level: 4, levelName: 'Information', taskId: 0, taskName: scheduled.task,
+      opcode: scheduled.opcode?.id ?? 0, opcodeName: scheduled.opcode?.name ?? 'Info',
+      keywords: '0x8000000000000000', keywordNames: [], version: scheduled.version ?? 0, providerGuid: null,
+    };
+  }
+
+  const invocation = provider === POWERSHELL_PROVIDER ? SCRIPT_BLOCK_INVOCATION[event.eventId] : undefined;
+  if (invocation !== undefined) {
+    return {
+      level: 5, levelName: 'Verbose', taskId: invocation.taskId, taskName: invocation.taskName, opcode: 0xf, opcodeName: 'Create',
+      keywords: '0x1', keywordNames: ['Runspace'], version: 0, providerGuid: PROVIDER_GUIDS[provider],
+    };
+  }
+
+  if (provider === POWERSHELL_PROVIDER && event.eventId === PIPELINE_EXECUTION_DETAIL_EVENT) {
+    return {
+      level: 4, levelName: 'Information', taskId: 0x6a, taskName: 'Executing Pipeline', opcode: 0x14,
+      opcodeName: 'To be used when operation is just executing a method',
+      keywords: '0x0', keywordNames: [], version: 1, providerGuid: PROVIDER_GUIDS[provider],
+    };
   }
 
   if (provider === POWERSHELL_PROVIDER && event.eventId === SCRIPT_BLOCK_EVENT) {

@@ -44,8 +44,7 @@ describe('Get-WinEvent selectors', () => {
   });
 
   it('ProviderName keeps only that provider', async () => {
-    await machine.ps('New-EventLog -LogName Application -Source MonAppli');
-    await machine.ps('Write-EventLog -LogName Application -Source MonAppli -EventId 1001 -EntryType Warning -Message "sauvegarde incomplete"');
+    await machine.ps('eventcreate /l Application /so MonAppli /id 101 /t WARNING /d "sauvegarde incomplete"');
     const out = await machine.ps('Get-WinEvent -FilterHashtable @{LogName="Application"; ProviderName="MonAppli"} | ForEach-Object { $_.ProviderName }');
     expect(out.trim()).toBe('MonAppli');
   });
@@ -56,8 +55,7 @@ describe('Get-WinEvent selectors', () => {
   });
 
   it('Level keeps only the listed levels', async () => {
-    await machine.ps('New-EventLog -LogName Application -Source MonAppli');
-    await machine.ps('Write-EventLog -LogName Application -Source MonAppli -EventId 1001 -EntryType Warning -Message "sauvegarde incomplete"');
+    await machine.ps('eventcreate /l Application /so MonAppli /id 101 /t WARNING /d "sauvegarde incomplete"');
     const warnings = await machine.ps('Get-WinEvent -FilterHashtable @{LogName="Application"; Level=3} | ForEach-Object { $_.LevelDisplayName } | Select-Object -Unique');
     const information = await machine.ps('Get-WinEvent -FilterHashtable @{LogName="Application"; Level=4} | ForEach-Object { $_.LevelDisplayName } | Select-Object -Unique');
     expect(warnings.trim()).toBe('Warning');

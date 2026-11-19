@@ -90,7 +90,6 @@ function Invoke-DnsMonitorCycle {
     [int]$TtlSeuilBas = 30
   )
   $src = 'DnsMonitorScript'
-  New-EventLog -LogName Application -Source $src -ErrorAction SilentlyContinue
 
   $baseline = Get-Content $BaselinePath -Raw | ConvertFrom-Json
   $flaggedNoms = @()
@@ -128,10 +127,10 @@ function Invoke-DnsMonitorCycle {
       $nouveauFlagged += [PSCustomObject]@{ Nom = $nom; Ecart = $ecart }
       $cache = Get-DnsClientCache -Name $nom -ErrorAction SilentlyContinue
       $msg = "Nom=$nom Type=$ecart AttenduIP=$($attendues -join ',') LocalIP=$($local -join ',') ServeurIP=$($serveur -join ',')"
-      Write-EventLog -LogName Application -Source $src -EventId 3001 -EntryType Warning -Message $msg
+      eventcreate /l Application /so $src /id 1 /t WARNING /d $msg | Out-Null
       "$(Get-Date -Format o),$nom,$ecart,$($attendues -join '|'),$($local -join '|')" | Add-Content -Path $CsvPath
     } elseif ($flaggedNoms -contains $nom) {
-      Write-EventLog -LogName Application -Source $src -EventId 3002 -EntryType Information -Message "Nom=$nom retour a la normale"
+      eventcreate /l Application /so $src /id 2 /t INFORMATION /d "Nom=$nom retour a la normale" | Out-Null
     }
   }
 
@@ -192,7 +191,7 @@ describe('Scénario 7 — surveillance différentielle', () => {
 
     await runCycle(win);
 
-    const out = await ps('(Get-EventLog -LogName Application -Source DnsMonitorScript -ErrorAction SilentlyContinue | Measure-Object).Count');
+    const out = await ps('(Get-WinEvent -FilterHashtable @{LogName="Application";ProviderName="DnsMonitorScript"} -ErrorAction SilentlyContinue | Measure-Object).Count');
     expect(out.trim()).toBe('0');
   }, 30000);
 
@@ -205,7 +204,7 @@ describe('Scénario 7 — surveillance différentielle', () => {
 
     await runCycle(win);
 
-    const out = await ps("Get-EventLog -LogName Application -Source DnsMonitorScript | Where-Object { $_.EventID -eq 3001 } | Format-List Message");
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='DnsMonitorScript'} | Where-Object { $_.Id -eq 1 } | Format-List Message");
     expect(out).toContain('AdresseModifieeServeur');
     expect(out).toContain('6.6.6.6');
   }, 30000);
@@ -219,7 +218,7 @@ describe('Scénario 7 — surveillance différentielle', () => {
 
     await runCycle(win);
 
-    const out = await ps("Get-EventLog -LogName Application -Source DnsMonitorScript | Where-Object { $_.EventID -eq 3001 } | Format-List Message");
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='DnsMonitorScript'} | Where-Object { $_.Id -eq 1 } | Format-List Message");
     expect(out).toContain('CachePoisoningLocal');
     expect(out).toMatch(/LocalIP=6\.6\.6\.6/);
     expect(out).toMatch(/ServeurIP=192\.168\.20\.30/);
@@ -235,7 +234,7 @@ describe('Scénario 7 — surveillance différentielle', () => {
 
     await runCycle(win);
 
-    const out = await ps("Get-EventLog -LogName Application -Source DnsMonitorScript | Where-Object { $_.EventID -eq 3001 } | Format-List Message");
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='DnsMonitorScript'} | Where-Object { $_.Id -eq 1 } | Format-List Message");
     expect(out).toContain('NomIntrouvable');
   }, 30000);
 
@@ -248,13 +247,13 @@ describe('Scénario 7 — surveillance différentielle', () => {
 
     await runCycle(win);
 
-    const out = await ps("Get-EventLog -LogName Application -Source DnsMonitorScript | Where-Object { $_.EventID -eq 3001 } | Format-List Message");
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='DnsMonitorScript'} | Where-Object { $_.Id -eq 1 } | Format-List Message");
     expect(out).toContain('TTLAnormalementBas');
   }, 30000);
 });
 
 describe('Scénario 7 — journalisation différentielle sans bruit', () => {
-  it("un retour à la normale après une dérive émet un événement 3002 mais pas d'alerte parasite ensuite", async () => {
+  it("un retour à la normale après une dérive émet un événement 2 mais pas d'alerte parasite ensuite", async () => {
     const { win, dns } = await buildLab();
     const ps = psShell(win);
     await ps(`${BASELINE_SCRIPT}\nInvoke-DnsBaselineInit | Out-Null`);
@@ -266,13 +265,13 @@ describe('Scénario 7 — journalisation différentielle sans bruit', () => {
     await ps('Clear-DnsClientCache');
     await runCycle(win);
 
-    const retour = await ps("Get-EventLog -LogName Application -Source DnsMonitorScript | Where-Object { $_.EventID -eq 3002 } | Format-List Message");
+    const retour = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='DnsMonitorScript'} | Where-Object { $_.Id -eq 2 } | Format-List Message");
     expect(retour).toContain('retour a la normale');
 
     await runCycle(win);
     await runCycle(win);
 
-    const count3002 = await ps('(Get-EventLog -LogName Application -Source DnsMonitorScript | Where-Object { $_.EventID -eq 3002 } | Measure-Object).Count');
+    const count3002 = await ps('(Get-WinEvent -FilterHashtable @{LogName="Application";ProviderName="DnsMonitorScript"} | Where-Object { $_.Id -eq 2 } | Measure-Object).Count');
     expect(count3002.trim()).toBe('1');
   }, 40000);
 
@@ -285,7 +284,7 @@ describe('Scénario 7 — journalisation différentielle sans bruit', () => {
     await runCycle(win);
     await runCycle(win);
 
-    const out = await ps('(Get-EventLog -LogName Application -Source DnsMonitorScript -ErrorAction SilentlyContinue | Measure-Object).Count');
+    const out = await ps('(Get-WinEvent -FilterHashtable @{LogName="Application";ProviderName="DnsMonitorScript"} -ErrorAction SilentlyContinue | Measure-Object).Count');
     expect(out.trim()).toBe('0');
   }, 40000);
 
@@ -339,7 +338,7 @@ describe('Scénario 7 — intégration avec le Planificateur de tâches', () => 
     await win.executeCommand('echo 6.6.6.6 intranet >> C:\\Windows\\System32\\drivers\\etc\\hosts');
     win.advanceTime(5 * 60 * 1000 + 1000);
 
-    const out = await ps("Get-EventLog -LogName Application -Source DnsMonitorScript -ErrorAction SilentlyContinue | Where-Object { $_.EventID -eq 3001 } | Format-List Message");
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='DnsMonitorScript'} -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 1 } | Format-List Message");
     expect(out).toContain('CachePoisoningLocal');
     expect(out).toContain('intranet');
   }, 30000);
@@ -365,7 +364,7 @@ describe('Scénario 7 — intégration avec le Planificateur de tâches', () => 
     dns.dnsService.updateRecord({ name: 'intranet', type: 'A', value: '6.6.6.6', ttl: 3600 });
     win.advanceTime(5 * 60 * 1000 + 1000);
 
-    const out = await ps("(Get-EventLog -LogName Application -Source DnsMonitorScript -ErrorAction SilentlyContinue | Where-Object { $_.EventID -eq 3001 } | Measure-Object).Count");
+    const out = await ps("(Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='DnsMonitorScript'} -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 1 } | Measure-Object).Count");
     expect(Number(out.trim())).toBeGreaterThan(0);
   }, 30000);
 });

@@ -516,7 +516,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     it('345. Windows Event Log Forwarding (Syslog) : Alerte de connexion réussie (Event ID 4624) reçue par le SIEM Linux', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
       await taper(linuxSrv as unknown as Cli, ['systemctl start rsyslog']);
-      await pwsh(winDc)('Write-EventLog -LogName Security -Source Microsoft-Windows-Security-Auditing -EventId 4624 -EntryType SuccessAudit -Message "Logon Success: CORP\\Administrator"');
+      await pwsh(winDc)('eventcreate /l Application /so LogonAudit /id 624 /t INFORMATION /d "Logon Success: CORP\\Administrator"');
       const syslog = await linuxSrv.executeCommand('tail -n 2 /var/log/syslog');
       expect(refuse(syslog)).toBe(false);
     });

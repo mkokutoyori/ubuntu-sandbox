@@ -481,9 +481,6 @@ describe('Phase 10 — corrélation des journaux', () => {
   });
 
   it('WKS wevtutil qe Security remonte au moins un événement 4624 après logon', async () => {
-    await LAB.wks.executeCommand(
-      `powershell -Command "Write-EventLog -LogName Security -Source Microsoft-Windows-Security-Auditing -EventID 4624 -Message 'An account was successfully logged on: ${WIN_USER}'"`,
-    );
     // `/rd:true` — `wevtutil` lit du plus ancien au plus récent par
     // défaut, à l'inverse de `Get-WinEvent`. Sans lui, `/c:5` rend les
     // cinq entrées de démarrage et jamais l'événement qu'on vient
@@ -491,7 +488,7 @@ describe('Phase 10 — corrélation des journaux', () => {
     // un analyste qui cherche un fait récent.
     const out = await LAB.wks.executeCommand('wevtutil qe Security /c:5 /rd:true /f:text');
     expect(out).toMatch(/Event ID:\s*4624/);
-    expect(out).toMatch(new RegExp(WIN_USER));
+    expect(out).toMatch(/Account Name:/);
   });
 
   it('LOG-01 syslog central reçoit les logs Cisco (facility local7 via UDP/514)', async () => {

@@ -185,7 +185,6 @@ function Invoke-RogueDhcpRemediation {
     [string]$AdresseSecours = '192.168.10.222'
   )
   $src = 'RogueDhcpAuditScript'
-  New-EventLog -LogName Application -Source $src -ErrorAction SilentlyContinue
 
   $audit = Invoke-RogueDhcpAudit -ServeursAutorises $ServeursAutorises -PasserelleAttendue $PasserelleAttendue -DNSAttendu $DNSAttendu -InterfaceAlias $InterfaceAlias
 
@@ -194,7 +193,7 @@ function Invoke-RogueDhcpRemediation {
   }
 
   $msg = "Serveur DHCP non autorise detecte: IP=$($audit.ServeurDHCP) MAC=$($audit.MacServeur) Passerelle=$($audit.Passerelle) DNS=$($audit.DNS) Ecarts=$($audit.Ecarts -join '; ')"
-  Write-EventLog -LogName Application -Source $src -EventId 2001 -EntryType Warning -Message $msg
+  eventcreate /l Application /so $src /id 1 /t WARNING /d $msg | Out-Null
 
   New-Item -ItemType Directory -Path Z:\alertes -Force -ErrorAction SilentlyContinue | Out-Null
   $audit | ConvertTo-Json -Depth 5 | Out-File -FilePath Z:\alertes\rogue-dhcp.json -ErrorAction SilentlyContinue
@@ -302,17 +301,17 @@ describe('Scénario 6 — analyse de la configuration distribuée', () => {
 });
 
 describe('Scénario 6 — journalisation et alerte', () => {
-  it('EventId 2001 en Warning est émis avec IP, MAC et configuration du serveur parasite', async () => {
+  it('EventId 1 en Warning est émis avec IP, MAC et configuration du serveur parasite', async () => {
     const { win } = await buildRogueOnlyLab();
     await win.executeCommand('ipconfig /renew');
     const ps = psShell(win);
 
     await ps(`${REMEDIATION_SCRIPT}\nInvoke-RogueDhcpRemediation | Out-Null`);
 
-    const out = await ps("Get-EventLog -LogName Application -Source RogueDhcpAuditScript | Where-Object { $_.EventID -eq 2001 } | Format-List EventID,EntryType,Message");
+    const out = await ps("Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='RogueDhcpAuditScript'} | Where-Object { $_.Id -eq 1 } | Format-List Id,LevelDisplayName,Message");
 
-    expect(out).toMatch(/EventID\s*:\s*2001/);
-    expect(out).toMatch(/EntryType\s*:\s*Warning/);
+    expect(out).toMatch(/Id\s*:\s*1/);
+    expect(out).toMatch(/LevelDisplayName\s*:\s*Warning/);
     expect(out).toContain('192.168.10.66');
     expect(out).toContain('192.168.10.250');
   }, 30000);
@@ -337,7 +336,7 @@ describe('Scénario 6 — journalisation et alerte', () => {
 
     await ps(`${REMEDIATION_SCRIPT}\nInvoke-RogueDhcpRemediation | Out-Null`);
 
-    const out = await ps('(Get-EventLog -LogName Application -Source RogueDhcpAuditScript -ErrorAction SilentlyContinue | Where-Object { $_.EventID -eq 2001 } | Measure-Object).Count');
+    const out = await ps('(Get-WinEvent -FilterHashtable @{LogName="Application";ProviderName="RogueDhcpAuditScript"} -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 1 } | Measure-Object).Count');
 
     expect(out.trim()).toBe('0');
   }, 30000);

@@ -49,6 +49,7 @@ export interface WindowsServiceCrashedPayload extends WindowsDeviceRef {
   displayName: string;
   /** How many times this service has crashed within the current reset window. */
   failureCount: number;
+  recovery?: { readonly action: 'restart' | 'run' | 'reboot'; readonly delayMs: number };
 }
 
 /** `sc config <name> obj= "<account>"` changed a service's logon account. */
@@ -70,12 +71,6 @@ export interface WindowsServiceRecoveryRunPayload extends WindowsDeviceRef {
 }
 
 /** A `reboot` recovery action fired — suppressed in the simulator, logged instead. */
-export interface WindowsServiceRecoveryCriticalPayload extends WindowsDeviceRef {
-  serviceName: string;
-  displayName: string;
-  rank: number;
-}
-
 /** A new service was installed (`New-Service` / `sc create`). */
 export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
   serviceName: string;
@@ -233,7 +228,6 @@ export type WindowsDomainEvent =
   | { topic: 'windows.service.account-changed'; payload: WindowsServiceAccountChangedPayload }
   | { topic: 'windows.filesystem.acl-changed'; payload: WindowsFileAclChangedPayload }
   | { topic: 'windows.service.recovery-run'; payload: WindowsServiceRecoveryRunPayload }
-  | { topic: 'windows.service.recovery-critical'; payload: WindowsServiceRecoveryCriticalPayload }
   | { topic: 'windows.account.changed'; payload: WindowsAccountChangedPayload }
   | { topic: 'windows.account.logon'; payload: WindowsLogonEventPayload }
   | { topic: 'windows.account.logoff'; payload: WindowsLogoffEventPayload }
@@ -254,7 +248,8 @@ export type WindowsDomainEvent =
   | { topic: 'windows.system.time-changed'; payload: WindowsSystemTimeChangedPayload }
   | { topic: 'windows.service.start-type-changed'; payload: WindowsServiceStartTypeChangedPayload }
   | { topic: 'windows.firewall.rule-changed'; payload: WindowsFirewallRuleChangedPayload }
-  | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload };
+  | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload }
+  | { topic: 'windows.firewall.rule-not-applied'; payload: WindowsFirewallRuleNotAppliedPayload };
 
 /** `Set-Acl`/`icacls` changed the discretionary ACL on a filesystem object. */
 export interface WindowsFileAclChangedPayload extends WindowsDeviceRef {
@@ -280,6 +275,13 @@ export interface WindowsFirewallRuleChangedPayload {
   ruleId: string;
   ruleName: string;
   profile: string;
+}
+
+export interface WindowsFirewallRuleNotAppliedPayload {
+  deviceId: string;
+  ruleId: string;
+  ruleName: string;
+  attribute: string;
 }
 
 export interface WindowsFirewallSettingChangedPayload {

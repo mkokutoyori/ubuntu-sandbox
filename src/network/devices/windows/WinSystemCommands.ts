@@ -15,7 +15,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { Port } from '../../hardware/Port';
 import { TimeZone } from '../../core/time/TimeZone';
-import { partsAt } from '../../core/time/TimeZoneRegistry';
+import { partsAt, utcMsForLocal } from '../../core/time/TimeZoneRegistry';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
 import { adapterDisplayName, type WindowsAdapterIdentity } from './netAdapter';
@@ -57,6 +57,7 @@ export interface WinScheduledTask {
   startDate?: Date;
   days?: string;
   months?: string;
+  instance?: { readonly id: string; readonly pid: number };
 }
 
 export interface WinSystemContext {
@@ -123,6 +124,8 @@ export interface WinSystemContext {
   onTaskRegistered?(task: WinScheduledTask): void;
   onTaskDeleted?(task: WinScheduledTask): void;
   onTaskStateChanged?(task: WinScheduledTask, enabled: boolean): void;
+  onTaskUpdated?(task: WinScheduledTask): void;
+  endTask?(task: WinScheduledTask): boolean;
   /** Démarrage manuel — le même que celui de `Start-ScheduledTask`. */
   runTaskNow?(task: WinScheduledTask): void;
   now(): Date;
@@ -238,8 +241,54 @@ export function cmdChcp(args: string[]): string {
 }
 
 /** date /t — print today's date in MM/DD/YYYY (en-US), in the machine's zone. */
-export function cmdDate(_args: string[], timezone: string, nowMs: number): string {
+export interface SystemClockControl {
+  readonly isAdmin: boolean;
+  set(epochMs: number): void;
+}
+
+const PRIVILEGE_NOT_HELD = 'A required privilege is not held by the client.';
+const DATE_REFUSED = 'The system cannot accept the date entered.';
+const TIME_REFUSED = 'The system cannot accept the time entered.';
+
+function parseNewDate(text: string): { year: number; month: number; day: number } | null {
+  const match = /^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2}|\d{4})$/.exec(text.trim());
+  if (match === null) return null;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const raw = Number(match[3]);
+  const year = match[3].length === 4 ? raw : raw >= 80 ? 1900 + raw : 2000 + raw;
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1980 || year > 2099) return null;
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return probe.getUTCMonth() === month - 1 ? { year, month, day } : null;
+}
+
+function parseNewTime(text: string): { hour: number; minute: number; second: number; millisecond: number } | null {
+  const match = /^(\d{1,2})(?::(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,2}))?)?)?\s*(am|pm)?$/i.exec(text.trim());
+  if (match === null) return null;
+  let hour = Number(match[1]);
+  const minute = match[2] === undefined ? 0 : Number(match[2]);
+  const second = match[3] === undefined ? 0 : Number(match[3]);
+  const millisecond = match[4] === undefined ? 0 : Number(match[4].padEnd(2, '0')) * 10;
+  const meridiem = match[5]?.toLowerCase();
+  if (minute > 59 || second > 59) return null;
+  if (meridiem !== undefined) {
+    if (hour < 1 || hour > 12) return null;
+    hour = hour % 12 + (meridiem === 'pm' ? 12 : 0);
+  } else if (hour > 24) return null;
+  return { hour: hour === 24 ? 0 : hour, minute, second, millisecond };
+}
+
+export function cmdDate(args: string[], timezone: string, nowMs: number, clock?: SystemClockControl): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
+  const requested = args.find((arg) => arg.toLowerCase() !== '/t');
+  if (requested !== undefined && clock !== undefined) {
+    if (!clock.isAdmin) return PRIVILEGE_NOT_HELD;
+    const date = parseNewDate(requested);
+    if (date === null) return DATE_REFUSED;
+    const current = partsAt(zone, nowMs);
+    clock.set(utcMsForLocal(zone, Date.UTC(date.year, date.month - 1, date.day, current.hour, current.minute, current.second, ((nowMs % 1000) + 1000) % 1000)));
+    return '';
+  }
   const local = partsAt(zone, nowMs);
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const dow = days[local.weekday];
@@ -249,8 +298,17 @@ export function cmdDate(_args: string[], timezone: string, nowMs: number): strin
 }
 
 /** time /t — print current time in h:mm AM/PM (en-US), in the machine's zone. */
-export function cmdTime(_args: string[], timezone: string, nowMs: number): string {
+export function cmdTime(args: string[], timezone: string, nowMs: number, clock?: SystemClockControl): string {
   const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
+  const requested = args.filter((arg) => arg.toLowerCase() !== '/t').join(' ');
+  if (requested !== '' && clock !== undefined) {
+    if (!clock.isAdmin) return PRIVILEGE_NOT_HELD;
+    const time = parseNewTime(requested);
+    if (time === null) return TIME_REFUSED;
+    const current = partsAt(zone, nowMs);
+    clock.set(utcMsForLocal(zone, Date.UTC(current.year, current.month - 1, current.day, time.hour, time.minute, time.second, time.millisecond)));
+    return '';
+  }
   const local = partsAt(zone, nowMs);
   const min = String(local.minute).padStart(2, '0');
   const tt = local.hour >= 12 ? 'PM' : 'AM';
@@ -454,12 +512,14 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     if (tr !== undefined) task.command = tr;
     const st = flagVal('/st');
     if (st !== undefined) task.runAt = parseSchtasksTime(st, ctx.now());
+    if (tr !== undefined || st !== undefined) ctx.onTaskUpdated?.(task);
     return `SUCCESS: The parameters of scheduled task "${tn}" have been changed.`;
   }
   if (action === '/end') {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
     const task = ctx.scheduledTasks.get(tn.toLowerCase());
     if (!task) return 'ERROR: The system cannot find the file specified.';
+    if (ctx.endTask?.(task) !== true) return 'ERROR: There is no running instance of the task.';
     return `SUCCESS: The scheduled task "${tn}" has been terminated.`;
   }
   return 'SCHTASKS /parameter [arguments]\n\nDescription:\n    Enables an administrator to create, delete, query, change, run, and\n    end scheduled tasks on a local or remote computer.';
@@ -469,20 +529,22 @@ export function runScheduledProgram(
   task: WinScheduledTask,
   pm: WinSystemProcessManager,
   now: Date,
-): void {
+): number | null {
   task.lastRunTime = now;
   task.lastResult = '0x0';
   // Une exécution ne réveille pas une tâche désactivée : désactiver coupe
   // les déclencheurs, et un `/run` manuel ne rend pas la tâche active.
   if (task.state !== 'Disabled') task.state = 'Ready';
-  if (!task.command) return;
+  if (!task.command) return null;
   const target = task.command.replace(/^["']|["']$/g, '');
   const leaf = target.split(/[\\/]/).pop() ?? target;
   const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
   const parent = pm.getAllProcesses().find(p => p.name.toLowerCase() === 'svchost.exe');
+  const before = new Set(pm.getAllProcesses().map(p => p.pid));
   pm.spawnProcess(imageName, parent?.pid ?? 1, 'NT AUTHORITY\\SYSTEM', {
     session: 'Services', sessionId: 0,
   });
+  return pm.getAllProcesses().find(p => !before.has(p.pid) && p.name.toLowerCase() === imageName.toLowerCase())?.pid ?? null;
 }
 
 /**

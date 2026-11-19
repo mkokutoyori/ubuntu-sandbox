@@ -10,12 +10,13 @@
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import type { WindowsSecurityAudit } from './WindowsSecurityAudit';
+import type { WindowsSecurityAudit, FirewallStartProfile } from './WindowsSecurityAudit';
 import { nextLogonId } from './WindowsSecurityAudit';
 import { BOOT_PRIVILEGE_LIST } from './PSEventLogProvider';
 import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
   WindowsAccountChangedPayload,
+  WindowsServiceEventPayload,
   WindowsLogonEventPayload,
   WindowsLogoffEventPayload,
   WindowsGroupEventPayload,
@@ -30,8 +31,15 @@ import type {
   WindowsFirewallRuleChangedPayload,
   WindowsSystemTimeChangedPayload,
   WindowsFirewallSettingChangedPayload,
+  WindowsFirewallRuleNotAppliedPayload,
   WindowsGroupEnumeratedPayload,
 } from './events';
+
+export interface FirewallStartState {
+  profiles: ReadonlyArray<FirewallStartProfile>;
+  rules: ReadonlyArray<{ ruleId: string; ruleName: string }>;
+  unappliedRules: ReadonlyArray<{ ruleId: string; ruleName: string; attribute: string }>;
+}
 
 export class WindowsSecurityAuditProjection {
   private readonly subscriptions: Unsubscribe[] = [];
@@ -45,6 +53,7 @@ export class WindowsSecurityAuditProjection {
     private readonly commandLineAudited?: () => boolean,
     /** Les comptes dont le jeton reçoit des privilèges (membres d'Administrators). */
     private readonly isAdministrator?: (account: string) => boolean,
+    private readonly firewallStartState?: () => FirewallStartState,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.account.changed', (e) => this.onAccountChanged(e.payload)),
@@ -65,8 +74,10 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.filesystem.acl-changed', (e) => this.onAclChanged(e.payload)),
       bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
       bus.subscribe('windows.system.time-changed', (e) => this.onSystemTimeChanged(e.payload)),
+      bus.subscribe('windows.service.started', (e) => this.onServiceStarted(e.payload)),
       bus.subscribe('windows.firewall.rule-changed', (e) => this.onFirewallRuleChanged(e.payload)),
       bus.subscribe('windows.firewall.setting-changed', (e) => this.onFirewallSettingChanged(e.payload)),
+      bus.subscribe('windows.firewall.rule-not-applied', (e) => this.onFirewallRuleNotApplied(e.payload)),
     );
   }
 
@@ -79,10 +90,25 @@ export class WindowsSecurityAuditProjection {
     this.audit.systemTimeChanged(p.actor, p.previousMs, p.newMs, p.processId, p.processName);
   }
 
+  private onServiceStarted(p: WindowsServiceEventPayload): void {
+    if (p.deviceId !== this.deviceId || p.serviceName.toLowerCase() !== 'mpssvc' || !this.firewallStartState) return;
+    const succeeded = this.gated('MPSSVC Rule-Level Policy Change', 'success');
+    const failed = this.gated('MPSSVC Rule-Level Policy Change', 'failure');
+    if (!succeeded && !failed) return;
+    const state = this.firewallStartState();
+    this.audit.firewallStarted(succeeded ? state.profiles : [], succeeded ? state.rules : [], failed ? state.unappliedRules : []);
+  }
+
   private onFirewallRuleChanged(p: WindowsFirewallRuleChangedPayload): void {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('MPSSVC Rule-Level Policy Change', 'success')) return;
     this.audit.firewallRuleChanged(p.change, p.ruleId, p.ruleName, p.profile);
+  }
+
+  private onFirewallRuleNotApplied(p: WindowsFirewallRuleNotAppliedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('MPSSVC Rule-Level Policy Change', 'failure')) return;
+    this.audit.firewallRuleNotApplied(p.ruleId, p.ruleName, p.attribute);
   }
 
   private onFirewallSettingChanged(p: WindowsFirewallSettingChangedPayload): void {

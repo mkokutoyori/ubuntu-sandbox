@@ -268,9 +268,8 @@ export class StopScheduledTaskCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    // Arrêter une tâche qui ne tourne pas n'est pas une erreur pour le
-    // vrai non plus : l'instance visée n'existe simplement pas.
-    oneTask(ctx, 'Stop-ScheduledTask');
+    const task = oneTask(ctx, 'Stop-ScheduledTask');
+    if (task) ctx.providers.scheduledTasks?.stopTask?.(task.taskName);
     return null;
   }
 }

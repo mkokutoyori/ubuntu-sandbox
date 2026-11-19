@@ -204,7 +204,7 @@ describe('Scénario 5 — les déclencheurs disent ce qu\'on leur a demandé', (
     expect(out).toMatch(/Daily *: True/);
     expect(out).toMatch(/Once *: False/);
     // `3am` était lu par `new Date()`, qui rendait une date de 2001.
-    expect(out).toContain('3:00 AM');
+    expect(out).toContain('3:00:00 AM');
   });
 
   it('`-Weekly` et `-AtStartup` aussi', async () => {

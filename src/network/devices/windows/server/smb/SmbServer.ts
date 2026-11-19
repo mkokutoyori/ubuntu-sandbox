@@ -31,7 +31,7 @@ export interface SmbServerContext {
    * shortcut — so a bad password or an unreachable DC fails exactly like
    * local auth would.
    */
-  domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[] } | null;
+  domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[]; authoritative?: boolean; cause?: 'unknown-user' | 'bad-password' | 'disabled' } | null;
   /** DFS Namespaces role, when this server hosts one — answers `dfs_referral`. Absent on a server that hosts no namespace, which then refuses the referral. */
   dfsNamespaces?: () => import('../dfs/DfsNamespace').DfsNamespaceRegistry | null;
 }
@@ -87,7 +87,7 @@ function stripLocalQualifier(raw: string, hostname: string): string {
 export class SmbServerHandler {
   constructor(private readonly ctx: SmbServerContext) {}
 
-  register(conn: TcpConnection, clientIp: string, clientComputerName: string): void {
+  register(conn: TcpConnection, clientIp: string, clientComputerName: string, clientPort?: number): void {
     let user: string | null = null;
     /** Set only when `user` authenticated as a domain account — its domain groups, since they aren't in the local SAM (PRD §5 P6). */
     let domainGroups: string[] | null = null;
@@ -175,19 +175,21 @@ export class SmbServerHandler {
           const account = this.ctx.userMgr.getUser(username);
           let authedUser: string | null = null;
           let authedGroups: string[] | null = null;
+          let domain: ReturnType<NonNullable<SmbServerContext['domainAuth']>> | undefined;
           const details = {
-            workstation: clientComputerName, ipAddress: clientIp, processId: '0x0', processName: '-',
+            workstation: String(parsed.workstation ?? clientComputerName), ipAddress: clientIp,
+            ...(clientPort === undefined ? {} : { ipPort: String(clientPort) }), processId: '0x0', processName: '-',
             logonProcess: 'NtLmSsp', authenticationPackage: 'NTLM', lmPackage: 'NTLM V2', keyLength: 128,
           };
           if (account && account.enabled && this.ctx.userMgr.checkPassword(username, password, 3, false, false)) {
             authedUser = username;
           } else {
-            const domain = this.ctx.domainAuth?.(rawUsername, password);
+            domain = this.ctx.domainAuth?.(rawUsername, password) ?? null;
             if (domain?.ok) { authedUser = domain.sam; authedGroups = domain.groups; }
           }
-          if (authedUser) this.ctx.userMgr.recordNetworkLogon(authedUser, true, { ...details, validatedElsewhere: authedGroups !== null });
+          if (authedUser) this.ctx.userMgr.recordNetworkLogon(authedUser, true, { ...details, validatedElsewhere: authedGroups !== null && domain?.authoritative !== true });
           else {
-            const cause = account === undefined ? 'unknown-user' : !account.enabled ? 'disabled' : 'bad-password';
+            const cause = account === undefined ? (domain?.cause ?? 'unknown-user') : !account.enabled ? 'disabled' : 'bad-password';
             this.ctx.userMgr.recordNetworkLogon(username, false, details, cause);
           }
           if (!authedUser) {

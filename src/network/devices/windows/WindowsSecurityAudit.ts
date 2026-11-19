@@ -12,6 +12,7 @@
  * callers say *what happened* (`accountCreated`), not *which Event ID*.
  */
 
+import { nanosecondStamp } from './eventlog/NanosecondStamp';
 import type { WindowsLogonDetails, WindowsLogonFailureCause } from './events';
 import { START_TYPE_CODES, type ServiceStartType } from './WindowsServiceManager';
 import { createAuditIdentity, nextLogonId, type AuditIdentity } from './eventlog/AuditIdentity';
@@ -30,6 +31,14 @@ export interface SecurityEventSink {
 }
 
 /** Well-known Windows Security-log Event IDs (see Microsoft documentation). */
+export interface FirewallStartProfile {
+  profile: string;
+  operationMode: 'On' | 'Off';
+  multicastFlows: 'Enabled' | 'Disabled';
+  logDropped: 'Enabled' | 'Disabled';
+  logSuccessful: 'Enabled' | 'Disabled';
+}
+
 export const SECURITY_EVENT = {
   LOGON_SUCCESS: 4624,
   LOGON_FAILURE: 4625,
@@ -51,12 +60,17 @@ export const SECURITY_EVENT = {
   GROUP_MEMBER_ADDED_UNIVERSAL: 4756,
   GROUP_MEMBER_REMOVED_UNIVERSAL: 4757,
   GROUP_CREATED: 4731,
+  GROUP_CREATED_GLOBAL: 4727,
+  GROUP_CREATED_UNIVERSAL: 4754,
+  GROUP_DELETED_GLOBAL: 4730,
+  GROUP_DELETED_UNIVERSAL: 4758,
   GROUP_DELETED: 4734,
   PROCESS_CREATED: 4688,
   PROCESS_TERMINATED: 4689,
   PRIVILEGED_SERVICE_CALLED: 4673,
   SCHEDULED_TASK_CREATED: 4698,
   SCHEDULED_TASK_DELETED: 4699,
+  SCHEDULED_TASK_UPDATED: 4702,
   SCHEDULED_TASK_ENABLED: 4700,
   SCHEDULED_TASK_DISABLED: 4701,
   OBJECT_ACCESSED: 4663,
@@ -68,6 +82,9 @@ export const SECURITY_EVENT = {
   USER_GROUPS_ENUMERATED: 4798,
   GROUP_MEMBERS_ENUMERATED: 4799,
   AUDIT_POLICY_CHANGED: 4719,
+  FIREWALL_POLICY_ACTIVE: 4944,
+  FIREWALL_RULE_LISTED: 4945,
+  FIREWALL_RULE_NOT_APPLIED: 4957,
   FIREWALL_RULE_ADDED: 4946,
   FIREWALL_RULE_MODIFIED: 4947,
   FIREWALL_RULE_DELETED: 4948,
@@ -185,8 +202,7 @@ export class WindowsSecurityAudit {
 
   private targetFields(account: string): Record<string, string> {
     const leaf = account.slice(account.indexOf('\\') + 1);
-    const domain = account.includes('\\') ? account.slice(0, account.indexOf('\\')) : this.identity.machine;
-    return { TargetUserName: leaf, TargetDomainName: domain, TargetSid: this.identity.sidOf(account) };
+    return { TargetUserName: leaf, TargetDomainName: this.identity.domainOf(account), TargetSid: this.identity.sidOf(account) };
   }
 
   private accountEvent(eventId: number, name: string, actor: string, extra: Record<string, string> = {}): void {
@@ -239,15 +255,19 @@ export class WindowsSecurityAudit {
     return { TargetUserName: group, TargetDomainName: identity.domain, TargetSid: identity.sid };
   }
 
-  groupCreated(group: string, subjectUserName = 'Administrator'): void {
-    this.record(SECURITY_EVENT.GROUP_CREATED, 'SuccessAudit', {
+  groupCreated(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_CREATED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_CREATED_UNIVERSAL : SECURITY_EVENT.GROUP_CREATED;
+    this.record(eventId, 'SuccessAudit', {
       ...this.groupFields(group), ...this.subjectFields(subjectUserName),
       PrivilegeList: '-', SamAccountName: group, SidHistory: '-',
     });
   }
 
-  groupDeleted(group: string, subjectUserName = 'Administrator'): void {
-    this.record(SECURITY_EVENT.GROUP_DELETED, 'SuccessAudit', {
+  groupDeleted(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_DELETED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_DELETED_UNIVERSAL : SECURITY_EVENT.GROUP_DELETED;
+    this.record(eventId, 'SuccessAudit', {
       ...this.groupFields(group), ...this.subjectFields(subjectUserName), PrivilegeList: '-',
     });
   }
@@ -532,6 +552,10 @@ export class WindowsSecurityAudit {
     this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_DELETED, 'A scheduled task was deleted.', taskName, command, deletedBy);
   }
 
+  scheduledTaskUpdated(taskName: string, command: string, changedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_UPDATED, 'A scheduled task was updated.', taskName, command, changedBy);
+  }
+
   scheduledTaskEnabled(taskName: string, command: string, changedBy: string): void {
     this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_ENABLED, 'A scheduled task was enabled.', taskName, command, changedBy);
   }
@@ -647,7 +671,7 @@ export class WindowsSecurityAudit {
   }
 
   systemTimeChanged(actor: string, previousMs: number, newMs: number, processId: number, processName: string): void {
-    const stamp = (ms: number): string => `${new Date(ms).toISOString().slice(0, 19)}.${String(ms % 1000).padStart(3, '0')}000000Z`;
+    const stamp = nanosecondStamp;
     this.record(SECURITY_EVENT.SYSTEM_TIME_CHANGED, 'SuccessAudit', {
       ...this.subjectFields(actor),
       PreviousTime: stamp(previousMs), NewTime: stamp(newMs),
@@ -659,6 +683,28 @@ export class WindowsSecurityAudit {
     const eventId = change === 'added' ? SECURITY_EVENT.FIREWALL_RULE_ADDED
       : change === 'modified' ? SECURITY_EVENT.FIREWALL_RULE_MODIFIED : SECURITY_EVENT.FIREWALL_RULE_DELETED;
     this.record(eventId, 'SuccessAudit', { ProfileChanged: profile, RuleId: ruleId, RuleName: ruleName });
+  }
+
+  firewallStarted(
+    profiles: ReadonlyArray<FirewallStartProfile>,
+    rules: ReadonlyArray<{ ruleId: string; ruleName: string }>,
+    unapplied: ReadonlyArray<{ ruleId: string; ruleName: string; attribute: string }>,
+  ): void {
+    for (const p of profiles) {
+      this.record(SECURITY_EVENT.FIREWALL_POLICY_ACTIVE, 'SuccessAudit', {
+        GroupPolicyApplied: 'No', Profile: p.profile, OperationMode: p.operationMode,
+        RemoteAdminEnabled: 'Disabled', MulticastFlowsEnabled: p.multicastFlows,
+        LogDroppedPacketsEnabled: p.logDropped, LogSuccessfulConnectionsEnabled: p.logSuccessful,
+      });
+    }
+    for (const r of rules) {
+      this.record(SECURITY_EVENT.FIREWALL_RULE_LISTED, 'SuccessAudit', { ProfileUsed: 'Public', RuleId: r.ruleId, RuleName: r.ruleName });
+    }
+    for (const r of unapplied) this.firewallRuleNotApplied(r.ruleId, r.ruleName, r.attribute);
+  }
+
+  firewallRuleNotApplied(ruleId: string, ruleName: string, attribute: string): void {
+    this.record(SECURITY_EVENT.FIREWALL_RULE_NOT_APPLIED, 'FailureAudit', { RuleId: ruleId, RuleName: ruleName, RuleAttr: attribute });
   }
 
   firewallSettingChanged(profile: string, setting: string, value: string): void {

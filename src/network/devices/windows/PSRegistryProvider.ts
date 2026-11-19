@@ -36,6 +36,21 @@ function seedValue(key: RegistryKey, name: string, value: string | number, type:
   key.values.set(name.toLowerCase(), { name, value, type });
 }
 
+interface ClassicRegistration { readonly log: string; readonly source: string; readonly file: string }
+
+const CLASSIC_REGISTRATIONS: Readonly<Record<string, ClassicRegistration>> = {
+  'msiinstaller': { log: 'Application', source: 'MsiInstaller', file: '%SystemRoot%\\system32\\msimsg.dll' },
+  'service control manager': { log: 'System', source: 'Service Control Manager', file: '%SystemRoot%\\system32\\services.exe' },
+  'securitycenter': { log: 'Application', source: 'SecurityCenter', file: '%SystemRoot%\\System32\\wscsvc.dll' },
+  'microsoft-windows-kernel-general': { log: 'System', source: 'Microsoft-Windows-Kernel-General', file: '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll' },
+  'microsoft-windows-kernel-boot': { log: 'System', source: 'Microsoft-Windows-Kernel-Boot', file: '%SystemRoot%\\system32\\Microsoft-Windows-System-Events.dll' },
+  'microsoft-windows-security-auditing': { log: 'Security', source: 'Microsoft-Windows-Security-Auditing', file: '%SystemRoot%\\system32\\adtschema.dll' },
+  'microsoft-windows-time-service': { log: 'System', source: 'Microsoft-Windows-Time-Service', file: '%SystemRoot%\\system32\\w32time.dll' },
+  'microsoft-windows-winlogon': { log: 'Application', source: 'Winlogon', file: '%SystemRoot%\\System32\\winlogon.exe' },
+  'tcpip': { log: 'System', source: 'Tcpip', file: '%SystemRoot%\\System32\\netevent.dll' },
+  'eventlog': { log: 'System', source: 'EventLog', file: '%SystemRoot%\\System32\\netevent.dll' },
+};
+
 // ─── Seed data ───────────────────────────────────────────────────────────────
 
 /** The subset of registry values that differ between a Windows client and a Windows Server install. */
@@ -723,6 +738,28 @@ export class PSRegistryProvider {
     seedValue(key, 'ObjectName', fields.objectName);
     seedValue(key, 'Start', fields.startCode, 'DWord');
     seedValue(key, 'ImagePath', fields.imagePath, 'ExpandString');
+  }
+
+  upsertEventSourceKey(logName: string, source: string): void {
+    const registration = CLASSIC_REGISTRATIONS[source.toLowerCase()];
+    const target = registration ?? { log: logName, source, file: '' };
+    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', target.log, target.source] });
+    if (target.file !== '' && !key.values.has('eventmessagefile')) seedValue(key, 'EventMessageFile', target.file, 'ExpandString');
+  }
+
+  private eventSourceKey(logName: string, source: string): RegistryKey | null {
+    return this.navigateTo({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
+  }
+
+  isInstalledEventSource(logName: string, source: string): boolean {
+    const key = this.eventSourceKey(logName, source);
+    return key !== null && !key.values.has('customsource');
+  }
+
+  markCustomEventSource(logName: string, source: string, messageFile: string): void {
+    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', 'EventLog', logName, source] });
+    if (!key.values.has('customsource')) seedValue(key, 'CustomSource', 1, 'DWord');
+    if (!key.values.has('eventmessagefile')) seedValue(key, 'EventMessageFile', messageFile, 'ExpandString');
   }
 
   /**

@@ -28,9 +28,9 @@ async function run(sh: PowerShellSubShell, line: string): Promise<string> {
 }
 
 describe('EventLog -List structured output', () => {
-  it('Get-EventLog -List enumerates known logs', async () => {
+  it('Get-WinEvent -ListLog enumerates known logs', async () => {
     const sh = createShell();
-    const out = await run(sh, 'Get-EventLog -List');
+    const out = await run(sh, 'Get-WinEvent -ListLog *');
     expect(out.toLowerCase()).toContain('system');
   });
 });

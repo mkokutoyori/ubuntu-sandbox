@@ -75,6 +75,37 @@ export function portSpecMatches(spec: string, port: number): boolean {
   });
 }
 
+export interface FirewallAddressSets {
+  dns(): readonly string[];
+  dhcp(): readonly string[];
+  wins(): readonly string[];
+  defaultGateway(): readonly string[];
+  localSubnets(): readonly string[];
+  intranet(): readonly string[];
+}
+
+const ADDRESS_KEYWORDS: Readonly<Record<string, keyof FirewallAddressSets>> = {
+  localsubnet: 'localSubnets', dns: 'dns', dhcp: 'dhcp', wins: 'wins', defaultgateway: 'defaultGateway', intranet: 'intranet',
+};
+
+const KEYWORD_NAMES: Readonly<Record<string, string>> = {
+  localsubnet: 'LocalSubnet', dns: 'DNS', dhcp: 'DHCP', wins: 'WINS', defaultgateway: 'DefaultGateway',
+  internet: 'Internet', intranet: 'Intranet', intranetremoteaccess: 'IntranetRemoteAccess',
+  playtodevice: 'PlayToDevice', captiveportal: 'CaptivePortal',
+};
+
+const ALWAYS_EMPTY_KEYWORDS = new Set(['intranetremoteaccess', 'playtodevice', 'captiveportal']);
+const PREDICATE_KEYWORDS = new Set(['internet']);
+
+function keywordOf(part: string): { name: string; family: string } | null {
+  const match = /^([A-Za-z]+?)([46])?$/.exec(part);
+  if (match === null) return null;
+  const name = match[1].toLowerCase();
+  return ADDRESS_KEYWORDS[name] !== undefined || ALWAYS_EMPTY_KEYWORDS.has(name) || PREDICATE_KEYWORDS.has(name)
+    ? { name, family: match[2] ?? '' }
+    : null;
+}
+
 export function parseAddressSpec(raw: string | readonly string[]): string | null {
   const tokens = (Array.isArray(raw) ? raw : [String(raw)])
     .flatMap(part => String(part).split(','))
@@ -84,6 +115,27 @@ export function parseAddressSpec(raw: string | readonly string[]): string | null
   if (tokens.length === 1 && tokens[0].toLowerCase() === ANY.toLowerCase()) return ANY;
   const kept: string[] = [];
   for (const token of tokens) {
+    const keywordMatch = /^([A-Za-z]+?)([46])?$/.exec(token);
+    const keyword = keywordMatch === null ? undefined : KEYWORD_NAMES[keywordMatch[1].toLowerCase()];
+    if (keyword !== undefined) { kept.push(`${keyword}${keywordMatch?.[2] ?? ''}`); continue; }
+    const range = /^([^-]+)-([^-]+)$/.exec(token);
+    if (range !== null) {
+      const low = IPAddress.tryParse(range[1]);
+      const high = IPAddress.tryParse(range[2]);
+      if (low === null || high === null || (low.toUint32() >>> 0) > (high.toUint32() >>> 0)) return null;
+      kept.push(`${low.toString()}-${high.toString()}`);
+      continue;
+    }
+    const maskedSubnet = /^([^/]+)\/(\d+\.\d+\.\d+\.\d+)$/.exec(token);
+    if (maskedSubnet !== null) {
+      const base = IPAddress.tryParse(maskedSubnet[1]);
+      const mask = IPAddress.tryParse(maskedSubnet[2]);
+      if (base === null || mask === null) return null;
+      const bits = (mask.toUint32() >>> 0).toString(2).padStart(32, '0');
+      if (!/^1*0*$/.test(bits)) return null;
+      kept.push(`${base.toString()}/${bits.indexOf('0') === -1 ? 32 : bits.indexOf('0')}`);
+      continue;
+    }
     const slash = token.indexOf('/');
     const network = slash === -1 ? token : token.slice(0, slash);
     const value = IPAddress.tryParse(network);
@@ -98,10 +150,37 @@ export function parseAddressSpec(raw: string | readonly string[]): string | null
   return kept.join(',');
 }
 
-export function addressSpecMatches(spec: string, address: IPAddress): boolean {
+function expandAddressSpec(spec: string, sets: FirewallAddressSets | undefined): string[] {
+  return spec.split(',').flatMap((part) => {
+    const keyword = keywordOf(part);
+    if (keyword === null) return [part];
+    if (PREDICATE_KEYWORDS.has(keyword.name)) return keyword.family === '6' ? [] : [part];
+    const set = ADDRESS_KEYWORDS[keyword.name];
+    if (set === undefined || keyword.family === '6' || sets === undefined) return [];
+    return [...sets[set]()];
+  });
+}
+
+export function addressSetIsEmpty(spec: string, sets: FirewallAddressSets): boolean {
+  if (spec === '' || spec === ANY) return false;
+  const parts = spec.split(',');
+  return parts.some((part) => keywordOf(part) !== null) && expandAddressSpec(spec, sets).length === 0;
+}
+
+export function addressSpecMatches(spec: string, address: IPAddress, sets?: FirewallAddressSets): boolean {
   if (spec === '' || spec === ANY) return true;
   const target = address.toUint32() >>> 0;
-  return spec.split(',').some(part => {
+  return expandAddressSpec(spec, sets).some(part => {
+    const predicate = keywordOf(part);
+    if (predicate !== null) {
+      if (predicate.name === 'internet') return predicate.family !== '6' && sets !== undefined && !addressSpecMatches('Intranet', address, sets);
+    }
+    const range = /^([^-]+)-([^-]+)$/.exec(part);
+    if (range !== null) {
+      const low = IPAddress.tryParse(range[1]);
+      const high = IPAddress.tryParse(range[2]);
+      return low !== null && high !== null && target >= (low.toUint32() >>> 0) && target <= (high.toUint32() >>> 0);
+    }
     const slash = part.indexOf('/');
     if (slash === -1) return part === address.toString();
     const network = IPAddress.tryParse(part.slice(0, slash));
@@ -264,14 +343,14 @@ export interface FirewallPacketFacts {
   profile: NetFirewallProfile;
 }
 
-export function firewallRuleMatches(rule: NetFirewallRuleEntry, packet: FirewallPacketFacts): boolean {
+export function firewallRuleMatches(rule: NetFirewallRuleEntry, packet: FirewallPacketFacts, sets?: FirewallAddressSets): boolean {
   if (!rule.enabled) return false;
   if (rule.direction !== packet.direction) return false;
   const wanted = protocolNumberOf(rule.protocol);
   if (wanted !== null && wanted !== packet.protocolNumber) return false;
   if (rule.profile !== ANY && rule.profile !== packet.profile) return false;
-  if (!addressSpecMatches(rule.localAddress, packet.localAddress)) return false;
-  if (!addressSpecMatches(rule.remoteAddress, packet.remoteAddress)) return false;
+  if (!addressSpecMatches(rule.localAddress, packet.localAddress, sets)) return false;
+  if (!addressSpecMatches(rule.remoteAddress, packet.remoteAddress, sets)) return false;
   if (!portSpecMatches(rule.localPort, packet.localPort)) return false;
   if (!portSpecMatches(rule.remotePort, packet.remotePort)) return false;
   return true;

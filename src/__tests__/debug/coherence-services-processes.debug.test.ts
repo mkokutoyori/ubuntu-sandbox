@@ -152,9 +152,9 @@ describe('debug — cmd ↔ PowerShell services & processes coherence', () => {
       // ── 14. event logs cross-shell ───────────────────────────────
       { section: 'event logs',
         shell: 'cmd', cmd: 'wevtutil el' },
-      { shell: 'ps',  cmd: 'Get-EventLog -List -ErrorAction SilentlyContinue' },
+      { shell: 'ps',  cmd: 'Get-WinEvent -ListLog * -ErrorAction SilentlyContinue' },
       { shell: 'cmd', cmd: 'wevtutil qe System /c:3 /f:text' },
-      { shell: 'ps',  cmd: 'Get-EventLog -LogName System -Newest 3 -ErrorAction SilentlyContinue' },
+      { shell: 'ps',  cmd: 'Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyContinue' },
       { shell: 'ps',  cmd: 'Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyContinue' },
 
       // ── 15. service display name / description ──────────────────

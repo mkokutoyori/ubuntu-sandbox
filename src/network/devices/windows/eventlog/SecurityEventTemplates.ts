@@ -204,6 +204,32 @@ function firewallRule(title: string, heading: string): (d: EventFields) => strin
   ].join('\n\n');
 }
 
+function firewallPolicyActive(d: EventFields): string {
+  return [
+    'The following policy was active when the Windows Firewall started.',
+    `Group Policy Applied:\t${field(d, 'GroupPolicyApplied')}\nProfile Used:\t${field(d, 'Profile')}`,
+    `Operational mode:\t${field(d, 'OperationMode')}\nAllow Remote Administration:\t${field(d, 'RemoteAdminEnabled')}`
+      + `\nAllow Unicast Responses to Multicast/Broadcast Traffic:\t${field(d, 'MulticastFlowsEnabled')}`,
+    `Security Logging:\n\tLog Dropped Packets:\t${field(d, 'LogDroppedPacketsEnabled')}\n\tLog Successful Connections:\t${field(d, 'LogSuccessfulConnectionsEnabled')}`,
+  ].join('\n\n');
+}
+
+function firewallRuleListed(d: EventFields): string {
+  return [
+    'A rule was listed when the Windows Firewall started.',
+    `Profile used:\t${field(d, 'ProfileUsed')}`,
+    `Rule:\n\tRule ID:\t${field(d, 'RuleId')}\n\tRule Name:\t${field(d, 'RuleName')}`,
+  ].join('\n\n');
+}
+
+function firewallRuleNotApplied(d: EventFields): string {
+  return [
+    'Windows Firewall did not apply the following rule:',
+    `Rule Information:\n\tID:\t${field(d, 'RuleId')}\n\tName:\t${field(d, 'RuleName')}`,
+    `Error Information:\n\tReason:\t${field(d, 'RuleAttr')} resolved to an empty set.`,
+  ].join('\n\n');
+}
+
 function firewallSettingChanged(d: EventFields): string {
   return [
     'A Windows Firewall setting has changed.',
@@ -266,13 +292,20 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4724: accountChange('An attempt was made to reset an account\'s password.'),
   4725: accountChange('A user account was disabled.'),
   4726: accountChange('A user account was deleted.', (d) => [additionalPrivileges(d)]),
+  4727: groupLifecycle('A security-enabled global group was created.', 'New Group:'),
+  4730: groupLifecycle('A security-enabled global group was deleted.', 'Deleted Group:'),
   4731: groupLifecycle('A security-enabled local group was created.', 'New Group:'),
   4732: membership('A member was added to a security-enabled local group.'),
   4733: membership('A member was removed from a security-enabled local group.'),
   4734: groupLifecycle('A security-enabled local group was deleted.', 'Deleted Group:'),
+  4754: groupLifecycle('A security-enabled universal group was created.', 'New Group:'),
+  4758: groupLifecycle('A security-enabled universal group was deleted.', 'Deleted Group:'),
   4738: accountChanged,
   4740: accountLockedOut,
   4767: accountChange('A user account was unlocked.'),
+  4944: firewallPolicyActive,
+  4945: firewallRuleListed,
+  4957: firewallRuleNotApplied,
   4946: firewallRule('A change has been made to Windows Firewall exception list. A rule was added.', 'Added Rule:'),
   4947: firewallRule('A change has been made to Windows Firewall exception list. A rule was modified.', 'Modified Rule:'),
   4948: firewallRule('A change has been made to Windows Firewall exception list. A rule was deleted.', 'Deleted Rule:'),

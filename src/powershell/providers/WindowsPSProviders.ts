@@ -1793,16 +1793,9 @@ class WindowsEventLogAdapter implements IEventLogProvider {
       category: e.category,
       message: e.message,
       data: e.data,
+      ...(e.userSid === undefined ? {} : { userSid: e.userSid }),
     }));
   }
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string {
-    return this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
-  }
-  clearLog(logName: string): string {
-    return this.log.clearEventLog(logName);
-  }
-  newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }
-  limitLog(logName: string): void { this.log.limitEventLog(logName); }
 }
 
 // ── Network adapter ────────────────────────────────────────────────────────
@@ -2872,14 +2865,14 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     task.author ??= `${this.pc.getHostname()}\\${this.pc.getCurrentUser()}`;
     task.runAsUser ??= this.pc.getCurrentUser();
     this.store().set(task.taskName.toLowerCase(), task);
-    this.pc.announceTaskRegistered(task.taskName, task.command ?? '');
+    this.pc.announceTaskRegistered(task);
     return `\\${task.taskName}`;
   }
   unregisterTask(name: string): string {
     const task = this.store().get(name.toLowerCase());
     if (!task) return `Cannot find scheduled task '${name}'.`;
     this.store().delete(name.toLowerCase());
-    this.pc.announceTaskDeleted(task.taskName, task.command ?? '');
+    this.pc.announceTaskDeleted(task);
     return '';
   }
   updateTask(name: string, patch: Partial<ScheduledTaskInfo>): string {
@@ -2888,7 +2881,8 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     const wasDisabled = task.state === 'Disabled';
     Object.assign(task, patch);
     const isDisabled = task.state === 'Disabled';
-    if (wasDisabled !== isDisabled) this.pc.announceTaskStateChange(task.taskName, task.command ?? '', !isDisabled);
+    if (wasDisabled !== isDisabled) this.pc.announceTaskStateChange(task, !isDisabled);
+    if (Object.keys(patch).some((key) => key !== 'state')) this.pc.announceTaskUpdated(task);
     return '';
   }
   runTask(name: string): string {
@@ -2898,6 +2892,10 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     // même pour une tâche désactivée.
     (this.pc as unknown as { runScheduledTaskNow(t: ScheduledTaskInfo): void }).runScheduledTaskNow(task);
     return '';
+  }
+  stopTask(name: string): boolean {
+    const task = this.store().get(name.toLowerCase());
+    return task !== undefined && this.pc.endScheduledTask(task as unknown as Parameters<WindowsPC['endScheduledTask']>[0]);
   }
   now(): Date {
     return this.pc.simulatedDate();
@@ -3851,6 +3849,7 @@ interface RemotableDevice {
   getHostname(): string;
   getPowerShellInterpreter(): { invokeRemote(block: PSScriptBlock, positionalArgs: PSValue[]): PSValue };
   winrm: { enabled: boolean };
+  eventLog?: PSEventLogProvider;
 }
 
 class WindowsCapabilityAdapter implements ICapabilityProvider {
@@ -3944,6 +3943,7 @@ class WindowsRemotingAdapter implements IRemotingProvider {
     const winrm = device.winrm;
     return {
       hostname,
+      eventLog: device.eventLog === undefined ? undefined : new WindowsEventLogAdapter(device.eventLog),
       invoke: (block, positionalArgs) => interp.invokeRemote(block, positionalArgs),
       isRemotingEnabled: () => winrm.enabled,
     };
@@ -4004,6 +4004,9 @@ export function createWindowsPSProviders(
     users:          new WindowsUserAdapter(pc),
     registry:       new WindowsRegistryAdapter(reg, () => pc.getUserManager().isCurrentUserAdmin()),
     eventLog:       new WindowsEventLogAdapter(log),
+    directoryAudit: pc.directoryAudit(),
+    pipelineAudit:  pc.pipelineAudit(),
+    transcript:     pc.transcriptPort(),
     network:        new WindowsNetworkAdapter(pc, net),
     vpn:            new WindowsVpnAdapter(pc, vpn),
     // Le fuseau vit sur l'identite de la machine, la meme que

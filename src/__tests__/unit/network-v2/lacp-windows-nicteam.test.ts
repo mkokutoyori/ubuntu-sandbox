@@ -279,7 +279,7 @@ describe('l\'exploitation d\'un team', () => {
     const { pc, cables } = await labo();
     cables[0].disconnect();
     await vi.advanceTimersByTimeAsync(1_000);
-    const out = await pc.executeCommand('powershell Get-EventLog -LogName System');
+    const out = await pc.executeCommand('powershell Get-WinEvent -FilterHashtable @{LogName="System"}');
     expect(out).toContain('16949');
   }, 30_000);
 

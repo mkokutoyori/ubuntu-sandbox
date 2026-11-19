@@ -107,18 +107,18 @@ import {
 } from './DnsClientCmdlets';
 import { SendMailMessageCmdlet } from './MailMessageCmdlets';
 import { SendSyslogMessageCmdlet } from './SyslogCmdlets';
+import { StartTranscriptCmdlet, StopTranscriptCmdlet } from './TranscriptCmdlets';
 import {
   AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
   SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
   AddVpnConnectionRouteCmdlet, ConnectVpnConnectionCmdlet, DisconnectVpnConnectionCmdlet,
 } from './VpnCmdlets';
 import {
-  GetEventLogCmdlet, WriteEventLogCmdlet, ClearEventLogCmdlet,
-  NewEventLogCmdlet, LimitEventLogCmdlet, GetWinEventCmdlet,
+  GetWinEventCmdlet,
 } from './EventLogCmdlets';
 import {
   IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet, FindstrCmdlet,
-  GetmacCmdlet, SysteminfoCmdlet, TasklistCmdlet, TaskkillCmdlet, SchtasksCmdlet, VerCmdlet, NslookupCmdlet,
+  GetmacCmdlet, SysteminfoCmdlet, TasklistCmdlet, TaskkillCmdlet, SchtasksCmdlet, VerCmdlet, NslookupCmdlet, EventcreateCmdlet,
   NetCmdlet, VolCmdlet, ChcpCmdlet, ScCmdlet,
   SshKeygenCmdlet, SshAgentCmdlet, SshAddCmdlet, SshKeyscanCmdlet,
 } from './NativeShimCmdlets';
@@ -548,6 +548,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new TestNetConnectionCmdlet());
   registry.register(new SendMailMessageCmdlet());
   registry.register(new SendSyslogMessageCmdlet());
+  registry.register(new StartTranscriptCmdlet());
+  registry.register(new StopTranscriptCmdlet());
 
   // ── VPN (provider-backed) ─────────────────────────────────────────────────
   registry.register(new AddVpnConnectionCmdlet());
@@ -559,11 +561,6 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new DisconnectVpnConnectionCmdlet());
 
   // ── Event log (provider-backed) ───────────────────────────────────────────
-  registry.register(new GetEventLogCmdlet());
-  registry.register(new WriteEventLogCmdlet());
-  registry.register(new ClearEventLogCmdlet());
-  registry.register(new NewEventLogCmdlet());
-  registry.register(new LimitEventLogCmdlet());
   registry.register(new GetWinEventCmdlet());
 
   // ── Scheduled tasks / disks / CIM (provider-backed) ───────────────────────
@@ -651,6 +648,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(SchtasksCmdlet);
   registry.register(VerCmdlet);
   registry.register(NslookupCmdlet);
+  registry.register(EventcreateCmdlet);
   registry.register(NetCmdlet);
   registry.register(VolCmdlet);
   registry.register(ChcpCmdlet);

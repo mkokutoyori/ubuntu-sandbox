@@ -17,6 +17,8 @@
  * tapé. D'où l'intérêt de le lire dans une investigation.
  */
 
+import { psVersionTable } from '@/powershell/runtime/PSEnvironment';
+
 export const SCRIPT_BLOCK_LOGGING_KEY =
   'HKLM\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\ScriptBlockLogging';
 export const TRANSCRIPTION_KEY =
@@ -26,6 +28,9 @@ export const TRANSCRIPTION_KEY =
 export const POWERSHELL_OPERATIONAL_LOG = 'PowerShellCore/Operational';
 export const POWERSHELL_PROVIDER = 'PowerShellCore';
 export const SCRIPT_BLOCK_LOGGED = 4104;
+export const PIPELINE_EXECUTION_DETAIL = 4103;
+export const SCRIPT_BLOCK_INVOCATION_STARTED = 4105;
+export const SCRIPT_BLOCK_INVOCATION_COMPLETED = 4106;
 
 export interface RegistryValueReader {
   getItemPropertyValues(path: string): Record<string, unknown> | null | undefined;
@@ -56,21 +61,132 @@ function enabledWhenOne(raw: unknown): boolean {
   return text !== '' && text !== '0' && text !== '0x0' && text !== 'false';
 }
 
-export function isScriptBlockLoggingEnabled(registry: RegistryValueReader): boolean {
-  return enabledWhenOne(
-    readPolicyValue(registry, SCRIPT_BLOCK_LOGGING_KEY, 'EnableScriptBlockLogging'));
+export interface PowerShellPolicySource {
+  readonly registry: RegistryValueReader;
+  readFile(path: string): string | null;
+  readonly userConfigPath: string;
 }
 
-export function isTranscriptionEnabled(registry: RegistryValueReader): boolean {
-  return enabledWhenOne(readPolicyValue(registry, TRANSCRIPTION_KEY, 'EnableTranscripting'));
+export const SYSTEM_CONFIG_PATH = 'C:\\Program Files\\PowerShell\\7\\powershell.config.json';
+
+type PolicySection = 'ScriptBlockLogging' | 'Transcription' | 'ModuleLogging';
+
+const SECTION_SETTINGS: Record<PolicySection, readonly string[]> = {
+  ScriptBlockLogging: ['EnableScriptBlockLogging', 'EnableScriptBlockInvocationLogging'],
+  Transcription: ['EnableTranscripting', 'EnableInvocationHeader', 'OutputDirectory'],
+  ModuleLogging: ['EnableModuleLogging', 'ModuleNames'],
+};
+
+const CORE_POLICY_ROOT = 'SOFTWARE\\Policies\\Microsoft\\PowerShellCore';
+const WINDOWS_POWERSHELL_POLICY_ROOT = 'SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell';
+const FALLBACK_VALUE = 'UseWindowsPowerShellPolicySetting';
+
+function hasAnySetting(values: Record<string, unknown>, section: PolicySection): boolean {
+  const present = new Set(Object.keys(values).map((name) => name.toLowerCase()));
+  return SECTION_SETTINGS[section].some((name) => present.has(name.toLowerCase()));
 }
 
-export function transcriptDirectory(registry: RegistryValueReader): string {
-  const raw = readPolicyValue(registry, TRANSCRIPTION_KEY, 'OutputDirectory');
+interface RegistryPolicy {
+  readonly path: string;
+  readonly values: Record<string, unknown>;
+}
+
+function registryPolicyAt(source: PowerShellPolicySource, section: PolicySection): RegistryPolicy | null {
+  for (const hive of ['HKLM', 'HKCU']) {
+    const corePath = `${hive}\\${CORE_POLICY_ROOT}\\${section}`;
+    const core = source.registry.getItemPropertyValues(corePath);
+    if (core === null || core === undefined) continue;
+    const useWindowsPolicy = Number(readPolicyValue(source.registry, corePath, FALLBACK_VALUE)) === 1;
+    const path = useWindowsPolicy ? `${hive}\\${WINDOWS_POWERSHELL_POLICY_ROOT}\\${section}` : corePath;
+    const values = useWindowsPolicy ? source.registry.getItemPropertyValues(path) : core;
+    if (values !== null && values !== undefined && hasAnySetting(values, section)) return { path, values };
+  }
+  return null;
+}
+
+function registryPolicy(source: PowerShellPolicySource, section: PolicySection): Record<string, unknown> | null {
+  return registryPolicyAt(source, section)?.values ?? null;
+}
+
+function configFilePolicy(source: PowerShellPolicySource, section: PolicySection): Record<string, unknown> | null {
+  for (const path of [SYSTEM_CONFIG_PATH, source.userConfigPath]) {
+    const text = source.readFile(path);
+    if (text === null) continue;
+    try {
+      const policies = (JSON.parse(text) as { PowerShellPolicies?: Record<string, unknown> }).PowerShellPolicies;
+      const entry = policies === undefined ? undefined : Object.entries(policies).find(([name]) => name.toLowerCase() === section.toLowerCase())?.[1];
+      if (entry !== null && typeof entry === 'object' && hasAnySetting(entry as Record<string, unknown>, section)) return entry as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function policyValue(source: PowerShellPolicySource, section: PolicySection, name: string): unknown {
+  const policy = registryPolicy(source, section) ?? configFilePolicy(source, section);
+  if (policy === null) return undefined;
+  const wanted = name.toLowerCase();
+  for (const [key, value] of Object.entries(policy)) {
+    if (key.toLowerCase() === wanted) return value;
+  }
+  return undefined;
+}
+
+export function isScriptBlockLoggingEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'ScriptBlockLogging', 'EnableScriptBlockLogging'));
+}
+
+export function isScriptBlockInvocationLoggingEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'ScriptBlockLogging', 'EnableScriptBlockInvocationLogging'));
+}
+
+export function loggedModuleNames(source: PowerShellPolicySource): readonly string[] {
+  if (!enabledWhenOne(policyValue(source, 'ModuleLogging', 'EnableModuleLogging'))) return [];
+  const registry = registryPolicyAt(source, 'ModuleLogging');
+  if (registry !== null) return Object.keys(source.registry.getItemPropertyValues(`${registry.path}\\ModuleNames`) ?? {});
+  const listed = policyValue(source, 'ModuleLogging', 'ModuleNames');
+  return Array.isArray(listed) ? listed.map(String) : [];
+}
+
+export function moduleIsLogged(names: readonly string[], moduleName: string): boolean {
+  return names.some((name) => {
+    if (name.toLowerCase() === moduleName.toLowerCase()) return true;
+    if (!/[*?[]/.test(name)) return false;
+    const pattern = name.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+    return new RegExp(`^${pattern}$`, 'i').test(moduleName);
+  });
+}
+
+export function pipelineExecutionDetailMessage(details: readonly string[], context: readonly (readonly [string, string])[]): string {
+  const payload = details.map((line) => `${line}\n`).join('');
+  const contextInfo = context.map(([label, value]) => `${label} = ${value}\n`).join('');
+  return `${payload}\nContext:\n${contextInfo}User Data:\n`;
+}
+
+export function isInvocationHeaderEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'Transcription', 'EnableInvocationHeader'));
+}
+
+export function invocationHeader(at: Date): string {
+  return `**********************\nCommand start time: ${stampOf(at)}\n**********************\n`;
+}
+
+export function minimalTranscriptHeader(startedAt: Date): string {
+  return `**********************\nPowerShell transcript start\nStart time: ${stampOf(startedAt)}\n**********************\n`;
+}
+
+export function transcriptEpilogue(endedAt: Date): string {
+  return `**********************\nPowerShell transcript end\nEnd time: ${stampOf(endedAt)}\n**********************\n`;
+}
+
+export function isTranscriptionEnabled(source: PowerShellPolicySource): boolean {
+  return enabledWhenOne(policyValue(source, 'Transcription', 'EnableTranscripting'));
+}
+
+export function transcriptDirectory(source: PowerShellPolicySource): string {
+  const raw = policyValue(source, 'Transcription', 'OutputDirectory');
   const dir = raw === undefined || raw === null ? '' : String(raw).trim();
-  // Sans répertoire déclaré, Windows dépose la transcription dans les
-  // documents de l'utilisateur. Un chemin vide n'est pas une raison de
-  // ne rien écrire.
   return dir || 'C:\\Users\\User\\Documents';
 }
 
@@ -82,9 +198,7 @@ export function transcriptDirectory(registry: RegistryValueReader): string {
  * retrouve son fichier.
  */
 export function transcriptFileName(hostname: string, startedAt: Date): string {
-  const p = (n: number, w = 2): string => String(n).padStart(w, '0');
-  const stamp = `${startedAt.getFullYear()}${p(startedAt.getMonth() + 1)}${p(startedAt.getDate())}`
-    + `${p(startedAt.getHours())}${p(startedAt.getMinutes())}${p(startedAt.getSeconds())}`;
+  const stamp = stampOf(startedAt);
   const token = stamp.slice(-8);
   return `PowerShell_transcript.${hostname.toUpperCase()}.${token}.${stamp}.txt`;
 }
@@ -106,14 +220,44 @@ export function scriptBlockId(text: string): string {
   return `${a}-${b.slice(0, 4)}-${b.slice(4)}-${a.slice(0, 4)}-${a.slice(4)}${b}`;
 }
 
-/** L'en-tête que PowerShell écrit en tête de chaque transcription. */
-export function transcriptHeader(hostname: string, user: string, startedAt: Date): string {
+export interface TranscriptHeaderFields {
+  readonly startedAt: Date;
+  readonly username: string;
+  readonly runAsUser: string;
+  readonly configurationName: string;
+  readonly machine: string;
+  readonly osVersion: string;
+  readonly hostApplication: string;
+  readonly processId: number;
+}
+
+const VERSION_TABLE_ORDER = [
+  'PSVersion', 'PSEdition', 'GitCommitId', 'OS', 'Platform', 'PSCompatibleVersions',
+  'PSRemotingProtocolVersion', 'SerializationVersion', 'WSManStackVersion',
+] as const;
+
+function stampOf(date: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
+}
+
+export function transcriptHeader(fields: TranscriptHeaderFields): string {
+  const table = psVersionTable();
+  const versionLines = VERSION_TABLE_ORDER.map((key) => {
+    const value = table[key];
+    return `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`;
+  });
   return [
     '**********************',
     'PowerShell transcript start',
-    `Start time: ${startedAt.toISOString()}`,
-    `Username: ${user}`,
-    `Machine: ${hostname.toUpperCase()}`,
+    `Start time: ${stampOf(fields.startedAt)}`,
+    `Username: ${fields.username}`,
+    `RunAs User: ${fields.runAsUser}`,
+    `Configuration Name: ${fields.configurationName}`,
+    `Machine: ${fields.machine} (${fields.osVersion})`,
+    `Host Application: ${fields.hostApplication}`,
+    `Process ID: ${fields.processId}`,
+    ...versionLines,
     '**********************',
     '',
   ].join('\n');

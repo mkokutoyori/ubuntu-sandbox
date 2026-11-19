@@ -69,13 +69,14 @@ export function requestDfsReferral(opts: {
   targetIp: string;
   username: string;
   password: string;
+  workstation?: string;
   path: string;
 }): string[] {
   const socket = opts.tcpStack.connect(opts.targetIp, 445);
   if (!socket || socket.state !== 'established') return [];
   try {
     if (!roundTrip(socket, { op: 'negotiate' })?.ok) return [];
-    if (!roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password })?.ok) return [];
+    if (!roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password, workstation: opts.workstation })?.ok) return [];
     const referral = roundTrip(socket, { op: 'dfs_referral', path: opts.path });
     if (!referral?.ok) return [];
     const targets = referral.targets;
@@ -96,6 +97,7 @@ export function requestShareEnum(opts: {
   targetIp: string;
   username: string;
   password: string;
+  workstation?: string;
 }): { ok: boolean; shares?: SmbEnumeratedShare[]; error?: string; systemErrorCode?: number } {
   const socket = opts.tcpStack.connect(opts.targetIp, 445);
   if (!socket || socket.state !== 'established') {
@@ -107,7 +109,7 @@ export function requestShareEnum(opts: {
     if (!roundTrip(socket, { op: 'negotiate' })?.ok) {
       return { ok: false, error: ERR_NETWORK_PATH_NOT_FOUND.error, systemErrorCode: ERR_NETWORK_PATH_NOT_FOUND.code };
     }
-    if (!roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password })?.ok) {
+    if (!roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password, workstation: opts.workstation })?.ok) {
       return { ok: false, error: ERR_BAD_CREDENTIALS.error, systemErrorCode: ERR_BAD_CREDENTIALS.code };
     }
     const answer = roundTrip(socket, { op: 'share_enum' });
@@ -128,6 +130,7 @@ export function dialSmbShare(opts: {
   shareName: string;
   username: string;
   password: string;
+  workstation?: string;
 }): SmbDialResult {
   const socket = opts.tcpStack.connect(opts.targetIp, 445);
   if (!socket || socket.state !== 'established') {
@@ -142,7 +145,7 @@ export function dialSmbShare(opts: {
     return { ok: false, error: ERR_NETWORK_PATH_NOT_FOUND.error, systemErrorCode: ERR_NETWORK_PATH_NOT_FOUND.code };
   }
 
-  const setup = roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password });
+  const setup = roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password, workstation: opts.workstation });
   if (!setup?.ok) {
     socket.close();
     return { ok: false, error: ERR_BAD_CREDENTIALS.error, systemErrorCode: ERR_BAD_CREDENTIALS.code };

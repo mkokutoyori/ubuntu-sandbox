@@ -30,18 +30,18 @@ describe('§WEC — Get-EventLog / Get-WinEvent / wevtutil surface SSH audit eve
     return (r.output ?? []).join('\n');
   }
 
-  it('Get-EventLog Security -Newest 10 includes the SSH 4624', async () => {
-    const out = await ps('Get-EventLog Security -Newest 10');
+  it('Get-WinEvent -FilterHashtable @{LogName="Security"} -MaxEvents 10 includes the SSH 4624', async () => {
+    const out = await ps('Get-WinEvent -FilterHashtable @{LogName="Security"} -MaxEvents 10');
     expect(out).toContain('4624');
   });
 
-  it('Get-EventLog Security -Newest 10 includes the SSH 4625', async () => {
-    const out = await ps('Get-EventLog Security -Newest 10');
+  it('Get-WinEvent -FilterHashtable @{LogName="Security"} -MaxEvents 10 includes the SSH 4625', async () => {
+    const out = await ps('Get-WinEvent -FilterHashtable @{LogName="Security"} -MaxEvents 10');
     expect(out).toContain('4625');
   });
 
-  it('Get-EventLog Security -Newest 10 includes the SSH 4634', async () => {
-    const out = await ps('Get-EventLog Security -Newest 10');
+  it('Get-WinEvent -FilterHashtable @{LogName="Security"} -MaxEvents 10 includes the SSH 4634', async () => {
+    const out = await ps('Get-WinEvent -FilterHashtable @{LogName="Security"} -MaxEvents 10');
     expect(out).toContain('4634');
   });
 

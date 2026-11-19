@@ -191,6 +191,7 @@ export class PowerShellSubShell implements ISubShell {
     const afterFinalBacktick = /`\s+$/.test(command) ? command.slice(command.trimEnd().length) : '';
 
     if (trimmed.toLowerCase() === 'exit') {
+      if (this.device instanceof WindowsPC) this.device.endPowerShellHost(true);
       return { output: [], exit: true, prompt: this.getPrompt() };
     }
 
@@ -237,6 +238,7 @@ export class PowerShellSubShell implements ISubShell {
     // attached. Inside the window, `device.getCwd()` and any
     // `device.executeCmdCommand(...)` delegation observe THIS terminal's
     // cwd / env (terminal_gap.md §7.x).
+    if (this.device instanceof WindowsPC) this.device.notePowerShellPrompt(this.getPrompt());
     const dispatch = async (): Promise<string | null> => this.dispatchCommand(effective + afterFinalBacktick);
 
     const result = (this.session && this.device instanceof WindowsPC)
@@ -450,7 +452,7 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   dispose(): void {
-    // No resources to clean up
+    if (this.device instanceof WindowsPC) this.device.endPowerShellHost(false);
   }
 
   private async resolveEmbeddedReadHost(line: string): Promise<string | null> {

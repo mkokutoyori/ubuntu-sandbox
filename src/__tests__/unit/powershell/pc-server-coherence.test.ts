@@ -78,8 +78,8 @@ describe('Event-log RecordIds are coherent across devices', () => {
   it('the same logical entry has the same RecordId on pc and server', async () => {
     const a = shell('WIN-A');
     const b = shell('SRV-B');
-    const ra = await run(a, 'Get-EventLog -LogName System -Newest 3 | Select-Object -ExpandProperty Index');
-    const rb = await run(b, 'Get-EventLog -LogName System -Newest 3 | Select-Object -ExpandProperty Index');
+    const ra = await run(a, 'Get-WinEvent -FilterHashtable @{LogName="System"} -MaxEvents 3 | Select-Object -ExpandProperty RecordId');
+    const rb = await run(b, 'Get-WinEvent -FilterHashtable @{LogName="System"} -MaxEvents 3 | Select-Object -ExpandProperty RecordId');
     // Same logical entries → byte-identical RecordIds on both devices.
     expect(ra).toBe(rb);
     // Numbering starts from the fixed per-instance base (1000), not

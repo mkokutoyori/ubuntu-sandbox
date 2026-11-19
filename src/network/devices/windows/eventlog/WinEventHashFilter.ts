@@ -99,9 +99,11 @@ function criteria(hash: Record<string, PSValue>): { predicate: XPathPredicate } 
         parts.push((event) => wanted.some((item) => Object.values(event.data ?? {}).includes(item)));
         break;
       }
-      case 'userid':
-        parts.push(() => false);
+      case 'userid': {
+        const wanted = elements(value).map(text);
+        parts.push((event) => event.userSid !== undefined && wanted.some((item) => item.toLowerCase() === event.userSid!.toLowerCase()));
         break;
+      }
       default: {
         const wanted = elements(value).map(text);
         parts.push((event) => wanted.some((item) => event.data?.[key] === item));

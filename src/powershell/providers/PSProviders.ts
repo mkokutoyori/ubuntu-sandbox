@@ -130,6 +130,7 @@ export interface EventLogEntryInfo {
   category: string;
   message: string;
   data?: Record<string, string>;
+  userSid?: string;
 }
 
 export type { NetAdapterEntry };
@@ -169,6 +170,7 @@ export interface RouteInfo {
 
 export interface IRemoteComputer {
   readonly hostname: string;
+  readonly eventLog?: IEventLogProvider;
   /** Genuinely execute the script block against the remote machine's OWN
    *  runtime (its own services/processes/registry/event log), returning
    *  whatever the block's pipeline produced. */
@@ -1718,6 +1720,8 @@ export interface IScheduledTaskProvider {
   updateTask?(name: string, patch: Partial<ScheduledTaskInfo>): string;
   /** Run a task now, whatever its trigger says — `Start-ScheduledTask`. */
   runTask?(name: string): string;
+  /** End the running instance of a task — `Stop-ScheduledTask`. Rendered false when no instance runs. */
+  stopTask?(name: string): boolean;
 }
 
 export interface DiskInfo {
@@ -1800,6 +1804,10 @@ export interface IVpnProvider {
   disconnect(name: string): string;
 }
 
+import type { DirectoryAuditPort } from '@/network/devices/windows/DirectoryAuditPort';
+import type { PipelineAuditPort } from '@/network/devices/windows/PipelineAuditPort';
+import type { TranscriptPort } from '@/network/devices/windows/TranscriptPort';
+
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
   getLogStatus?(logName: string): {
@@ -1810,10 +1818,6 @@ export interface IEventLogProvider {
   providers?(): Array<{ name: string; logNames: string[] }>;
   readExportedEntries?(path: string): { channel: string; entries: EventLogEntryInfo[] } | null;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string;
-  clearLog(logName: string): string;
-  newLog(logName: string, source: string): string;
-  limitLog(logName: string, maxSizeKB: number): void;
 }
 
 // ─── PSProviders bag ────────────────────────────────────────────────────────
@@ -1881,6 +1885,9 @@ export interface PSProviders {
   readonly jobs:           IJobProvider            | null;
   readonly users:          IUserProvider           | null;
   readonly eventLog:       IEventLogProvider       | null;
+  readonly directoryAudit?: DirectoryAuditPort     | null;
+  readonly pipelineAudit?: PipelineAuditPort       | null;
+  readonly transcript?: TranscriptPort             | null;
   readonly vpn:            IVpnProvider            | null;
   readonly scheduledTasks: IScheduledTaskProvider  | null;
   readonly disks:          IDiskProvider           | null;

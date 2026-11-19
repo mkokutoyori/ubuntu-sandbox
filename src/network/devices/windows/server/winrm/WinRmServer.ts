@@ -30,7 +30,7 @@ export interface WinRmServerContext {
   openShell?: (identity: WinRmIdentity) => WinRmShellHost | null;
   refreshPolicy?: (scope: 'both' | 'computer' | 'user', delayMinutes: number, identity: WinRmIdentity) => WinRmCommandResult;
   /** Domain-account fallback (PRD-Windows-Server.md §5 P6) — see `SmbServerContext.domainAuth`. */
-  domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[] } | null;
+  domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[]; authoritative?: boolean; cause?: 'unknown-user' | 'bad-password' | 'disabled' } | null;
   /** Windows Event Collector (PRD-Wecutil.md §2.1 P4) — absent on a
    *  machine that isn't acting as a collector, so `wecPush` answers an
    *  honest error rather than a silent fake success. */
@@ -44,15 +44,16 @@ export interface WinRmServerContext {
 export class WinRmServerHandler {
   constructor(private readonly ctx: WinRmServerContext) {}
 
-  register(conn: TcpConnection, clientIp?: string, clientName?: string): void {
+  register(conn: TcpConnection, clientIp?: string, clientName?: string, clientPort?: number): void {
     const reply = (msg: Record<string, unknown>) => conn.write(JSON.stringify(msg));
     const assembler = new JsonMessageAssembler();
     let identity: WinRmIdentity | null = null;
     let shell: WinRmShellHost | null = null;
 
-    const connection = (package_: 'NTLM' | 'Kerberos', validatedElsewhere = false) => (clientIp === undefined ? undefined : {
+    const connection = (package_: 'NTLM' | 'Kerberos', validatedElsewhere = false, workstation?: string) => (clientIp === undefined ? undefined : {
       ...(validatedElsewhere ? { validatedElsewhere } : {}),
-      workstation: clientName ?? clientIp, ipAddress: clientIp, processId: '0x0', processName: '-',
+      workstation: workstation ?? clientName ?? clientIp, ipAddress: clientIp,
+      ...(clientPort === undefined ? {} : { ipPort: String(clientPort) }), processId: '0x0', processName: '-',
       ...(package_ === 'NTLM'
         ? { logonProcess: 'NtLmSsp', authenticationPackage: 'NTLM', lmPackage: 'NTLM V2', keyLength: 128 }
         : { logonProcess: 'Kerberos', authenticationPackage: 'Kerberos' }),
@@ -75,14 +76,16 @@ export class WinRmServerHandler {
       if (op === 'auth') {
         const username = String(parsed.username ?? '');
         const password = String(parsed.password ?? '');
+        const claimed = parsed.workstation === undefined ? undefined : String(parsed.workstation);
         const account = this.ctx.userMgr.getUser(username);
         const localOk = account?.enabled && this.ctx.userMgr.checkPassword(username, password, 3, false, false);
-        const domainOk = !localOk && this.ctx.domainAuth?.(username, password)?.ok;
+        const domain = localOk ? null : this.ctx.domainAuth?.(username, password) ?? null;
+        const domainOk = domain?.ok === true;
         const sam = username.includes('\\') ? username.slice(username.indexOf('\\') + 1) : username.split('@')[0];
-        if (localOk || domainOk) this.ctx.userMgr.recordNetworkLogon?.(localOk ? username : sam, true, connection('NTLM', !localOk));
+        if (localOk || domainOk) this.ctx.userMgr.recordNetworkLogon?.(localOk ? username : sam, true, connection('NTLM', !localOk && domain?.authoritative !== true, claimed));
         else {
-          const cause = account === undefined ? 'unknown-user' : !account.enabled ? 'disabled' : 'bad-password';
-          this.ctx.userMgr.recordNetworkLogon?.(username, false, connection('NTLM'), cause);
+          const cause = account === undefined ? (domain?.cause ?? 'unknown-user') : !account.enabled ? 'disabled' : 'bad-password';
+          this.ctx.userMgr.recordNetworkLogon?.(username, false, connection('NTLM', false, claimed), cause);
         }
         if (!localOk && !domainOk) {
           reply({ ok: false, message: 'The user name or password is incorrect.' });

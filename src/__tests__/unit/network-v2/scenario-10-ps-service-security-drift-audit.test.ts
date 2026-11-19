@@ -224,7 +224,7 @@ Set-Acl -Path "C:\Windows\System32\monservice.exe" -AclObject $acl
   });
 
   describe('Remédiation et verrouillage', () => {
-    it('restaure le compte de service à la baseline et journalise EventId 5001', async () => {
+    it('restaure le compte de service à la baseline et journalise EventId 501', async () => {
       const pc = createPC();
       const ps = await buildBaseline(pc);
 
@@ -234,7 +234,7 @@ Set-Acl -Path "C:\Windows\System32\monservice.exe" -AclObject $acl
 $baseline = Get-Content "C:\Scripts\baseline-services.json" | ConvertFrom-Json
 sc.exe config MonServiceSecurise obj= $baseline.StartName | Out-Null
 Restart-Service -Name MonServiceSecurise
-Write-EventLog -LogName Security -Source "remediation" -EventId 5001 -EntryType Information -Message "Service account restored to baseline: $($baseline.StartName)"
+eventcreate /l Application /so remediation /id 501 /t INFORMATION /d "Service account restored to baseline: $($baseline.StartName)" | Out-Null
 `;
       await ps.execute(remediationScript);
 
@@ -244,12 +244,12 @@ Write-EventLog -LogName Security -Source "remediation" -EventId 5001 -EntryType 
       expect(restored.trim()).toContain('svc-monservice');
 
       const logOut = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 5001 } | Select-Object -First 1',
+        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 501 } | Select-Object -First 1',
       );
       expect(logOut).toContain('restored to baseline');
     });
 
-    it('restaure les permissions NTFS de référence et journalise EventId 5002', async () => {
+    it('restaure les permissions NTFS de référence et journalise EventId 502', async () => {
       const pc = createPC();
       const ps = await buildBaseline(pc);
 
@@ -266,16 +266,16 @@ Set-Acl -Path "C:\Windows\System32\monservice.exe" -AclObject $acl
 
       await ps.execute(String.raw`
 $baselineAcl = Get-Content "C:\Scripts\baseline-acl.json" | ConvertFrom-Json
-Write-EventLog -LogName Security -Source "remediation" -EventId 5002 -EntryType Information -Message "NTFS permissions restored to baseline on monservice.exe"
+eventcreate /l Application /so remediation /id 502 /t INFORMATION /d "NTFS permissions restored to baseline on monservice.exe" | Out-Null
 `);
 
       const logOut = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 5002 } | Select-Object -First 1',
+        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 502 } | Select-Object -First 1',
       );
       expect(logOut).toContain('permissions restored');
 
       const remediationOut = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 5001 -or $_.Id -eq 5002 }',
+        'Get-WinEvent -LogName Application | Where-Object { $_.Id -eq 501 -or $_.Id -eq 5002 }',
       );
       const driftOut = await ps.execute(
         'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4670 } | Format-List *',

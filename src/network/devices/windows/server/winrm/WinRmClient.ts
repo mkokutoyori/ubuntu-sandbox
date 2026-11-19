@@ -39,6 +39,7 @@ interface WinRmChannelRequest {
   credential?: { username: string; password: string };
   apReq?: Uint8Array;
   unreachable?: string;
+  workstation?: string;
 }
 
 type WinRmChannel = { ok: true; socket: TcpSocket } | { ok: false; error: string };
@@ -55,7 +56,7 @@ function openWinRmChannel(opts: WinRmChannelRequest): WinRmChannel {
   }
   const auth = opts.apReq
     ? roundTrip(socket, { op: 'krbAuth', apReq: bytesToBase64(opts.apReq) })
-    : roundTrip(socket, { op: 'auth', username: opts.credential?.username ?? '', password: opts.credential?.password ?? '' });
+    : roundTrip(socket, { op: 'auth', username: opts.credential?.username ?? '', password: opts.credential?.password ?? '', workstation: opts.workstation });
   if (!auth?.ok) {
     socket.close();
     return { ok: false, error: (auth as { message?: string } | null)?.message ?? 'Access is denied.' };
@@ -63,11 +64,12 @@ function openWinRmChannel(opts: WinRmChannelRequest): WinRmChannel {
   return { ok: true, socket };
 }
 
-export function dialWinRmWithTicket(opts: { tcpStack: TcpStack; targetIp: string; apReq: Uint8Array }): WinRmDialResult {
+export function dialWinRmWithTicket(opts: { tcpStack: TcpStack; targetIp: string; apReq: Uint8Array; workstation?: string }): WinRmDialResult {
   const channel = openWinRmChannel({
     tcpStack: opts.tcpStack,
     targetIp: opts.targetIp,
     apReq: opts.apReq,
+    workstation: opts.workstation,
     unreachable: 'Connecting to remote server failed: WinRM cannot complete the operation. '
       + 'Verify that the specified computer name is valid, that the computer is accessible over the network, '
       + 'and that a firewall exception for the WinRM service is enabled and allows access from this computer.',
@@ -83,10 +85,12 @@ export function dialWinRm(opts: {
   targetIp: string;
   username: string;
   password: string;
+  workstation?: string;
 }): WinRmDialResult {
   const channel = openWinRmChannel({
     tcpStack: opts.tcpStack,
     targetIp: opts.targetIp,
+    workstation: opts.workstation,
     credential: { username: opts.username, password: opts.password },
     unreachable: 'Connecting to remote server failed: WinRM cannot complete the operation. '
       + 'Verify that the specified computer name is valid, that the computer is accessible over the network, '
@@ -112,6 +116,7 @@ export function pushForwardedEvent(opts: {
   targetIp: string;
   username: string;
   password: string;
+  workstation?: string;
   subscriptionId: string;
   sourceMachine: string;
   event: { eventId: number; timeGenerated: string; message: string; sourceLogName: string };
@@ -120,6 +125,7 @@ export function pushForwardedEvent(opts: {
     tcpStack: opts.tcpStack,
     targetIp: opts.targetIp,
     credential: { username: opts.username, password: opts.password },
+    workstation: opts.workstation,
     unreachable: 'WinRM cannot complete the operation: the collector is not reachable.',
   });
   if (channel.ok === false) return { ok: false, error: channel.error };
@@ -146,6 +152,7 @@ export function runWinRmRequest(opts: {
   request: Record<string, unknown>;
   credential?: { username: string; password: string };
   apReq?: Uint8Array;
+  workstation?: string;
 }): WinRmRunResult {
   const channel = openWinRmChannel(opts);
   if (channel.ok === false) return { ok: false, error: channel.error };
