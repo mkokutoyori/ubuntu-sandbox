@@ -11,7 +11,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
   type RadiusAttribute,
-  createDefaultServerConfig, attr, getAttr, getVsa,
+  createDefaultServerConfig, attr, getAttr, getVsa, RADIUS_PACKET_NAME,
   decryptUserPassword, encryptUserPassword, isPrintablePassword,
 } from './types';
 import {
@@ -152,6 +152,7 @@ export type RequestFeature = 'pap' | 'chap' | 'mschap' | 'eap' | 'session' | 'ac
 
 export interface RadiusUserResolverContext {
   listenPort?: number;
+  packet?: { sourceIp: string; sourcePort: number; destinationIp: string; destinationPort: number; type: string; authenticator: string };
   /** The requesting NAS's source IP, as seen on this Access-Request. */
   nasIp: string;
   attributes: RadiusAttribute[];
@@ -646,7 +647,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes, listenPort: this.servedPort ?? this.config.port });
+    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes, listenPort: this.servedPort ?? this.config.port, packet: { sourceIp: senderIp, sourcePort: udp.sourcePort, destinationIp: srcIpOfPort(this.host.getPort(inPort)), destinationPort: udp.destinationPort, type: RADIUS_PACKET_NAME[payload.code], authenticator: payload.authenticator } });
     const loginTime = this.loginTimeVerdict(resolved);
     if (!loginTime.allowed) {
       this.publishRejected(senderIp, username, 'outside-login-time');

@@ -29,10 +29,11 @@ import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
 import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from './RequestDebug';
+import type { RadiusUserResolverContext } from '@/network/radius/RadiusServerAgent';
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
-import { readPreprocess, applyPreprocess, type PreprocessFiles } from './PreprocessModule';
+import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
 import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
 import { RadiusClientTable } from '@/network/radius/ClientTable';
 import { formatCtime } from '../time/ctime';
@@ -327,14 +328,14 @@ export class RadiusdService {
     this.files.append(log.file, `${formatCtime(new Date(simulationNowMs()))} : ${level}: ${message}\n`);
   }
 
-  private preprocessFiles: PreprocessFiles = { hints: null, huntgroups: null };
+  private preprocessFiles: PreprocessFiles = NO_PREPROCESS;
   private lastResolution: ResolutionTrace | null = null;
 
-  private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH): RadiusUser | undefined {
+  private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH, packet?: RadiusUserResolverContext['packet']): RadiusUser | undefined {
     const groupsOf = (name: string) => this.wallClock.groupsOf(name);
     const pipeline = this.pipelines.get(this.portServers.get(listenPort) ?? 'default');
     const program: readonly Statement[] = pipeline?.authorize ?? DEFAULT_AUTHORIZE_PROGRAM;
-    const context = newContext(username, attributes);
+    const context = newContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' });
     const lines: string[] = [];
     const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
     const outcome = run(program, context, host, lines, 3);
@@ -361,10 +362,8 @@ export class RadiusdService {
     const has = (type: string) => context.request.some((attribute) => attribute.type === type);
     const messages: string[] = [];
     if (name === 'preprocess') {
-      const prepared = applyPreprocess(this.preprocessFiles, context.username, context.request, nasIp, groupsOf);
-      context.request.push(...prepared.extra);
-      for (const [key, value] of prepared.overlay) context.overlay.set(key, value);
-      return { result: prepared.rejected ? 'reject' : 'ok', messages };
+      const rejected = applyPreprocess(this.preprocessFiles, context, nasIp, Math.floor(this.wallClock.nowMs() / 1000), groupsOf);
+      return { result: rejected ? 'reject' : 'ok', messages };
     }
     if (name === 'chap' && has('chap-password')) {
       if (!context.control.has('auth-type')) context.control.set('auth-type', 'chap');
@@ -381,7 +380,7 @@ export class RadiusdService {
       return { result: 'noop', messages };
     }
     if (name === 'files') {
-      const match = matchUsersEntries(entries, context.username, requestViewOf(context.request, context.overlay, groupsOf, context.username));
+      const match = matchUsersEntries(entries, context.strippedName ?? context.username, requestViewOf(context, groupsOf));
       if (match === null) return { result: 'noop', messages };
       for (const entry of match.matchedEntries) messages.push(`files: ${this.usersFilePath}: Matched entry ${entry.name} at line ${entry.line}`);
       for (const item of match.knownGood) {
@@ -483,6 +482,6 @@ export class RadiusdService {
     this.radiusServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
     for (const client of loaded.clients) this.radiusServer.clientTable.add(client);
-    this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? '', context?.listenPort));
+    this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? '', context?.listenPort, context?.packet));
   }
 }

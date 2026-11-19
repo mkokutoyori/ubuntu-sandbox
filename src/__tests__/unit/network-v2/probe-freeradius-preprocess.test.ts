@@ -5,7 +5,7 @@
  * Strip-User-Name and Fall-Through, Fall-Through = Yes reading on; huntgroup_access: the FIRST entry whose check items match names the
  * huntgroup, its indented lines are alternatives of which one must match or the request is rejected (RLM_MODULE_REJECT), a match
  * adds Huntgroup-Name; add_nas_attr), raddb/mods-available/preprocess and raddb/mods-config/preprocess/hints and huntgroups (the
- * shipped hints key on Suffix, which the realm module sets later, so they match nothing by default; modconfdir = ${confdir}/mods-config
+ * shipped hints key on Suffix, a comparison of rlm_expr against the user name, so they match bob.ppp; modconfdir = ${confdir}/mods-config
  * in radiusd.conf), the pairlist_read error "Couldn't open %s for reading". A Group check is the rlm_unix comparison against the
  * machine's own groups. The files are read with the one pair-list reader of the users file.
  *
@@ -77,7 +77,7 @@ describe('the preprocess module: hints and huntgroups', () => {
   it('the shipped files are where radiusd.conf says: the module in mods-enabled, the lists in mods-config/preprocess', async () => {
     const { target } = await lab();
     expect(await target.executeCommand('cat /etc/freeradius/3.0/mods-enabled/preprocess')).toContain('hints = ${modconfdir}/preprocess/hints');
-    expect(await target.executeCommand(`grep -c "Suffix == " ${PRE}/hints`)).toContain('2');
+    expect(await target.executeCommand(`grep -c "^DEFAULT" ${PRE}/hints`)).toContain('2');
     expect(await target.executeCommand(`ls ${PRE}`)).toContain('huntgroups');
   });
 

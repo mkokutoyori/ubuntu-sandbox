@@ -22,12 +22,52 @@ export type ParsedUsers = { ok: true; entries: UsersEntry[] } | { ok: false; err
 
 export type UsersRequestView = (attributeName: string, wanted?: string) => string | number | undefined;
 
-export function requestViewOf(
-  attributes: readonly RadiusAttribute[], overlay: ReadonlyMap<string, string>, groupsOf: (username: string) => readonly string[], username: string,
-): UsersRequestView {
+export interface PacketFacts {
+  sourceIp: string;
+  sourcePort: number;
+  destinationIp: string;
+  destinationPort: number;
+  server: string;
+  type: string;
+  authenticator: string;
+}
+
+export interface ViewContext {
+  username: string;
+  strippedName: string | null;
+  request: readonly RadiusAttribute[];
+  overlay: Map<string, string>;
+  packet: PacketFacts | null;
+}
+
+const PACKET_ATTRIBUTES: Record<string, (packet: PacketFacts) => string | number> = {
+  'packet-src-ip-address': (packet) => packet.sourceIp,
+  'client-ip-address': (packet) => packet.sourceIp,
+  'packet-dst-ip-address': (packet) => packet.destinationIp,
+  'packet-src-port': (packet) => packet.sourcePort,
+  'packet-dst-port': (packet) => packet.destinationPort,
+  'virtual-server': (packet) => packet.server,
+  'packet-type': (packet) => packet.type,
+};
+
+export function requestViewOf(context: ViewContext, groupsOf: (username: string) => readonly string[], strip: () => boolean = () => true): UsersRequestView {
   return (name, wanted) => {
-    if (name === 'group') return wanted !== undefined && groupsOf(username).includes(wanted) ? wanted : '';
-    return overlay.get(name) ?? attributes.find((candidate) => candidate.type === name)?.value;
+    if (name === 'group') return wanted !== undefined && groupsOf(context.username).includes(wanted) ? wanted : '';
+    if (name === 'prefix' || name === 'suffix') {
+      if (wanted === undefined) return undefined;
+      const current = context.strippedName ?? context.username;
+      const matched = name === 'prefix' ? current.startsWith(wanted) : current.length >= wanted.length && current.endsWith(wanted);
+      if (!matched) return '';
+      if (strip()) {
+        context.strippedName = name === 'prefix' ? current.slice(wanted.length) : current.slice(0, current.length - wanted.length);
+        context.overlay.set('stripped-user-name', context.strippedName);
+      }
+      return wanted;
+    }
+    if (name === 'user-name') return context.username;
+    const fact = PACKET_ATTRIBUTES[name];
+    if (fact !== undefined) return context.packet === null ? undefined : fact(context.packet);
+    return context.overlay.get(name) ?? context.request.find((candidate) => candidate.type === name)?.value;
   };
 }
 
@@ -106,7 +146,7 @@ export function parsePairList(text: string): PairListResult {
 
 const CONTROL_ONLY = new Set(['cleartext-password', 'crypt-password', 'md5-password', 'smd5-password', 'sha-password', 'ssha-password', 'nt-password', 'sha2-password', 'password-with-header', 'auth-type', 'fall-through', 'hint', 'huntgroup-name', 'user-category', 'group', 'simultaneous-use', 'login-time', 'strip-user-name']);
 
-const FILE_ONLY_NAMES = new Set(['suffix', 'strip-user-name', 'realm']);
+const FILE_ONLY_NAMES = new Set(['suffix', 'prefix', 'strip-user-name', 'stripped-user-name', 'realm', 'packet-src-ip-address', 'client-ip-address', 'packet-dst-ip-address', 'packet-src-port', 'packet-dst-port', 'virtual-server', 'packet-type']);
 
 function knownName(name: string): boolean {
   const key = name.toLowerCase();

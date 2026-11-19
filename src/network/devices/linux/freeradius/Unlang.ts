@@ -1,28 +1,26 @@
 import { RADIUS_ATTR, type RadiusAttribute } from '@/network/radius/types';
 import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodPassword';
 import type { ConfPair, ConfSection } from './FreeradiusConf';
-import { usersPairToAttribute } from './UsersFileParser';
+import { usersPairToAttribute, requestViewOf, type PacketFacts, type ViewContext } from './UsersFileParser';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
 
 export type ModuleResult = 'reject' | 'fail' | 'ok' | 'handled' | 'invalid' | 'userlock' | 'notfound' | 'noop' | 'updated';
 export type AttributeList = 'request' | 'control' | 'reply';
 
-export interface UnlangContext {
-  username: string;
+export interface UnlangContext extends ViewContext {
   request: RadiusAttribute[];
-  overlay: Map<string, string>;
   control: Map<string, string>;
   knownGood: KnownGoodItem[];
   reply: RadiusAttribute[];
 }
 
-export function newContext(username: string, request: readonly RadiusAttribute[]): UnlangContext {
-  return { username, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [] };
+export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null): UnlangContext {
+  return { username, strippedName: null, packet, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [] };
 }
 
 export function lookup(context: UnlangContext, list: AttributeList, name: string): string | number | undefined {
   const key = name.toLowerCase();
-  if (list === 'request') return key === 'user-name' ? context.username : context.overlay.get(key) ?? context.request.find((attribute) => attribute.type === key)?.value;
+  if (list === 'request') return requestViewOf(context, () => [])(key);
   if (list === 'control') return context.control.get(key);
   return context.reply.find((attribute) => attribute.type === key)?.value;
 }
