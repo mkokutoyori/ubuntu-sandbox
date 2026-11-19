@@ -104,7 +104,6 @@ export class LinuxServer extends LinuxMachine {
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'freeradius') return;
       if (event === 'start') this.applyRadiusd(this.radiusd.start());
-      else if (event === 'restart') this.applyRadiusd(this.radiusd.restart());
       else if (event === 'reload') this.applyRadiusd(this.radiusd.reload());
       else if (event === 'stop') this.radiusd.stop();
     });

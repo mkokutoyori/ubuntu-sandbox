@@ -83,9 +83,10 @@ describe('the freeradius command', () => {
 
   it('-C on a broken radiusd.conf is silent: the log destination is not known yet', async () => {
     const server = new LinuxServer('linux-server', 'AAA');
+    const before = vfsOf(server).readFile(LOG) ?? '';
     write(server, MAIN, 'log {\n  auth = maybe\n}\n');
     expect(await status(server, 'freeradius -C')).toEqual({ output: '', code: '1' });
-    expect(vfsOf(server).readFile(LOG) ?? '').toBe('');
+    expect(vfsOf(server).readFile(LOG) ?? '').toBe(before);
   });
 
   it('-CX prints the banner, the configuration file and the DEBUG verdict, without timestamps', async () => {

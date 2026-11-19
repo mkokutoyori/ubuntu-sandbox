@@ -176,7 +176,7 @@ function run(ctx: LinuxCommandContext, args: string[]): { output: string; exitCo
     return { ...sink.flush(), exitCode: 0 };
   }
 
-  const started = ctx.radiusd.startFromCommandLine(authPort === undefined ? {} : { authPort, address });
+  const started = ctx.radiusd.startFromCommandLine({ ...(authPort === undefined ? {} : { authPort, address }), debug: parsed.debugLevel > 0 });
   if ('errors' in started) {
     for (const message of started.errors) sink.line(message, 'error');
     return { ...sink.flush(), exitCode: 1 };

@@ -50,6 +50,7 @@ export interface RadiusdCheckReport {
 export interface RadiusdListenOverride {
   authPort?: number;
   address?: string;
+  debug?: boolean;
 }
 
 export interface RadiusdConfigPaths {
@@ -128,7 +129,7 @@ export class RadiusdService {
         ],
       };
     }
-    const started = this.start();
+    const started = this.start({ debug: listen.debug });
     return started.ok ? { ok: true } : { ok: false, errors: [started.error ?? 'failed to start'] };
   }
 
@@ -172,11 +173,17 @@ export class RadiusdService {
       `Ignoring request to ${event.kind} address ${listen.address ?? '*'} port ${event.port} bound to server default from unknown client ${event.clientIp} port ${event.clientPort} proto udp`));
     this.boundPorts = bound;
     this.running = true;
+    this.debugMode = listen.debug === true;
+    if (!this.debugMode) this.writeLogLine('Info', 'Ready to process requests');
     return { ok: true };
   }
 
   stop(): void {
     if (!this.running) return;
+    if (!this.debugMode) {
+      this.writeLogLine('Info', 'Signalled to terminate');
+      this.writeLogLine('Info', 'Exiting normally');
+    }
     this.radiusServer.setDecisionListener(null);
     this.radiusServer.setAccountingListener(null);
     this.radiusServer.setWarningListener(null);
@@ -210,6 +217,7 @@ export class RadiusdService {
   }
 
   private boundPorts: number[] = [];
+  private debugMode = false;
   private readonly fileUsers = new Set<string>();
   private logConfig: RadiusdLogConfig | null = null;
 
