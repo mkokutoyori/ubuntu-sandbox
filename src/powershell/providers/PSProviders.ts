@@ -271,6 +271,7 @@ export interface AdGroupInfo {
 }
 export interface AdComputerInfo {
   name: string; dn: string; enabled: boolean; servicePrincipalNames: string[];
+  sam?: string;
   /** The site this DC is (explicitly or IP-derived) assigned to — undefined for a plain (non-DC) computer object. */
   site?: string | null;
   /** This DC's resolved IPv4 address — undefined for a plain (non-DC) computer object. */
@@ -351,6 +352,7 @@ export interface IAdProvider {
   listComputers(): AdComputerInfo[];
   /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` list S4U2Proxy checks. */
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
+  setComputerSamAccountName(identity: string, newSam: string): AdOpResult;
 
   /** `Move-ADObject -Identity <dn|sam> -TargetPath <ou dn>` — LDAP ModifyDN with a new superior, keeping the object's RDN. */
   moveObject(identity: string, targetPath: string, target?: RemoteDirectoryTarget): AdOpResult;

@@ -256,7 +256,7 @@ function dnsSuffixFromDn(dn: string): string {
 function computerToPSObject(c: AdComputerInfo): Record<string, PSValue> {
   const suffix = dnsSuffixFromDn(c.dn);
   return {
-    Name: c.name, DistinguishedName: c.dn, Enabled: c.enabled, ObjectClass: 'computer',
+    Name: c.name, SamAccountName: c.sam ?? `${c.name}$`, DistinguishedName: c.dn, Enabled: c.enabled, ObjectClass: 'computer',
     DNSHostName: suffix ? `${c.name}.${suffix}` : c.name,
     ServicePrincipalNames: [...c.servicePrincipalNames],
   };
@@ -1472,15 +1472,25 @@ export class SearchADAccountCmdlet implements ICmdlet {
 export class SetADComputerCmdlet implements ICmdlet {
   readonly name = 'set-adcomputer';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'AllowedToDelegateTo'] as const;
+  readonly parameters = ['Identity', 'AllowedToDelegateTo', 'SamAccountName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Set-ADComputer');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError('Set-ADComputer : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
-    const targets = stringArrayOf(ctx, 'allowedtodelegateto');
-    const res = ad.setComputerAllowedToDelegateTo(identity, targets);
-    if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+    if (ctx.named['allowedtodelegateto'] !== undefined || ctx.named['samaccountname'] === undefined) {
+      const res = ad.setComputerAllowedToDelegateTo(identity, stringArrayOf(ctx, 'allowedtodelegateto'));
+      if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+    }
+    const newSam = ctx.named['samaccountname'] === undefined ? undefined : psValueToString(ctx.named['samaccountname']);
+    if (newSam !== undefined) {
+      const oldSam = identity.endsWith('$') ? identity : `${identity}$`;
+      if (newSam.toLowerCase() !== oldSam.toLowerCase()) {
+        const res = ad.setComputerSamAccountName(identity, newSam);
+        if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+        auditSinkFor(ctx)?.accountRenamed(oldSam, newSam, subjectUserOf(ctx));
+      }
+    }
     return null;
   }
 }

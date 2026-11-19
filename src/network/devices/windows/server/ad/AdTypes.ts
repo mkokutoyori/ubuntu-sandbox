@@ -198,6 +198,7 @@ export interface AdComputer {
   /** IP the computer account last joined/logged on from — diagnostic only. */
   lastKnownIp?: string;
   servicePrincipalNames: string[];
+  sam?: string;
 }
 
 export interface AdOrgUnit {

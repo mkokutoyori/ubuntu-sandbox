@@ -1897,9 +1897,12 @@ export class DirectoryStore {
     // `sAMAccountName` form ("<Name>$", precedent §1.3) — strip the
     // trailing `$` before searching so both forms resolve.
     const cn = name.endsWith('$') ? name.slice(0, -1) : name;
-    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: cn })
+    const computers = (attr: string, value: string) => this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr, value })
       .filter(e => hasObjectClass(e, 'computer') && !isSoftDeleted(e));
-    return entry ?? null;
+    const [bySam] = computers('sAMAccountName', `${cn}$`);
+    if (bySam) return bySam;
+    const [byName] = computers('cn', cn).filter(e => firstOf(e.attributes.get('samaccountname')) === '' || firstOf(e.attributes.get('samaccountname')) === `${cn}$`);
+    return byName ?? null;
   }
 
   /** Creates the DC's own computer account under the Domain Controllers OU at promotion time — a distinct container and UAC flag (SERVER_TRUST_ACCOUNT) from a regular domain-joined workstation, matching real AD. */
@@ -1944,6 +1947,7 @@ export class DirectoryStore {
       machineSecret: firstOf(entry.attributes.get('userpassword')),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
       servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
+      sam: firstOf(entry.attributes.get('samaccountname')),
     };
   }
 
@@ -1975,6 +1979,16 @@ export class DirectoryStore {
   }
 
   /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` multi-valued attribute S4U2Proxy checks. */
+  renameComputerSam(name: string, newSam: string): DirOpResult {
+    const entry = this.findComputerEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${name}'.` };
+    const holders = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: newSam })
+      .filter(e => !isSoftDeleted(e) && e !== entry);
+    if (newSam === '' || holders.length > 0) return { ok: false, message: 'The specified account already exists' };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'sAMAccountName', values: [newSam] }]);
+    return { ok: true, message: '' };
+  }
+
   setAllowedToDelegateTo(name: string, targetServiceNames: string[]): DirOpResult {
     const entry = this.findComputerEntry(name);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${name}'.` };
