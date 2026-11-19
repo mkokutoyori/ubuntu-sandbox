@@ -836,8 +836,14 @@ export class SetADGroupCmdlet implements ICmdlet {
       ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
       return null;
     }
-    const res = ad.setGroup(identity, groupAttributesFrom(ctx), remoteTargetOf(ctx));
+    const attributes = groupAttributesFrom(ctx);
+    const before = ad.getGroup(identity);
+    const res = ad.setGroup(identity, attributes, remoteTargetOf(ctx));
     if (!res.ok) { ctx.emitError(`Set-ADGroup : ${res.message}`); return null; }
+    const audited = Object.keys(attributes).some((ldap) => ldap !== 'managedBy');
+    if (before !== null && before.category === 'Security' && audited) {
+      auditSinkFor(ctx)?.groupChanged(before.sam, before.scope === 'DomainLocal' ? 'Local' : before.scope, subjectUserOf(ctx));
+    }
     if (ctx.named['passthru'] !== true) return null;
     const g = ad.getGroup(identity);
     return g ? groupToPSObject(g) : null;

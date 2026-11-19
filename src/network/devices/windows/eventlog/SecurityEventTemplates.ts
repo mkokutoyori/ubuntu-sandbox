@@ -182,6 +182,16 @@ function groupLifecycle(title: string, heading: string) {
   ].join('\n\n');
 }
 
+function groupChanged(title: string) {
+  return (d: EventFields): string => [
+    title,
+    subject(d),
+    `Group:\n\tSecurity ID:\t\t${field(d, 'TargetSid')}\n\tGroup Name:\t\t${field(d, 'TargetUserName')}\n\tGroup Domain:\t\t${field(d, 'TargetDomainName')}`,
+    `Changed Attributes:\n\tSAM Account Name:\t${field(d, 'SamAccountName', '-')}\n\tSID History:\t\t${field(d, 'SidHistory', '-')}`,
+    additionalPrivileges(d),
+  ].join('\n\n');
+}
+
 function auditCleared(d: EventFields): string {
   return `The audit log was cleared.\nSubject:\n\tSecurity ID:\t${field(d, 'SubjectUserSid')}\n\tAccount Name:\t${field(d, 'SubjectUserName')}`
     + `\n\tDomain Name:\t${field(d, 'SubjectDomainName')}\n\tLogon ID:\t${field(d, 'SubjectLogonId')}`;
@@ -298,6 +308,9 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4732: membership('A member was added to a security-enabled local group.'),
   4733: membership('A member was removed from a security-enabled local group.'),
   4734: groupLifecycle('A security-enabled local group was deleted.', 'Deleted Group:'),
+  4735: groupChanged('A security-enabled local group was changed.'),
+  4737: groupChanged('A security-enabled global group was changed.'),
+  4755: groupChanged('A security-enabled universal group was changed.'),
   4754: groupLifecycle('A security-enabled universal group was created.', 'New Group:'),
   4758: groupLifecycle('A security-enabled universal group was deleted.', 'Deleted Group:'),
   4738: accountChanged,

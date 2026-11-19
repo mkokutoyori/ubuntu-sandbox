@@ -65,6 +65,9 @@ export const SECURITY_EVENT = {
   GROUP_DELETED_GLOBAL: 4730,
   GROUP_DELETED_UNIVERSAL: 4758,
   GROUP_DELETED: 4734,
+  GROUP_CHANGED: 4735,
+  GROUP_CHANGED_GLOBAL: 4737,
+  GROUP_CHANGED_UNIVERSAL: 4755,
   PROCESS_CREATED: 4688,
   PROCESS_TERMINATED: 4689,
   PRIVILEGED_SERVICE_CALLED: 4673,
@@ -269,6 +272,15 @@ export class WindowsSecurityAudit {
       : scope === 'Universal' ? SECURITY_EVENT.GROUP_DELETED_UNIVERSAL : SECURITY_EVENT.GROUP_DELETED;
     this.record(eventId, 'SuccessAudit', {
       ...this.groupFields(group), ...this.subjectFields(subjectUserName), PrivilegeList: '-',
+    });
+  }
+
+  groupChanged(group: string, subjectUserName = 'Administrator', scope: 'Local' | 'Global' | 'Universal' = 'Local'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_CHANGED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_CHANGED_UNIVERSAL : SECURITY_EVENT.GROUP_CHANGED;
+    this.record(eventId, 'SuccessAudit', {
+      ...this.groupFields(group), ...this.subjectFields(subjectUserName),
+      PrivilegeList: '-', SamAccountName: '-', SidHistory: '-',
     });
   }
 

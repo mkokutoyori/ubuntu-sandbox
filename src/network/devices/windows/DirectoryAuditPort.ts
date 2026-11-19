@@ -11,6 +11,7 @@ export interface DirectoryAuditPort {
   passwordReset(account: string, actor: string): void;
   groupCreated(group: string, scope: DirectoryGroupScope, actor: string): void;
   groupDeleted(group: string, scope: DirectoryGroupScope, actor: string): void;
+  groupChanged(group: string, scope: DirectoryGroupScope, actor: string): void;
   groupMemberAdded(group: string, member: string, scope: DirectoryGroupScope, actor: string): void;
   groupMemberRemoved(group: string, member: string, scope: DirectoryGroupScope, actor: string): void;
 }

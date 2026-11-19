@@ -1,0 +1,88 @@
+/*
+ * Probe: Set-ADGroup changed a group and wrote nothing. Source (rule 8): Microsoft Learn, "4735(S): A security-enabled local
+ * group was changed." (previous-versions windows-10 auditing event-4735, read in this session): subcategory Audit Security Group
+ * Management, version 0, task 13826; EventData TargetUserName / TargetDomainName / TargetSid, SubjectUserSid / SubjectUserName /
+ * SubjectDomainName / SubjectLogonId, PrivilegeList, SamAccountName, SidHistory ("-" for an attribute that did not change; a
+ * change of an attribute not listed, e.g. a Description edited in a console, still writes the event with every changed attribute
+ * "-"; a change on the Managed By tab writes none). 4737 and 4755 are the same event for a global and a universal group (the
+ * 4737 and 4755 pages were not reachable: the titles and the shared layout follow the 4731/4754 pairs already written and the
+ * Microsoft French page that says 4737 is 4735 for a global group).
+ *
+ * Discriminated with git stash on src: 4 of 7 fall before the fix; three pass either way and are named: the witness (New-ADGroup
+ * writes 4727), "ManagedBy alone writes nothing" and "a distribution group writes nothing" (nothing was written for anything).
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { resetCounters } from '@/network/core/types';
+import { WindowsServer } from '@/network/devices/WindowsServer';
+import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { Logger } from '@/network/core/Logger';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
+
+beforeEach(() => { resetCounters(); resetDeviceCounters(); Logger.reset(); });
+
+const ps = (d: WindowsServer) => PowerShellSubShell.create(d).subShell;
+const run = async (d: WindowsServer, l: string) => (await ps(d).processLine(l)).output.join('\n');
+
+async function dc() {
+  const server = new WindowsServer('DC1');
+  server.setCurrentUser('Administrator');
+  await run(server, 'Install-WindowsFeature AD-Domain-Services');
+  await run(server, 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+  await run(server, 'auditpol /set /subcategory:"Security Group Management" /success:enable');
+  await run(server, 'New-ADGroup -Name Eng -GroupScope Global');
+  await run(server, 'New-ADGroup -Name Loc -GroupScope DomainLocal');
+  await run(server, 'New-ADGroup -Name Uni -GroupScope Universal');
+  await run(server, 'New-ADGroup -Name Mail -GroupScope Global -GroupCategory Distribution');
+  return server;
+}
+
+const events = (server: WindowsServer, id: number) =>
+  run(server, `Get-WinEvent -FilterHashtable @{LogName="Security"; Id=${id}} -ErrorAction SilentlyContinue | Format-List Id, Message`);
+
+describe('Set-ADGroup writes the group-changed events', () => {
+  it('witness: New-ADGroup writes 4727', async () => {
+    expect(await events(await dc(), 4727)).toContain('A security-enabled global group was created.');
+  });
+
+  it('a global group changed writes 4737 naming the group and the subject', async () => {
+    const server = await dc();
+    await run(server, 'Set-ADGroup -Identity Eng -Description "engineers"');
+    const out = await events(server, 4737);
+    expect(out).toContain('A security-enabled global group was changed.');
+    expect(out).toMatch(/Group Name:\s+Eng/);
+    expect(out).toMatch(/Account Name:\s+Administrator/);
+  });
+
+  it('a domain-local group writes 4735', async () => {
+    const server = await dc();
+    await run(server, 'Set-ADGroup -Identity Loc -Description "x"');
+    expect(await events(server, 4735)).toContain('A security-enabled local group was changed.');
+  });
+
+  it('a universal group writes 4755', async () => {
+    const server = await dc();
+    await run(server, 'Set-ADGroup -Identity Uni -Description "x"');
+    expect(await events(server, 4755)).toContain('A security-enabled universal group was changed.');
+  });
+
+  it('an attribute that is not listed leaves every changed attribute at "-"', async () => {
+    const server = await dc();
+    await run(server, 'Set-ADGroup -Identity Eng -Description "x"');
+    const out = await events(server, 4737);
+    expect(out).toContain('Changed Attributes:');
+    expect(out).toMatch(/SAM Account Name:\s+-/);
+    expect(out).toMatch(/SID History:\s+-/);
+  });
+
+  it('a distribution group writes nothing: it is not security-enabled', async () => {
+    const server = await dc();
+    await run(server, 'Set-ADGroup -Identity Mail -Description "x"');
+    expect(await events(server, 4737)).not.toContain('Group Name:');
+  });
+
+  it('ManagedBy alone writes nothing (the Managed By tab does not invoke the event)', async () => {
+    const server = await dc();
+    await run(server, 'Set-ADGroup -Identity Eng -ManagedBy "CN=Administrator,CN=Users,DC=lab,DC=local"');
+    expect(await events(server, 4737)).not.toContain('Group Name:');
+  });
+});
