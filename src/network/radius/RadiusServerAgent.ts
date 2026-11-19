@@ -159,6 +159,11 @@ export class RadiusServerAgent {
 
   setRejectReplyMessage(message: string | null): void { this.config.rejectReplyMessage = message; }
 
+  setPorts(authPort: number, acctPort: number): void {
+    this.config.port = authPort;
+    this.config.acctPort = acctPort;
+  }
+
   setSharedSecret(secret: string): void {
     this.config.sharedSecret = secret;
     this.clientTable.clear();

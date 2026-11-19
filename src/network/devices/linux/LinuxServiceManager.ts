@@ -536,7 +536,7 @@ const SERVER_UNITS: DefaultUnit[] = [
     description: 'FreeRADIUS multi-protocol policy server',
     type: 'forking',
     execStart: '/usr/sbin/freeradius',
-    execReload: '/usr/sbin/freeradius -c',
+    execReload: '/usr/sbin/freeradius -Cm -lstdout',
     user: 'freerad',
     after: ['network.target'],
     // Active out of the box, like oracle-ohasd — the RADIUS engine has

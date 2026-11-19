@@ -66,6 +66,7 @@ import { netstatCommand } from './net/Netstat';
 import { ncCommand } from './net/Nc';
 import { tcCommand } from './net/Tc';
 import { radtestCommand } from './net/Radtest';
+import { freeradiusCommand } from './net/Freeradius';
 import { tcpdumpCommand } from './net/Tcpdump';
 import { tcpreplayCommand } from './net/Tcpreplay';
 import { arpingCommand } from './net/Arping';
@@ -229,6 +230,7 @@ export {
   ncCommand,
   tcCommand,
   radtestCommand,
+  freeradiusCommand,
   tcpdumpCommand,
   tcpreplayCommand,
   arpingCommand,
@@ -411,6 +413,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ncCommand,
   tcCommand,
   radtestCommand,
+  freeradiusCommand,
   tcpdumpCommand,
   tcpreplayCommand,
   arpingCommand,
