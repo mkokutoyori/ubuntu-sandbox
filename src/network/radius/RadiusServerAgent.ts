@@ -177,6 +177,23 @@ export class RadiusServerAgent {
 
   setStatusServer(on: boolean): void { this.config.statusServer = on; }
 
+  private unknownClientListener: ((event: { kind: 'auth' | 'acct'; port: number; clientIp: string; clientPort: number }) => void) | null = null;
+  private lastUnknownClientSecond = -1;
+
+  setUnknownClientListener(listener: ((event: { kind: 'auth' | 'acct'; port: number; clientIp: string; clientPort: number }) => void) | null): void {
+    this.unknownClientListener = listener;
+  }
+
+  private reportUnknownClient(kind: 'auth' | 'acct', senderIp: string, clientPort: number): void {
+    if (this.unknownClientListener === null) return;
+    if (this.packetTrace === null) {
+      const second = Math.floor(simulationNowMs() / 1000);
+      if (second === this.lastUnknownClientSecond) return;
+      this.lastUnknownClientSecond = second;
+    }
+    this.unknownClientListener({ kind, port: kind === 'auth' ? this.config.port : this.config.acctPort, clientIp: senderIp, clientPort });
+  }
+
   private warningListener: ((message: string) => void) | null = null;
 
   setWarningListener(listener: ((message: string) => void) | null): void { this.warningListener = listener; }
@@ -329,14 +346,16 @@ export class RadiusServerAgent {
     }
     if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-request') return;
 
+    const senderIp = srcIp.toString();
+    if (this.clientRefused(senderIp)) {
+      this.reportUnknownClient('acct', senderIp, udp.sourcePort);
+      return;
+    }
     if (!verifyAccountingRequestAuthenticator(payload, this.secretFor(srcIp))) {
       Logger.warn(this.host.id, 'radius:bad-accounting-authenticator',
         `${this.host.name}: dropped Accounting-Request from ${srcIp} — invalid Authenticator (shared secret mismatch?)`);
       return;
     }
-
-    const senderIp = srcIp.toString();
-    if (this.clientRefused(senderIp)) return;
     const dedupKey = `acct:${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
     this.pruneAcctDedupCache();
     const cached = this.recentAcctReplies.get(dedupKey);
@@ -443,6 +462,7 @@ export class RadiusServerAgent {
     });
 
     if (this.clientRefused(senderIp)) {
+      this.reportUnknownClient('auth', senderIp, udp.sourcePort);
       this.publishRejected(senderIp, getAttr(payload, 'user-name')?.value as string ?? '', 'client-not-authorized');
       return;
     }
@@ -526,7 +546,10 @@ export class RadiusServerAgent {
     cache: Map<string, { response: RadiusPacket; sentAt: number }>,
   ): void {
     const senderIp = srcIp.toString();
-    if (this.clientRefused(senderIp)) return;
+    if (this.clientRefused(senderIp)) {
+      this.reportUnknownClient(replyCode === 'access-accept' ? 'auth' : 'acct', senderIp, udp.sourcePort);
+      return;
+    }
     if (this.config.statusServer !== true) {
       const message = 'Ignoring Status-Server request due to security configuration';
       Logger.warn(this.host.id, 'radius:status-server-ignored', `${this.host.name}: ${message}`);

@@ -168,6 +168,8 @@ export class RadiusdService {
     this.radiusServer.setDecisionListener((payload) => this.writeAuthLog(payload));
     this.radiusServer.setAccountingListener((record) => this.writeDetail(record));
     this.radiusServer.setWarningListener((message) => this.writeLogLine('Warning', message));
+    this.radiusServer.setUnknownClientListener((event) => this.writeLogLine('Error',
+      `Ignoring request to ${event.kind} address ${listen.address ?? '*'} port ${event.port} bound to server default from unknown client ${event.clientIp} port ${event.clientPort} proto udp`));
     this.boundPorts = bound;
     this.running = true;
     return { ok: true };
@@ -178,6 +180,7 @@ export class RadiusdService {
     this.radiusServer.setDecisionListener(null);
     this.radiusServer.setAccountingListener(null);
     this.radiusServer.setWarningListener(null);
+    this.radiusServer.setUnknownClientListener(null);
     for (const port of this.boundPorts) this.host.udpClose(port);
     this.boundPorts = [];
     this.radiusServer.stop();
