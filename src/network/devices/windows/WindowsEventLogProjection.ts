@@ -64,6 +64,8 @@ export class WindowsEventLogProjection {
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.service.control-sent', (e) => this.onControlSent(e.payload)),
+      bus.subscribe('windows.service.paused', (e) => this.onServiceState(e.payload, 'paused')),
+      bus.subscribe('windows.service.resumed', (e) => this.onServiceState(e.payload, 'running')),
       bus.subscribe('windows.system.time-changed', (e) => this.onSystemTimeChanged(e.payload)),
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
@@ -202,6 +204,12 @@ export class WindowsEventLogProjection {
       `The ${p.displayName} service was successfully sent a ${p.control} control.`,
       undefined, this.requesterSid?.(),
     );
+  }
+
+  private onServiceState(p: WindowsServiceEventPayload, state: 'paused' | 'running'): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog('System', 'Service Control Manager', SCM_STATE_CHANGE, 'Information',
+      `The ${p.displayName} service entered the ${state} state.`);
   }
 
   private onService(p: WindowsServiceEventPayload): void {

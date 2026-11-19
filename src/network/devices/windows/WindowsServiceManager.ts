@@ -237,7 +237,7 @@ export class WindowsServiceManager {
     this.notifyWatchers(svc, prev);
   }
 
-  private publishControlSent(svc: WindowsService, control: 'start' | 'stop'): void {
+  private publishControlSent(svc: WindowsService, control: 'start' | 'stop' | 'pause' | 'continue'): void {
     this.bus?.publish({
       topic: 'windows.service.control-sent',
       payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, control },
@@ -634,7 +634,14 @@ export class WindowsServiceManager {
     if (!svc) return `The specified service does not exist.`;
     if (!svc.canPauseAndContinue) return `Service '${svc.displayName}' cannot be paused.`;
     if (svc.state !== 'Running') return `The service is not running.`;
+    const prev = svc.state;
     svc.state = 'Paused';
+    this.publishControlSent(svc, 'pause');
+    this.bus?.publish({
+      topic: 'windows.service.paused',
+      payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, running: false },
+    });
+    this.notifyWatchers(svc, prev);
     return '';
   }
 
@@ -643,7 +650,14 @@ export class WindowsServiceManager {
     const svc = this.services.get(name.toLowerCase());
     if (!svc) return `The specified service does not exist.`;
     if (svc.state !== 'Paused') return `The service is not paused.`;
+    const prev = svc.state;
     svc.state = 'Running';
+    this.publishControlSent(svc, 'continue');
+    this.bus?.publish({
+      topic: 'windows.service.resumed',
+      payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, running: true },
+    });
+    this.notifyWatchers(svc, prev);
     return '';
   }
 
