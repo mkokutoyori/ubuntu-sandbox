@@ -20,6 +20,7 @@ import {
   verifyAccountingRequestAuthenticator,
 } from './authenticators';
 import { parseChapPasswordHex, verifyChapResponse } from './passwords';
+import { loginTimeSecondsLeft } from './LoginTime';
 import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
@@ -84,7 +85,9 @@ const DEDUP_TTL_MS = 30_000;
 /** How long an issued Access-Challenge's State stays redeemable (RFC 2865 §4.4). */
 const CHALLENGE_TTL_MS = 60_000;
 
-type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized';
+type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time';
+
+const LOGIN_TIME_MINIMUM_TIMEOUT_SECONDS = 60;
 
 /** RFC 2607 — a realm this server proxies to a home server instead of authenticating locally. */
 interface RealmRoute {
@@ -176,6 +179,21 @@ export class RadiusServerAgent {
   setRejectReplyMessage(message: string | null): void { this.config.rejectReplyMessage = message; }
 
   setStatusServer(on: boolean): void { this.config.statusServer = on; }
+
+  private minuteOfWeek: () => number = () => {
+    const date = new Date(simulationNowMs());
+    return date.getUTCDay() * 1440 + date.getUTCHours() * 60 + date.getUTCMinutes();
+  };
+
+  setMinuteOfWeekClock(clock: () => number): void { this.minuteOfWeek = clock; }
+
+  private loginTimeVerdict(user: RadiusUser | undefined): { allowed: boolean; secondsLeft: number } {
+    if (user?.loginTime === undefined) return { allowed: true, secondsLeft: 0 };
+    const left = loginTimeSecondsLeft(user.loginTime, this.minuteOfWeek());
+    if (left < 0) return { allowed: false, secondsLeft: 0 };
+    if (left > 0 && left < LOGIN_TIME_MINIMUM_TIMEOUT_SECONDS) return { allowed: false, secondsLeft: 0 };
+    return { allowed: true, secondsLeft: left };
+  }
 
   private unknownClientListener: ((event: { kind: 'auth' | 'acct'; port: number; clientIp: string; clientPort: number }) => void) | null = null;
   private lastUnknownClientSecond = -1;
@@ -481,7 +499,14 @@ export class RadiusServerAgent {
       return;
     }
 
-    const user = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes });
+    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes });
+    const loginTime = this.loginTimeVerdict(resolved);
+    if (!loginTime.allowed) {
+      this.publishRejected(senderIp, username, 'outside-login-time');
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, resolved, dedupKey);
+      return;
+    }
+    const user = loginTime.secondsLeft === 0 || resolved === undefined ? resolved : this.withSessionTimeout(resolved, loginTime.secondsLeft);
 
     if (eapAttr) {
       this.handleEapRequest(inPort, srcIp, udp.sourcePort, payload, username, user, dedupKey);
@@ -587,6 +612,14 @@ export class RadiusServerAgent {
       cache.set(dedupKey, { response, sentAt: simulationNowMs() });
     }
     this.sendRadiusFrame(inPort, port, localIp, srcIp, udp.sourcePort, udp.destinationPort, response);
+  }
+
+  private withSessionTimeout(user: RadiusUser, secondsLeft: number): RadiusUser {
+    const reply = user.replyAttributes ?? [];
+    const existing = reply.find((attribute) => attribute.type === 'session-timeout');
+    if (existing === undefined) return { ...user, replyAttributes: [...reply, attr('session-timeout', secondsLeft)] };
+    if (Number(existing.value) <= secondsLeft) return user;
+    return { ...user, replyAttributes: reply.map((attribute) => (attribute === existing ? attr('session-timeout', secondsLeft) : attribute)) };
   }
 
   private pruneDedupCache(): void {

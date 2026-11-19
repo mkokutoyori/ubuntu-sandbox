@@ -27,6 +27,7 @@ export interface UsersMatch {
   knownGood: KnownGoodItem[];
   acceptAny: boolean;
   rejected: boolean;
+  loginTime: string | null;
   reply: RadiusAttribute[];
 }
 
@@ -213,7 +214,7 @@ function matches(op: UsersOperator, actual: string | number | undefined, wanted:
 const SETTING_OPS = new Set<UsersOperator>([':=', '+=', '-=']);
 
 export function matchUsersEntries(entries: UsersEntry[], username: string, request: UsersRequestView): UsersMatch | null {
-  const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, reply: [] };
+  const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, loginTime: null, reply: [] };
   let matched = false;
   for (const entry of entries) {
     if (entry.name !== 'DEFAULT' && entry.name !== username) continue;
@@ -236,6 +237,7 @@ export function matchUsersEntries(entries: UsersEntry[], username: string, reque
       if (key === 'cleartext-password') result.password = value;
       else if (key === 'auth-type' && value.toLowerCase() === 'accept') result.acceptAny = true;
       else if (key === 'auth-type' && value.toLowerCase() === 'reject') result.rejected = true;
+      else if (key === 'login-time') result.loginTime = value;
     }
     let fallThrough = false;
     for (const pair of entry.reply) {

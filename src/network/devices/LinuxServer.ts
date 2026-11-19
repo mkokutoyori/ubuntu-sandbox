@@ -93,7 +93,7 @@ export class LinuxServer extends LinuxMachine {
       read: (path) => this.executor.vfs.readFile(path),
       append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
       list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
-    });
+    }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime() });
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'postfix') return;

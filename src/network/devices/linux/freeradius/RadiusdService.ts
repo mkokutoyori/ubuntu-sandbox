@@ -29,6 +29,7 @@ import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
 import { formatCtime } from '../time/ctime';
+import { formatLocalTime } from '../system/SystemInfo';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import type { OperationResult } from '../LinuxServiceManager';
 import type { EndHost } from '@/network/devices/EndHost';
@@ -37,6 +38,11 @@ export interface RadiusdFiles {
   read(path: string): string | null;
   append(path: string, text: string, umask?: number): void;
   list?(path: string): readonly string[] | null;
+}
+
+export interface RadiusdWallClock {
+  zone(): string | undefined;
+  nowMs(): number;
 }
 
 export interface RadiusdCheckReport {
@@ -81,6 +87,7 @@ export class RadiusdService {
     private readonly files: RadiusdFiles,
     private readonly clientsConfPath: string = CLIENTS_CONF_PATH,
     private readonly usersFilePath: string = USERS_FILE_PATH,
+    private readonly wallClock: RadiusdWallClock = { zone: () => undefined, nowMs: () => simulationNowMs() },
   ) {}
 
   isRunning(): boolean {
@@ -246,7 +253,7 @@ export class RadiusdService {
     if (known === null && !match.acceptAny) return undefined;
     return {
       username, password: known?.cleartext ?? match.password ?? '', verify: known?.verify,
-      acceptAny: match.acceptAny, replyAttributes: match.reply,
+      acceptAny: match.acceptAny, replyAttributes: match.reply, ...(match.loginTime === null ? {} : { loginTime: match.loginTime }),
     };
   }
 
@@ -282,6 +289,10 @@ export class RadiusdService {
   private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig }): void {
     this.logConfig = loaded.log;
     this.radiusServer.setStatusServer(loaded.security.statusServer);
+    this.radiusServer.setMinuteOfWeekClock(() => {
+      const [day, hour, minute] = formatLocalTime('%w %H %M', this.wallClock.nowMs(), this.wallClock.zone()).split(' ').map(Number);
+      return day * 1440 + hour * 60 + minute;
+    });
     this.radiusServer.setRejectReplyMessage(null);
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
