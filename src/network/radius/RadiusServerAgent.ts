@@ -2,6 +2,7 @@ import { RadiusClientTable } from './ClientTable';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
+import type { RadiusAuthDecidedPayload } from './events';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@/crypto/encoding';
 import { md4 } from '@/crypto/hash';
@@ -156,6 +157,8 @@ export class RadiusServerAgent {
 
   setEnabled(on: boolean): void { this.config.enabled = on; }
 
+  setRejectReplyMessage(message: string | null): void { this.config.rejectReplyMessage = message; }
+
   setSharedSecret(secret: string): void {
     this.config.sharedSecret = secret;
     this.clientTable.clear();
@@ -177,6 +180,30 @@ export class RadiusServerAgent {
   requireAuthorizedClient(on: boolean): void { this.config.requireAuthorizedClient = on; }
 
   readonly clientTable = new RadiusClientTable();
+
+  private requestNumber = -1;
+
+  private decisionListener: ((payload: RadiusAuthDecidedPayload) => void) | null = null;
+
+  setDecisionListener(listener: ((payload: RadiusAuthDecidedPayload) => void) | null): void { this.decisionListener = listener; }
+
+  private publishDecision(request: RadiusPacket, clientIp: IPAddress, accepted: boolean): void {
+    const passwordAttr = getAttr(request, 'user-password');
+    const chapAttr = getAttr(request, 'chap-password');
+    let password = '<no User-Password attribute>';
+    if (chapAttr) password = '<CHAP-Password>';
+    else if (passwordAttr) password = decryptUserPassword(String(passwordAttr.value), this.secretFor(clientIp), request.authenticator);
+    const payload: RadiusAuthDecidedPayload = {
+      deviceId: this.host.id, hostname: this.host.getHostname(),
+      number: this.requestNumber, accepted, clientIp: clientIp.toString(),
+      clientShortname: this.clientTable.find(clientIp)?.shortname ?? clientIp.toString(),
+      username: getAttr(request, 'user-name')?.value ?? null,
+      password, nasPort: Number(getAttr(request, 'nas-port')?.value ?? 0),
+      callingStationId: getAttr(request, 'calling-station-id')?.value ?? null,
+    };
+    this.getBus().publish({ topic: 'radius.auth.decided', payload });
+    this.decisionListener?.(payload);
+  }
 
   private clientRefused(senderIp: string): boolean {
     if (this.clientTable.size > 0 && this.clientTable.find(new IPAddress(senderIp)) !== null) return false;
@@ -323,6 +350,7 @@ export class RadiusServerAgent {
       return;
     }
 
+    this.requestNumber++;
     this.getBus().publish({
       topic: 'radius.packet.received',
       payload: {
@@ -604,6 +632,7 @@ export class RadiusServerAgent {
       attr('vendor-specific', encryptMppeKey(recvKey, this.secretFor(dstIp), request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 17 }),
     ];
     if (user.replyAttributes) attrs.push(...user.replyAttributes);
+    this.publishDecision(request, dstIp, true);
 
     let response: RadiusPacket = {
       type: 'radius', code: 'access-accept', identifier: request.identifier,
@@ -664,6 +693,7 @@ export class RadiusServerAgent {
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
     const attrs: RadiusAttribute[] = [attr('eap-message', eapPacketToWireHex(eapResult))];
+    this.publishDecision(request, dstIp, accepted);
     if (accepted && user?.replyAttributes) attrs.push(...user.replyAttributes);
     let response: RadiusPacket = {
       type: 'radius', code: accepted ? 'access-accept' : 'access-reject', identifier: request.identifier,
@@ -741,7 +771,9 @@ export class RadiusServerAgent {
     if (!srcIp) return;
     const replyAttrs: RadiusAttribute[] = [];
     if (accepted && user?.replyAttributes) replyAttrs.push(...user.replyAttributes);
-    if (!accepted) replyAttrs.push(attr('reply-message', 'Authentication failed'));
+    const rejectMessage = this.config.rejectReplyMessage === undefined ? 'Authentication failed' : this.config.rejectReplyMessage;
+    if (!accepted && rejectMessage !== null) replyAttrs.push(attr('reply-message', rejectMessage));
+    this.publishDecision(request, dstIp, accepted);
     let response: RadiusPacket = {
       type: 'radius',
       code: accepted ? 'access-accept' : 'access-reject',

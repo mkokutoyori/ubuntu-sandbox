@@ -22,7 +22,8 @@ import type { HostCapableDevice } from '@/network';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
-import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH } from './linux/freeradius/RadiusdService';
+import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
+import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
 import { reverseNameOf } from './linux/network/ReverseName';
@@ -81,6 +82,7 @@ export class LinuxServer extends LinuxMachine {
     this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack());
     this.radiusd = new RadiusdService(this, this.radiusServer, this.radiusTcpServer, {
       read: (path) => this.executor.vfs.readFile(path),
+      append: (path, text) => { this.executor.vfs.writeFile(path, text, 0, 0, 0o022, true); },
     });
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
@@ -253,6 +255,9 @@ export class LinuxServer extends LinuxMachine {
         'client localhost {\n\tipaddr = 127.0.0.1\n\tsecret = testing123\n}\n',
         0, 0, 0o022,
       );
+    }
+    if (!this.executor.vfs.exists(RADIUSD_CONF_PATH)) {
+      this.executor.vfs.writeFile(RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF, 0, 0, 0o022);
     }
     if (!this.executor.vfs.exists(USERS_FILE_PATH)) {
       this.executor.vfs.writeFile(USERS_FILE_PATH, '', 0, 0, 0o022);

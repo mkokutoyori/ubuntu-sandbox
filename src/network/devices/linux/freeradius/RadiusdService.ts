@@ -22,19 +22,26 @@ import { parseClientsConf } from './ClientsConfParser';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, type UsersEntry } from './UsersFileParser';
 import type { RadiusUser, RadiusAttribute } from '@/network/radius/types';
+import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
+import { parseFreeradiusConf } from './FreeradiusConf';
+import { readRadiusdLogConfig, type RadiusdLogConfig } from './RadiusdLogConfig';
+import { formatCtime } from '../time/ctime';
+import { simulationNowMs } from '@/network/core/SystemClock';
 import type { OperationResult } from '../LinuxServiceManager';
 import type { EndHost } from '@/network/devices/EndHost';
 
 export interface RadiusdFiles {
   read(path: string): string | null;
+  append(path: string, text: string): void;
 }
 
 export const CLIENTS_CONF_PATH = '/etc/freeradius/3.0/clients.conf';
 export const USERS_FILE_PATH = '/etc/freeradius/3.0/users';
+export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig }
   | { ok: false; error: string };
 
 export class RadiusdService {
@@ -72,12 +79,14 @@ export class RadiusdService {
     this.host.udpBind(UDP_PORT_RADIUS_ACCT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, PROCESS_NAME);
+    this.radiusServer.setDecisionListener((payload) => this.writeAuthLog(payload));
     this.running = true;
     return { ok: true };
   }
 
   stop(): void {
     if (!this.running) return;
+    this.radiusServer.setDecisionListener(null);
     this.host.udpClose(UDP_PORT_RADIUS_AUTH);
     this.host.udpClose(UDP_PORT_RADIUS_ACCT);
     this.radiusServer.stop();
@@ -99,6 +108,20 @@ export class RadiusdService {
   }
 
   private readonly fileUsers = new Set<string>();
+  private logConfig: RadiusdLogConfig | null = null;
+
+  private writeAuthLog(payload: RadiusAuthDecidedPayload): void {
+    const log = this.logConfig;
+    if (log === null || log.destination !== 'files') return;
+    const logged = payload.accepted ? log.auth || log.authAccept : log.auth || log.authReject;
+    if (!logged) return;
+    const withPassword = payload.accepted ? log.authGoodpass : log.authBadpass;
+    const cli = payload.callingStationId === null ? '' : ` cli ${payload.callingStationId}`;
+    const user = payload.username === null ? '<no User-Name attribute>' : String(payload.username);
+    const line = `${formatCtime(new Date(simulationNowMs()))} : Auth: (${payload.number}) ${payload.accepted ? 'Login OK' : 'Login incorrect'}: `
+      + `[${user}${withPassword ? `/${payload.password}` : ''}] (from client ${payload.clientShortname} port ${payload.nasPort}${cli})\n`;
+    this.files.append(log.file, line);
+  }
 
   private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[]): RadiusUser | undefined {
     const match = matchUsersEntries(entries, username, (name) => attributes.find((candidate) => candidate.type === name)?.value);
@@ -107,6 +130,12 @@ export class RadiusdService {
   }
 
   private loadConfig(): ConfigLoadResult {
+    const mainSource = this.files.read(RADIUSD_CONF_PATH);
+    if (mainSource === null) return { ok: false, error: `Unable to open file '${RADIUSD_CONF_PATH}': No such file or directory` };
+    const main = parseFreeradiusConf(mainSource, RADIUSD_CONF_PATH, (path) => this.files.read(path));
+    if ('error' in main) return { ok: false, error: main.error };
+    const log = readRadiusdLogConfig(main.root);
+    if ('error' in log) return { ok: false, error: log.error };
     const clientsSource = this.files.read(this.clientsConfPath);
     if (clientsSource === null) return { ok: false, error: `open: ${this.clientsConfPath}: file not found` };
     const usersSource = this.files.read(this.usersFilePath);
@@ -115,10 +144,12 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, this.usersFilePath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries };
+    return { ok: true, clients: parsed.clients, users: users.entries, log };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[] }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig }): void {
+    this.logConfig = loaded.log;
+    this.radiusServer.setRejectReplyMessage(null);
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
     this.radiusTcpServer.setSharedSecret(secret);

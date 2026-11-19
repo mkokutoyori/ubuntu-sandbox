@@ -229,6 +229,7 @@ export interface RadiusServerAgentConfig {
   users: Map<string, RadiusUser>;
   clients: Set<string>;
   requireAuthorizedClient?: boolean;
+  rejectReplyMessage?: string | null;
 }
 
 export function createDefaultClientConfig(): RadiusClientConfig {
