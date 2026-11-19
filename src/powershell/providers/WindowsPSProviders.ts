@@ -784,7 +784,7 @@ class WindowsAdAdapter implements IAdProvider {
     const u = store.getUser(store.resolveIdentity(identity));
     return u ? userInfoOf(u) : null;
   }
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult {
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string; samAccountName?: string }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
     const denied = this.requireAdmin('Set-ADUser');
     if (denied) return denied;

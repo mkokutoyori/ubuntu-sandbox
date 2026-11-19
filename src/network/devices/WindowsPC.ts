@@ -776,6 +776,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       accountDisabled: (account, actor) => accounts(() => audit().accountDisabled(account, actor)),
       accountChanged: (account, actor) => accounts(() => audit().accountChanged(account, actor)),
       accountDeleted: (account, actor) => accounts(() => audit().accountDeleted(account, actor)),
+      accountRenamed: (account, newName, actor) => accounts(() => audit().accountRenamed(account, newName, actor)),
       accountUnlocked: (account, actor) => accounts(() => audit().accountUnlocked(account, actor)),
       passwordReset: (account, actor) => accounts(() => audit().passwordReset(account, actor)),
       groupCreated: (group, scope, actor) => groups(() => audit().groupCreated(group, actor, scope)),

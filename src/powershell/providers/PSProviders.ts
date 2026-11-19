@@ -309,7 +309,7 @@ export interface IAdProvider {
   newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string } & UserWriteOptions): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
   listUsers(): AdUserInfo[];
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult;
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string; samAccountName?: string }): AdOpResult;
   /** `Unlock-ADAccount -Identity <user>` — clears the lockout and the bad-password counter. */
   unlockAccount(identity: string): AdOpResult;
   /** `Set-ADAccountControl -Identity <user> [-Enabled ...]` — flips userAccountControl bits (parameter names as in `ACCOUNT_CONTROL_FLAGS`), keeping every other bit. */

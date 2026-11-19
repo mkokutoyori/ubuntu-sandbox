@@ -1120,7 +1120,7 @@ export class DirectoryStore {
     };
   }
 
-  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): DirOpResult {
+  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string; samAccountName?: string }): DirOpResult {
     const entry = this.findUserEntry(sam);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
     if (opts.actingSam) {
@@ -1135,6 +1135,10 @@ export class DirectoryStore {
       }
     }
     const changes: { op: 'replace' | 'add' | 'delete'; type: string; values: string[] }[] = [];
+    if (opts.samAccountName !== undefined && opts.samAccountName.toLowerCase() !== sam.toLowerCase()) {
+      if (this.findUserEntry(opts.samAccountName)) return { ok: false, message: 'The specified account already exists' };
+      changes.push({ op: 'replace', type: 'sAMAccountName', values: [opts.samAccountName] });
+    }
     if (opts.enabled !== undefined) {
       changes.push({ op: 'replace', type: 'userAccountControl', values: [String(this.uacAfter(entry, { Enabled: opts.enabled }))] });
     }

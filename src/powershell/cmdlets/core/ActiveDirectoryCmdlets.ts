@@ -585,13 +585,13 @@ function hashtableProp(ctx: CmdletContext, argKey: string, propName: string): st
 export class SetADUserCmdlet implements ICmdlet {
   readonly name = 'set-aduser';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword', 'Department', 'Title', 'Add', 'Remove', 'Credential', 'ProfilePath', 'HomeDirectory', 'HomeDrive'] as const;
+  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword', 'Department', 'Title', 'Add', 'Remove', 'Credential', 'ProfilePath', 'HomeDirectory', 'HomeDrive', 'SamAccountName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Set-ADUser');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Set-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
-    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string } = {};
+    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string; samAccountName?: string } = {};
     if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
     if (ctx.named['displayname'] !== undefined) opts.fullName = psValueToString(ctx.named['displayname']);
     if (ctx.named['department'] !== undefined) opts.department = psValueToString(ctx.named['department']);
@@ -599,6 +599,7 @@ export class SetADUserCmdlet implements ICmdlet {
     if (ctx.named['profilepath'] !== undefined) opts.profilePath = psValueToString(ctx.named['profilepath']);
     if (ctx.named['homedirectory'] !== undefined) opts.homeDirectory = psValueToString(ctx.named['homedirectory']);
     if (ctx.named['homedrive'] !== undefined) opts.homeDrive = psValueToString(ctx.named['homedrive']);
+    if (ctx.named['samaccountname'] !== undefined) opts.samAccountName = psValueToString(ctx.named['samaccountname']);
     const password = securePasswordOf(ctx, 'accountpassword');
     if (password !== undefined) opts.password = password;
     const addSpns = hashtableProp(ctx, 'add', 'ServicePrincipalNames');
@@ -615,6 +616,7 @@ export class SetADUserCmdlet implements ICmdlet {
     if (opts.enabled === true) audit?.accountEnabled(identity, subject);
     else if (opts.enabled === false) audit?.accountDisabled(identity, subject);
     if (opts.password !== undefined) audit?.passwordReset(identity, subject);
+    if (opts.samAccountName !== undefined && opts.samAccountName.toLowerCase() !== identity.toLowerCase()) audit?.accountRenamed(identity, opts.samAccountName, subject);
     if (opts.fullName !== undefined || opts.department !== undefined || opts.title !== undefined || opts.addSpns || opts.removeSpns
       || opts.profilePath !== undefined || opts.homeDirectory !== undefined || opts.homeDrive !== undefined) {
       audit?.accountChanged(identity, subject);

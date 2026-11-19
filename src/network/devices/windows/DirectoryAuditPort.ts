@@ -7,6 +7,7 @@ export interface DirectoryAuditPort {
   accountDisabled(account: string, actor: string): void;
   accountChanged(account: string, actor: string): void;
   accountDeleted(account: string, actor: string): void;
+  accountRenamed(account: string, newName: string, actor: string): void;
   accountUnlocked(account: string, actor: string): void;
   passwordReset(account: string, actor: string): void;
   groupCreated(group: string, scope: DirectoryGroupScope, actor: string): void;
