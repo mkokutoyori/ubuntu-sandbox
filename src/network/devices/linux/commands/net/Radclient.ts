@@ -89,8 +89,6 @@ const REFUSED_VALUES: Record<string, string> = {
 
 const REFUSED_COMMANDS: Record<string, string> = {
   status: 'the client sends authentication requests only',
-  coa: 'the client sends authentication requests only',
-  disconnect: 'the client sends authentication requests only',
   auto: 'the client sends authentication requests only',
 };
 
@@ -144,6 +142,66 @@ interface AcctRun {
 }
 
 const ACCT_SOURCE_PORT = 49998;
+
+const PACKET_CODE_NAMES: Record<string, string> = {
+  'disconnect-request': 'Disconnect-Request', 'disconnect-ack': 'Disconnect-ACK', 'disconnect-nak': 'Disconnect-NAK',
+  'coa-request': 'CoA-Request', 'coa-ack': 'CoA-ACK', 'coa-nak': 'CoA-NAK',
+};
+
+async function runCoa(
+  ctx: LinuxCommandContext, packets: Packet[], command: 'coa' | 'disconnect', run: AcctRun,
+): Promise<{ output: string; exitCode: number }> {
+  const client = ctx.coaClient!;
+  const code = command === 'coa' ? 'coa-request' : 'disconnect-request';
+  const expected = command === 'coa' ? 'coa-ack' : 'disconnect-ack';
+  const lines: string[] = [];
+  let accepted = 0;
+  let rejected = 0;
+  let lost = 0;
+  let number = 0;
+  client.addNas(run.server, run.secret, { port: run.port, timeoutMs: run.timeoutMs, retransmit: run.retries });
+  try {
+    for (const packet of packets) {
+      const attributes: RadiusAttribute[] = [];
+      for (const pair of packet.pairs) {
+        const attribute = usersPairToAttribute(pair);
+        if (attribute === null) return { output: `radclient: Failed to parse attribute "${pair.name}"`, exitCode: 1 };
+        attributes.push(attribute);
+      }
+      for (let repeat = 0; repeat < run.count; repeat++, number++) {
+        const result = await client.sendAttributes(run.server, code, attributes);
+        const exchange = client.getLastExchange();
+        if (exchange === null) { lost++; continue; }
+        if (!run.quiet) {
+          for (let attempt = 0; attempt < Math.max(1, exchange.transmissions); attempt++) {
+            lines.push(`Sent ${PACKET_CODE_NAMES[code]} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            if (run.debug) lines.push(...attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
+          }
+        }
+        if (result.kind === 'timeout' || exchange.reply === null) {
+          if (!run.quiet) lines.push(`(${number}) No reply from server for ID ${exchange.request.identifier} socket 3`);
+          lost++;
+          continue;
+        }
+        if (!run.quiet) {
+          lines.push(`Received ${PACKET_CODE_NAMES[exchange.reply.code] ?? exchange.reply.code} Id ${exchange.reply.identifier} from ${exchange.serverIp}:${exchange.serverPort} to ${exchange.localIp}:${exchange.sourcePort} length ${exchange.replyLength}`);
+          if (run.debug) lines.push(...exchange.reply.attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
+        }
+        if (exchange.reply.code === expected) accepted++;
+        else {
+          rejected++;
+          if (!run.quiet) lines.push(`(${number}) -: Expected ${PACKET_CODE_NAMES[expected]} got ${PACKET_CODE_NAMES[exchange.reply.code] ?? exchange.reply.code}`);
+        }
+      }
+    }
+  } finally {
+    client.removeNas(run.server);
+  }
+  if (run.summary) {
+    lines.push('Packet summary:', `\tAccepted      : ${accepted}`, `\tRejected      : ${rejected}`, `\tLost          : ${lost}`, '\tPassed filter : 0', `\tFailed filter : ${rejected}`);
+  }
+  return { output: lines.join('\n'), exitCode: lost > 0 || rejected > 0 ? 1 : 0 };
+}
 
 async function runAcct(ctx: LinuxCommandContext, packets: Packet[], run: AcctRun): Promise<{ output: string; exitCode: number }> {
   const client = ctx.radacctClient!;
@@ -209,8 +267,8 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   if (REFUSED_COMMANDS[command] !== undefined) {
     return { output: `radclient: the ${command} command is not implemented in this simulator: ${REFUSED_COMMANDS[command]}.`, exitCode: 1 };
   }
-  if (command !== 'auth' && command !== 'acct') return { output: `radclient: Invalid request type "${command}"`, exitCode: 1 };
-  if (!ctx.radtestClient || !ctx.radacctClient) return { output: 'radclient: command not found', exitCode: 127 };
+  if (command !== 'auth' && command !== 'acct' && command !== 'coa' && command !== 'disconnect') return { output: `radclient: Invalid request type "${command}"`, exitCode: 1 };
+  if (!ctx.radtestClient || !ctx.radacctClient || !ctx.coaClient) return { output: 'radclient: command not found', exitCode: 127 };
   const count = options.values.has('c') ? Number(options.values.get('c')) : 1;
   const retries = options.values.has('r') ? Number(options.values.get('r')) : RADCLIENT_RETRIES;
   const timeoutText = options.values.get('t');
@@ -228,7 +286,7 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   }
 
   const [serverName, portText] = serverArg.split(':');
-  const port = portText === undefined ? (command === 'acct' ? 1813 : 1812) : Number(portText);
+  const port = portText === undefined ? (command === 'acct' ? 1813 : command === 'auth' ? 1812 : 3799) : Number(portText);
   if (!serverName || !Number.isInteger(port) || port <= 0 || port > 65535) return { output: RADCLIENT_USAGE, exitCode: 1 };
   const server = IPAddress.tryParse(serverName) ?? (await ctx.net.resolveHostname(serverName));
   if (server === null) return { output: `radclient: Failed to find IP address for host ${serverName}: Name or service not known`, exitCode: 1 };
@@ -246,6 +304,9 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   if (packets.length === 0) return { output: 'radclient: Nothing to send.', exitCode: 1 };
 
   const quiet = options.flags.has('q');
+  if (command === 'coa' || command === 'disconnect') {
+    return runCoa(ctx, packets, command, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') });
+  }
   if (command === 'acct') {
     return runAcct(ctx, packets, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') });
   }

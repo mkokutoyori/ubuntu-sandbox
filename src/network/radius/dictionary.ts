@@ -156,6 +156,13 @@ export const RADIUS_VALUE_NAMES: Readonly<Partial<Record<RadiusAttrType, Readonl
   'framed-compression': { 'none': 0, 'van-jacobson-tcp-ip': 1, 'ipx-header-compression': 2, 'stac-lzs': 3 },
   'login-service': { 'telnet': 0, 'rlogin': 1, 'tcp-clear': 2, 'portmaster': 3, 'lat': 4, 'x25-pad': 5, 'x25-t3pos': 6, 'tcp-clear-quiet': 8 },
   'termination-action': { 'default': 0, 'radius-request': 1 },
+  'error-cause': {
+    'residual-context-removed': 201, 'invalid-eap-packet': 202, 'unsupported-attribute': 401, 'missing-attribute': 402,
+    'nas-identification-mismatch': 403, 'invalid-request': 404, 'unsupported-service': 405, 'unsupported-extension': 406,
+    'invalid-attribute-value': 407, 'administratively-prohibited': 501, 'proxy-request-not-routable': 502,
+    'session-context-not-found': 503, 'session-context-not-removable': 504, 'proxy-processing-error': 505,
+    'resources-unavailable': 506, 'request-initiated': 507, 'multiple-session-selection-unsupported': 508,
+  },
   'acct-status-type': { 'start': 1, 'stop': 2, 'alive': 3, 'interim-update': 3, 'accounting-on': 7, 'accounting-off': 8, 'failed': 15 },
   'acct-authentic': { 'radius': 1, 'local': 2, 'remote': 3, 'diameter': 4 },
   'acct-terminate-cause': {

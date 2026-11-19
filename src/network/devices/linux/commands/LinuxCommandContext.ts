@@ -26,6 +26,7 @@ import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
 import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
 import type { RadiusAccountingClient } from '@/network/radius/RadiusAccountingClient';
+import type { CoaClient } from '@/network/radius/CoaClient';
 import type { GreAgent } from '@/network/gre/GreAgent';
 import type { LinuxNetworkConfigManager } from '../LinuxNetworkConfigManager';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -98,6 +99,8 @@ export interface LinuxCommandContext {
   readonly radiusd?: RadiusdCommandPort;
 
   readonly radacctClient?: RadiusAccountingClient;
+
+  readonly coaClient?: CoaClient;
 
   readonly tlsTrustAnchors: readonly X509Certificate[];
 

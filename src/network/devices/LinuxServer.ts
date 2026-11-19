@@ -23,6 +23,7 @@ import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
+import { CoaClient } from '../radius/CoaClient';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
@@ -36,6 +37,7 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 /** Dedicated UDP port for the `radtest` probe client's replies — see `radtestClient`'s doc comment. */
 const RADTEST_SOURCE_PORT = 49999;
 const RADCLIENT_ACCT_SOURCE_PORT = 49998;
+const RADCLIENT_COA_SOURCE_PORT = 49997;
 
 const SMTPD_FIRST_PID = 3100;
 
@@ -49,6 +51,7 @@ export class LinuxServer extends LinuxMachine {
   /** Backs the `radtest` CLI tool (freeradius-utils) — a one-shot probe client, not persistent NAS config. */
   private readonly radtestClient: RadiusClientAgent;
   private readonly radacctClient: RadiusAccountingClient;
+  private readonly coaClient: CoaClient;
   /** MTA-to-MTA relay reception + local delivery (RFC 5321), port 25. */
   private readonly smtpServer: SmtpServer;
   /** Message submission (RFC 6409) — AUTH mandatory, same engine as port 25. */
@@ -117,6 +120,12 @@ export class LinuxServer extends LinuxMachine {
     this.radtestClient.start();
     this.radacctClient = new RadiusAccountingClient(radiusHost, () => this.getBus());
     this.radacctClient.start();
+    this.coaClient = new CoaClient(radiusHost, () => this.getBus());
+    this.coaClient.start();
+    this.coaClient.setFixedSourcePort(RADCLIENT_COA_SOURCE_PORT);
+    this.udpBind(RADCLIENT_COA_SOURCE_PORT, (dgram) => {
+      if (dgram.sourceIP instanceof IPAddress) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+    }, 'radclient');
     this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, 'radclient');
@@ -287,7 +296,7 @@ export class LinuxServer extends LinuxMachine {
   }
 
   protected override buildCommandContext(outputPiped = false, invokedAs?: string): LinuxCommandContext {
-    return { ...super.buildCommandContext(outputPiped, invokedAs), radtestClient: this.radtestClient, radacctClient: this.radacctClient, radiusd: this.radiusd };
+    return { ...super.buildCommandContext(outputPiped, invokedAs), radtestClient: this.radtestClient, radacctClient: this.radacctClient, coaClient: this.coaClient, radiusd: this.radiusd };
   }
 
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }

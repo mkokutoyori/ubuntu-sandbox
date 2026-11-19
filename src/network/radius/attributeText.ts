@@ -17,7 +17,7 @@ const NAMED_CASE: Record<string, string> = {
   ip: 'IP', ipv4: 'IPv4', ipv6: 'IPv6', 'ieee-802': 'IEEE-802', isdn: 'ISDN', sdsl: 'SDSL', xdsl: 'xDSL', idsl: 'IDSL',
   'wireless-802.11': 'Wireless-802.11', 'tcp-clear': 'TCP-Clear', 'tcp-clear-quiet': 'TCP-Clear-Quiet', 'nas-prompt-user': 'NAS-Prompt-User',
   'callback-nas-prompt': 'Callback-NAS-Prompt', 'radius-request': 'RADIUS-Request', 'van-jacobson-tcp-ip': 'Van-Jacobson-TCP-IP',
-  'min-ip': 'MIN-IP', 'ip-in-ip': 'IP-in-IP', 'radius': 'RADIUS', 'nas-error': 'NAS-Error', 'nas-request': 'NAS-Request', 'nas-reboot': 'NAS-Reboot',
+  'min-ip': 'MIN-IP', 'ip-in-ip': 'IP-in-IP', 'radius': 'RADIUS', 'residual-context-removed': 'Residual-Context-Removed', 'invalid-eap-packet': 'Invalid-EAP-Packet', 'nas-identification-mismatch': 'NAS-Identification-Mismatch', 'nas-error': 'NAS-Error', 'nas-request': 'NAS-Request', 'nas-reboot': 'NAS-Reboot',
 };
 
 export function formatRadiusAttributeValue(attribute: RadiusAttribute): string {
