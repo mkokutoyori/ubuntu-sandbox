@@ -2082,10 +2082,50 @@ const NET_FIREWALL_UNSUPPORTED: ReadonlyArray<readonly [string, string, string]>
   ['interfacetype', 'InterfaceType', 'an interface carries no media type here'],
   ['edgetraversalpolicy', 'EdgeTraversalPolicy', 'edge traversal is not modelled'],
   ['policystore', 'PolicyStore', 'only the active store is modelled'],
+  ['interfacealias', 'InterfaceAlias', 'an interface filter is not evaluated here'],
+  ['platform', 'Platform', 'a platform filter is not evaluated here'],
+  ['owner', 'Owner', 'a firewall rule carries no owner here'],
+  ['dynamictarget', 'DynamicTarget', 'dynamic keyword targets are not modelled'],
+  ['remotedynamickeywordaddresses', 'RemoteDynamicKeywordAddresses', 'dynamic keyword targets are not modelled'],
+  ['localonlymapping', 'LocalOnlyMapping', 'a firewall rule carries no mapping options here'],
+  ['loosesourcemapping', 'LooseSourceMapping', 'a firewall rule carries no mapping options here'],
+  ['overrideblockrules', 'OverrideBlockRules', 'a firewall rule carries no block override here'],
+  ['displaygroup', 'DisplayGroup', 'a rule group has no display name apart from its name here'],
+  ['primarystatus', 'PrimaryStatus', 'a firewall rule carries no status here'],
+  ['status', 'Status', 'a firewall rule carries no status here'],
+  ['policystoresource', 'PolicyStoreSource', 'only the active store is modelled'],
+  ['policystoresourcetype', 'PolicyStoreSourceType', 'only the active store is modelled'],
+  ['tracepolicystore', 'TracePolicyStore', 'only the active store is modelled'],
+  ['gposession', 'GPOSession', 'group policy sessions are not modelled'],
+  ['cimsession', 'CimSession', 'a CIM session to another computer is not modelled'],
+  ['asjob', 'AsJob', 'CIM jobs are not modelled'],
+  ['throttlelimit', 'ThrottleLimit', 'CIM jobs are not modelled'],
+  ['inputobject', 'InputObject', 'an explicit input object is not bound here; use the pipeline'],
+  ['associatednetfirewalladdressfilter', 'AssociatedNetFirewallAddressFilter', 'associated filter objects are not modelled'],
+  ['associatednetfirewallapplicationfilter', 'AssociatedNetFirewallApplicationFilter', 'associated filter objects are not modelled'],
+  ['associatednetfirewallinterfacefilter', 'AssociatedNetFirewallInterfaceFilter', 'associated filter objects are not modelled'],
+  ['associatednetfirewallinterfacetypefilter', 'AssociatedNetFirewallInterfaceTypeFilter', 'associated filter objects are not modelled'],
+  ['associatednetfirewallportfilter', 'AssociatedNetFirewallPortFilter', 'associated filter objects are not modelled'],
+  ['associatednetfirewallprofile', 'AssociatedNetFirewallProfile', 'associated filter objects are not modelled'],
+  ['associatednetfirewallsecurityfilter', 'AssociatedNetFirewallSecurityFilter', 'associated filter objects are not modelled'],
+  ['associatednetfirewallservicefilter', 'AssociatedNetFirewallServiceFilter', 'associated filter objects are not modelled'],
 ];
+
+const NET_FIREWALL_UNMODELLED: readonly string[] = NET_FIREWALL_UNSUPPORTED.map(([, name]) => name);
+
+function firewallParameters(implemented: readonly string[]): readonly string[] {
+  return [...new Set([...implemented, 'All', ...NET_FIREWALL_UNMODELLED])];
+}
+
+const NET_FIREWALL_ONLY_STORE: Readonly<Record<string, string>> = {
+  policystoresource: 'PersistentStore',
+  policystoresourcetype: 'Local',
+};
 
 function unsupportedFirewallParameter(ctx: CmdletContext): string | null {
   for (const [key, name, reason] of NET_FIREWALL_UNSUPPORTED) {
+    const only = NET_FIREWALL_ONLY_STORE[key];
+    if (only !== undefined && ctx.named[key] !== undefined && psValueToString(ctx.named[key]) === only) continue;
     if (ctx.named[key] !== undefined) {
       return `The -${name} parameter is not implemented in this simulator: ${reason}.`;
     }
@@ -2147,7 +2187,8 @@ export class GetNetFirewallRuleCmdlet implements ICmdlet {
   readonly displayName = 'Get-NetFirewallRule';
   readonly aliases = [] as const;
   readonly description = 'Retrieves firewall rules from the target computer.';
-  readonly parameters = [...NET_FIREWALL_FILTERS, 'All'] as const;
+  readonly parameters = firewallParameters(NET_FIREWALL_FILTERS);
+  readonly closedParameterSet = true as const;
 
   execute(ctx: CmdletContext): PSValue {
     const unsupported = unsupportedFirewallParameter(ctx);
@@ -2163,9 +2204,10 @@ export class NewNetFirewallRuleCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly pipelineByPropertyName = true as const;
   readonly description = 'Creates a new inbound or outbound firewall rule.';
-  readonly parameters = ['Name', 'DisplayName', 'Description', 'Group', 'Enabled', 'Profile',
+  readonly parameters = firewallParameters(['Name', 'DisplayName', 'Description', 'Group', 'Enabled', 'Profile',
     'Direction', 'Action', 'Protocol', 'LocalPort', 'RemotePort', 'LocalAddress',
-    'RemoteAddress', 'WhatIf', 'Confirm'] as const;
+    'RemoteAddress', 'PassThru', 'WhatIf', 'Confirm']);
+  readonly closedParameterSet = true as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -2210,11 +2252,14 @@ abstract class FirewallToggleCmdlet implements ICmdlet {
   abstract readonly displayName: string;
   abstract readonly aliases: readonly string[];
   readonly pipelineByPropertyName = true as const;
-  readonly parameters = [...NET_FIREWALL_FILTERS, 'PassThru'] as const;
+  readonly parameters = firewallParameters([...NET_FIREWALL_FILTERS, 'PassThru', 'WhatIf', 'Confirm']);
+  readonly closedParameterSet = true as const;
   protected abstract enabled: boolean;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`${this.displayName} : ${unsupported}`); return null; }
     const matched = selectedFirewallRules(ctx, this.displayName, NET_FIREWALL_FILTERS);
     if (matched === null) return null;
     for (const rule of matched) net.updateFirewallRule(rule.name, { enabled: this.enabled });
@@ -2246,9 +2291,10 @@ export class SetNetFirewallRuleCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly pipelineByPropertyName = true as const;
   readonly description = 'Modifies existing firewall rules.';
-  readonly parameters = [...NET_FIREWALL_SET_FILTERS, 'NewDisplayName', 'Enabled', 'Profile',
+  readonly parameters = firewallParameters([...NET_FIREWALL_SET_FILTERS, 'NewDisplayName', 'Enabled', 'Profile',
     'Direction', 'Action', 'Protocol', 'LocalPort', 'RemotePort', 'LocalAddress',
-    'RemoteAddress', 'PassThru', 'WhatIf', 'Confirm'] as const;
+    'RemoteAddress', 'PassThru', 'WhatIf', 'Confirm']);
+  readonly closedParameterSet = true as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -2308,10 +2354,13 @@ export class RemoveNetFirewallRuleCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly pipelineByPropertyName = true as const;
   readonly description = 'Deletes one or more firewall rules.';
-  readonly parameters = [...NET_FIREWALL_FILTERS, 'PassThru', 'WhatIf'] as const;
+  readonly parameters = firewallParameters([...NET_FIREWALL_FILTERS, 'PassThru', 'WhatIf', 'Confirm']);
+  readonly closedParameterSet = true as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`Remove-NetFirewallRule : ${unsupported}`); return null; }
     const matched = selectedFirewallRules(ctx, 'Remove-NetFirewallRule', NET_FIREWALL_FILTERS);
     if (matched === null) return null;
     if (ctx.named['whatif'] === true) {
