@@ -1,6 +1,7 @@
 import type { ConfSection } from './FreeradiusConf';
 import { RADIUS_ATTR, type RadiusAttribute, type RadiusPacket } from '@/network/radius/types';
 import { formatRadiusAttribute, radiusAttributeDisplayName } from '@/network/radius/attributeText';
+import { md5Hex } from '@/crypto/hash/md5';
 import { formatCtime } from '../time/ctime';
 import { formatLocalTime } from '../system/SystemInfo';
 
@@ -187,8 +188,15 @@ export function detailEntry(settings: DetailSettings, record: DetailRecord): str
     if (settings.suppressed.has(attribute.type) || attribute.type === 'user-password') continue;
     lines.push(`\t${renderAttribute(settings, attribute)}`);
   }
+  lines.push(`\tAcct-Unique-Session-Id = "${acctUniqueSessionId(lookup)}"`);
   lines.push(`\tTimestamp = ${Math.floor(record.atMs / 1000)}`, '', '');
   return lines.join('\n');
+}
+
+function acctUniqueSessionId(lookup: Lookup): string {
+  const value = (name: string): string => lookup(name) ?? '';
+  const nasAddress = value('NAS-IPv6-Address') !== '' ? value('NAS-IPv6-Address') : value('NAS-IP-Address');
+  return md5Hex([value('User-Name'), value('Acct-Session-ID'), nasAddress, value('NAS-Identifier'), value('NAS-Port-ID'), value('NAS-Port')].join(','));
 }
 
 function renderAttribute(settings: DetailSettings, attribute: RadiusAttribute): string {

@@ -4,10 +4,11 @@
  * "\tTimestamp = <seconds>" and a blank line; mod_accounting calls it in compat mode, so no Packet-Type line and no User-Password;
  * defaults: filename ${radacctdir}/%{Packet-Src-IP-Address}/detail-%Y%m%d, header "%t" (ctime), permissions 0600) and
  * raddb/mods-available/detail; dictionary.rfc2866 for the value names (Acct-Status-Type = Start, Acct-Terminate-Cause =
- * User-Request). radacctdir comes from radiusd.conf (${logdir}/radacct). Acct-Unique-Session-Id (the acct_unique module) is not
- * added: its key list and digest are not in the files read, said in TODO.md.
+ * User-Request). radacctdir comes from radiusd.conf (${logdir}/radacct). Acct-Unique-Session-Id is the one the stock policy.d/accounting computes in the else branch: md5 of
+ * "%{User-Name},%{Acct-Session-ID},%{%{NAS-IPv6-Address}:-%{NAS-IP-Address}},%{NAS-Identifier},%{NAS-Port-ID},%{NAS-Port}" (the Class branch is not
+ * modelled, said in TODO.md).
  *
- * Discriminated with git stash on src/network: 5 of 7 fall before the fix; two pass either way and are named: the witness (the
+ * Discriminated with git stash on src/network: 6 of 8 fall before the fix; two pass either way and are named: the witness (the
  * server answers the Accounting-Request, so the session reaches its journal in memory) and "a stopped daemon writes nothing"
  * (nothing was written for anything).
  */
@@ -20,6 +21,7 @@ import { EventBus } from '@/events/EventBus';
 import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { md5Hex } from '@/crypto/hash/md5';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
 beforeEach(() => { resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset(); });
@@ -100,5 +102,16 @@ describe('detail accounting files', () => {
     await server.executeCommand('systemctl stop freeradius');
     nas.getRadiusAccountingClient().startSession('alice');
     expect((await detailOf(server)).text).toBe('');
+  });
+
+  it('adds Acct-Unique-Session-Id as the acct_unique policy computes it, before Timestamp', async () => {
+    const { nas, server } = lab();
+    nas.getRadiusAccountingClient().startSession('alice');
+    const { text } = await detailOf(server);
+    const sessionId = /\tAcct-Session-Id = "([^"]+)"/.exec(text)![1];
+    const nasIp = /\tNAS-IP-Address = (\S+)/.exec(text)?.[1] ?? '';
+    const nasPort = /\tNAS-Port = (\d+)/.exec(text)?.[1] ?? '';
+    const expected = md5Hex(['alice', sessionId, nasIp, '', '', nasPort].join(','));
+    expect(text).toContain(`\tAcct-Unique-Session-Id = "${expected}"\n\tTimestamp = `);
   });
 });
