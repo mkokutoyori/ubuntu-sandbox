@@ -15,6 +15,7 @@ export interface KerberosLdapBindResult {
   client?: LdapClient;
   dcHostname?: string;
   failure?: KerberosLdapFailure;
+  kerberosErrorCode?: number;
 }
 
 export function bindLdapWithKerberos(opts: {
@@ -34,7 +35,7 @@ export function bindLdapWithKerberos(opts: {
   const cname = principalName(PrincipalNameType.NT_PRINCIPAL, account);
 
   const asResult = kdcConn.client.asExchange(account, opts.password, realm);
-  if (!asResult.ok) return { failure: 'bad-credential' };
+  if (!asResult.ok) return { failure: 'bad-credential', kerberosErrorCode: asResult.errorCode };
   const tgsResult = kdcConn.client.tgsExchange(asResult.ticket!, asResult.sessionKey!, cname, realm, dcHostname);
   if (!tgsResult.ok) return { failure: 'bad-credential' };
   const initiator = new GssInitiator({

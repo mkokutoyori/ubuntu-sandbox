@@ -18,14 +18,23 @@ import type { TcpStack } from '@/network/tcp/TcpStack';
 import { discoverDc, rootDnOf } from './DcHostnameDiscovery';
 import type { DomainMembership, DomainSession } from './DomainTypes';
 import { bindLdapWithKerberos } from './KerberosLdapBind';
+import { KrbErrorCode } from '@/network/kerberos/types';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 
-export interface DomainLogonResult { ok: boolean; message: string; session?: DomainSession }
+export type DomainLogonCause = 'unknown-user' | 'bad-password' | 'disabled';
+export interface DomainLogonResult { ok: boolean; message: string; session?: DomainSession; cause?: DomainLogonCause }
 
 /** The leaf CN of a formatted DN string, e.g. `CN=Domain Admins,CN=Users,DC=lab,DC=local` → `Domain Admins`. */
 function leafCn(dn: string): string | null {
   const m = /^CN=([^,]+)/i.exec(dn);
   return m ? m[1] : null;
+}
+
+function causeOfKerberosError(code: number | undefined): DomainLogonCause | undefined {
+  if (code === KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN) return 'unknown-user';
+  if (code === KrbErrorCode.KDC_ERR_PREAUTH_FAILED) return 'bad-password';
+  if (code === KrbErrorCode.KDC_ERR_CLIENT_REVOKED) return 'disabled';
+  return undefined;
 }
 
 export function logonDomainUser(tcpStack: TcpStack, membership: DomainMembership, sam: string, password: string): DomainLogonResult {
@@ -40,7 +49,7 @@ export function logonDomainUser(tcpStack: TcpStack, membership: DomainMembership
     user: sam, password,
   });
   if (session.failure === 'no-network-path') return trustFailed;
-  if (session.failure !== undefined || !session.client) return badCredential;
+  if (session.failure !== undefined || !session.client) return { ...badCredential, cause: causeOfKerberosError(session.kerberosErrorCode) };
   const ldap = session.client;
 
   const groups = readGroups(ldap, membership, sam);

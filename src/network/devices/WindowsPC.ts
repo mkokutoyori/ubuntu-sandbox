@@ -2258,7 +2258,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
     if (!parsed) return null;
     const result = logonDomainUser(this.getTcpStack(), this.domainMembership, parsed.sam, password);
-    if (!result.ok) return { ok: false, sam: parsed.sam, groups: [] };
+    if (!result.ok) return { ok: false, sam: parsed.sam, groups: [], ...(result.cause ? { cause: result.cause } : {}) };
     return { ok: true, sam: parsed.sam, groups: result.session?.groups ?? [] };
   }
 
