@@ -29,7 +29,7 @@ export interface UsersMatch {
 
 const OPERATORS: UsersOperator[] = ['=~', '!~', ':=', '+=', '-=', '==', '!=', '<=', '>=', '=', '<', '>'];
 
-type PairListResult = { ok: true; pairs: UsersPair[]; trailingComma: boolean } | { ok: false; error: string };
+export type PairListResult = { ok: true; pairs: UsersPair[]; trailingComma: boolean } | { ok: false; error: string };
 
 function scanValue(text: string, at: number): { value: string; end: number } | null {
   const quote = text[at];
@@ -54,7 +54,7 @@ function scanValue(text: string, at: number): { value: string; end: number } | n
   return { value: text.slice(at, i), end: i };
 }
 
-function parsePairList(text: string): PairListResult {
+export function parsePairList(text: string): PairListResult {
   const pairs: UsersPair[] = [];
   let i = 0;
   for (;;) {
