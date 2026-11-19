@@ -24,6 +24,7 @@ import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
+import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
 import { reverseNameOf } from './linux/network/ReverseName';
@@ -83,6 +84,7 @@ export class LinuxServer extends LinuxMachine {
     this.radiusd = new RadiusdService(this, this.radiusServer, this.radiusTcpServer, {
       read: (path) => this.executor.vfs.readFile(path),
       append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
+      list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
     });
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
@@ -255,6 +257,11 @@ export class LinuxServer extends LinuxMachine {
         'client localhost {\n\tipaddr = 127.0.0.1\n\tsecret = testing123\n}\n',
         0, 0, 0o022,
       );
+    }
+    const modulesDir = `${dir}/mods-enabled`;
+    if (!this.executor.vfs.exists(modulesDir)) this.executor.vfs.mkdirp(modulesDir, 0o755, 0, 0);
+    if (!this.executor.vfs.exists(`${modulesDir}/detail`)) {
+      this.executor.vfs.writeFile(`${modulesDir}/detail`, DEFAULT_DETAIL_MODULE, 0, 0, 0o022);
     }
     if (!this.executor.vfs.exists(RADIUSD_CONF_PATH)) {
       this.executor.vfs.writeFile(RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF, 0, 0, 0o022);

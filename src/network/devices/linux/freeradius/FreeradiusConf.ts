@@ -20,7 +20,7 @@ export type ConfParseResult =
   | { readonly ok: true; readonly root: ConfSection }
   | { readonly ok: false; readonly error: string };
 
-export type ConfFileReader = (path: string) => string | null;
+export type ConfFileReader = ((path: string) => string | null) & { list?: (path: string) => readonly string[] | null };
 
 const OPERATORS = ['===', '!==', ':=', '+=', '-=', '==', '!=', '<=', '>=', '=~', '!~', '^=', '=', '<', '>'];
 
@@ -153,6 +153,16 @@ function tokenize(text: string, file: string, line: number): Token[] {
             end = close === -1 ? text.length : close + 1;
             continue;
           }
+          if (text.startsWith('%{', end)) {
+            let depth = 0;
+            let cursor = end + 1;
+            for (; cursor < text.length; cursor++) {
+              if (text[cursor] === '{') depth++;
+              else if (text[cursor] === '}' && --depth === 0) break;
+            }
+            end = Math.min(cursor + 1, text.length);
+            continue;
+          }
           if (/[\s{},#=]/.test(text[end]) || OPERATORS.some((candidate) => candidate.length > 1 && text.startsWith(candidate, end))) break;
           end += 1;
         }
@@ -179,6 +189,20 @@ function readInto(
       const argument = trimmed.slice('$INCLUDE'.length).trim();
       if (argument === '') throw new ParseFailure(`${file}[${line}]: Unexpected text after $INCLUDE`);
       const path = joinPath(dirname(file), expand(argument.replace(/^["']|["']$/g, ''), stack, file, line));
+      if (path.endsWith('/')) {
+        const names = readFile.list?.(path) ?? null;
+        if (names === null) {
+          if (trimmed.startsWith('$INCLUDE-')) continue;
+          throw new ParseFailure(`${file}[${line}]: Unable to open directory '${path}': No such file or directory`);
+        }
+        if (depth > 16) throw new ParseFailure(`${file}[${line}]: Directories too deep.`);
+        for (const name of [...names].sort()) {
+          if (name.startsWith('.') || name.endsWith('~')) continue;
+          const child = readFile(`${path}${name}`);
+          if (child !== null) readInto(child, `${path}${name}`, readFile, stack, depth + 1);
+        }
+        continue;
+      }
       const included = readFile(path);
       if (included === null) {
         if (trimmed.startsWith('$INCLUDE-')) continue;
@@ -200,6 +224,10 @@ function readInto(
       throw new ParseFailure(`${file}[${line}]: Parse error after '${current.name1}': unexpected token '${first.text}'`);
     }
     const second = tokens[1];
+    if (first.kind === 'word' && (second.kind === 'eol' || second.kind === 'rbrace') && current.name1 !== '') {
+      current.pairs.push({ name: first.text, op: '=', value: '', quoted: false, file, line });
+      continue;
+    }
     if (second.kind === 'op') {
       const valueToken = tokens[2];
       if (valueToken.kind === 'eol' || valueToken.kind === 'lbrace' || valueToken.kind === 'rbrace') {

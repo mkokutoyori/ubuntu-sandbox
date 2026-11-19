@@ -1,0 +1,197 @@
+import type { ConfSection } from './FreeradiusConf';
+import { RADIUS_ATTR, type RadiusAttribute, type RadiusPacket } from '@/network/radius/types';
+import { formatRadiusAttribute, radiusAttributeDisplayName } from '@/network/radius/attributeText';
+import { formatCtime } from '../time/ctime';
+import { formatLocalTime } from '../system/SystemInfo';
+
+export interface DetailSettings {
+  filename: string;
+  header: string;
+  permissions: number;
+  logPacketHeader: boolean;
+  datesAsInteger: boolean;
+  escapeFilenames: boolean;
+  locking: boolean;
+  group: string | null;
+  suppressed: ReadonlySet<string>;
+}
+
+export interface DetailRecord {
+  sourceIp: string;
+  destinationIp: string;
+  sourcePort: number;
+  destinationPort: number;
+  packet: RadiusPacket;
+  atMs: number;
+}
+
+const TRUE_WORDS = new Set(['yes', 'true', 'on']);
+const FALSE_WORDS = new Set(['no', 'false', 'off']);
+const KNOWN_KEYS = new Set([
+  'filename', 'detailfile', 'header', 'permissions', 'detailperm', 'group', 'locking', 'dates_as_integer',
+  'escape_filenames', 'log_packet_header',
+]);
+
+export function readDetailSettings(root: ConfSection): DetailSettings | null | { error: string } {
+  const modules = root.sections.find((section) => section.name1 === 'modules') ?? root;
+  const section = modules.sections.find((candidate) => candidate.name1 === 'detail' && candidate.name2 === null);
+  if (!section) return null;
+  const settings: DetailSettings = {
+    filename: '/var/log/freeradius/radacct/%{%{Packet-Src-IP-Address}:-%{Packet-Src-IPv6-Address}}/detail-%Y%m%d',
+    header: '%t', permissions: 0o600, logPacketHeader: false, datesAsInteger: false, escapeFilenames: false,
+    locking: false, group: null, suppressed: new Set(),
+  };
+  const fail = (pair: { file: string; line: number }, message: string) => ({ error: `${pair.file}[${pair.line}]: ${message}` });
+  const boolean = (pair: { name: string; value: string; file: string; line: number }): boolean | { error: string } => {
+    const word = pair.value.toLowerCase();
+    if (TRUE_WORDS.has(word)) return true;
+    if (FALSE_WORDS.has(word)) return false;
+    return fail(pair, `Invalid value '${pair.value}' for boolean variable ${pair.name}`);
+  };
+  for (const pair of section.pairs) {
+    if (!KNOWN_KEYS.has(pair.name)) continue;
+    if (pair.name === 'filename' || pair.name === 'detailfile') settings.filename = pair.value;
+    else if (pair.name === 'header') settings.header = pair.value;
+    else if (pair.name === 'permissions' || pair.name === 'detailperm') {
+      const parsed = /^0[0-7]*$/.test(pair.value) ? parseInt(pair.value, 8) : /^\d+$/.test(pair.value) ? Number(pair.value) : NaN;
+      if (Number.isNaN(parsed)) return fail(pair, `Invalid value '${pair.value}' for variable ${pair.name}`);
+      settings.permissions = parsed;
+    } else if (pair.name === 'group') settings.group = pair.value;
+    else {
+      const value = boolean(pair);
+      if (typeof value === 'object') return value;
+      if (pair.name === 'locking') settings.locking = value;
+      else if (pair.name === 'dates_as_integer') settings.datesAsInteger = value;
+      else if (pair.name === 'escape_filenames') settings.escapeFilenames = value;
+      else settings.logPacketHeader = value;
+    }
+  }
+  const suppress = section.sections.find((candidate) => candidate.name1 === 'suppress');
+  if (suppress) {
+    const names = new Set<string>();
+    for (const pair of suppress.pairs) {
+      const key = pair.name.toLowerCase();
+      if (!(key in RADIUS_ATTR)) return fail(section, `No such attribute '${pair.name}'`);
+      names.add(key);
+    }
+    return { ...settings, suppressed: names };
+  }
+  return settings;
+}
+
+type Lookup = (name: string) => string | undefined;
+
+function lookupFor(record: DetailRecord): Lookup {
+  return (name) => {
+    switch (name.toLowerCase()) {
+      case 'packet-src-ip-address': return record.sourceIp;
+      case 'packet-dst-ip-address': return record.destinationIp;
+      case 'packet-src-port': return String(record.sourcePort);
+      case 'packet-dst-port': return String(record.destinationPort);
+      default: {
+        const found = record.packet.attributes.find((attribute) => radiusAttributeDisplayName(attribute).toLowerCase() === name.toLowerCase());
+        return found === undefined ? undefined : String(found.value);
+      }
+    }
+  };
+}
+
+export function makeFilenameSafe(value: string): string {
+  let out = '';
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index];
+    if (char !== '/') {
+      out += char.charCodeAt(0) < 32 ? '_' : char;
+      continue;
+    }
+    out += '/';
+    while (index + 1 < value.length) {
+      if (value[index + 1] === '/') { index += 1; continue; }
+      if (value.startsWith('./', index + 1)) { index += 2; continue; }
+      if (value.startsWith('../', index + 1)) { index += 3; continue; }
+      break;
+    }
+  }
+  return out;
+}
+
+export function escapeFilename(value: string): string {
+  let out = '';
+  for (const char of value) {
+    if (/[A-Za-z0-9_]/.test(char)) out += char;
+    else if (char === '-') out += '--';
+    else if (char.charCodeAt(0) > 127) out += [...new TextEncoder().encode(char)].map((byte) => `-${byte.toString(16)}`).join('');
+    else out += `-${char.charCodeAt(0).toString(16).padStart(2, '0')}`;
+  }
+  return out;
+}
+
+function expand(template: string, lookup: Lookup, atMs: number, escape: (value: string) => string): string {
+  let out = '';
+  for (let index = 0; index < template.length; index++) {
+    const char = template[index];
+    if (char !== '%') { out += char; continue; }
+    const next = template[index + 1];
+    if (next === '{') {
+      let depth = 1;
+      let end = index + 2;
+      while (end < template.length && depth > 0) {
+        if (template[end] === '{') depth++;
+        else if (template[end] === '}') depth--;
+        end++;
+      }
+      const body = template.slice(index + 2, end - 1);
+      index = end - 1;
+      const alternative = splitAlternative(body);
+      if (alternative !== null) {
+        const first = expand(alternative[0], lookup, atMs, escape);
+        out += first !== '' ? first : expand(alternative[1], lookup, atMs, escape);
+      } else if (body.startsWith('%{')) out += expand(body, lookup, atMs, escape);
+      else {
+        const value = lookup(body);
+        out += value === undefined ? '' : escape(value);
+      }
+      continue;
+    }
+    if (next === 't') { out += formatCtime(new Date(atMs)); index += 1; continue; }
+    if (next === '%') { out += '%'; index += 1; continue; }
+    if (next !== undefined && /[YmdHMSyejabBAZ]/.test(next)) { out += formatLocalTime(`%${next}`, atMs); index += 1; continue; }
+    out += char;
+  }
+  return out;
+}
+
+function splitAlternative(body: string): [string, string] | null {
+  let depth = 0;
+  for (let index = 0; index < body.length - 1; index++) {
+    if (body[index] === '{') depth++;
+    else if (body[index] === '}') depth--;
+    else if (depth === 0 && body[index] === ':' && body[index + 1] === '-') return [body.slice(0, index), body.slice(index + 2)];
+  }
+  return null;
+}
+
+export function detailPath(settings: DetailSettings, record: DetailRecord): string {
+  const escape = settings.escapeFilenames ? escapeFilename : makeFilenameSafe;
+  return expand(settings.filename, lookupFor(record), record.atMs, escape);
+}
+
+export function detailEntry(settings: DetailSettings, record: DetailRecord): string {
+  const lookup = lookupFor(record);
+  const lines = [expand(settings.header, lookup, record.atMs, (value) => value)];
+  if (settings.logPacketHeader) {
+    lines.push(`\tPacket-Src-IP-Address = ${record.sourceIp}`, `\tPacket-Dst-IP-Address = ${record.destinationIp}`,
+      `\tPacket-Src-Port = ${record.sourcePort}`, `\tPacket-Dst-Port = ${record.destinationPort}`);
+  }
+  for (const attribute of record.packet.attributes) {
+    if (settings.suppressed.has(attribute.type) || attribute.type === 'user-password') continue;
+    lines.push(`\t${renderAttribute(settings, attribute)}`);
+  }
+  lines.push(`\tTimestamp = ${Math.floor(record.atMs / 1000)}`, '', '');
+  return lines.join('\n');
+}
+
+function renderAttribute(settings: DetailSettings, attribute: RadiusAttribute): string {
+  if (settings.datesAsInteger && attribute.type === 'event-timestamp') return `${radiusAttributeDisplayName(attribute)} = ${attribute.value}`;
+  return formatRadiusAttribute(attribute);
+}

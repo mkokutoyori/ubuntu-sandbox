@@ -1,4 +1,5 @@
 import type { ConfSection } from './FreeradiusConf';
+import { readDetailSettings, type DetailSettings } from './DetailModule';
 
 export interface RadiusdLogConfig {
   destination: 'files' | 'syslog' | 'stdout' | 'stderr';
@@ -8,10 +9,9 @@ export interface RadiusdLogConfig {
   authReject: boolean;
   authBadpass: boolean;
   authGoodpass: boolean;
-  radacctDir: string;
+  detail: DetailSettings | null;
 }
 
-export const DEFAULT_RADACCT_DIR = '/var/log/freeradius/radacct';
 export const DEFAULT_RADIUS_LOG_FILE = '/var/log/freeradius/radius.log';
 
 const TRUE_WORDS = new Set(['yes', 'true', 'on']);
@@ -22,10 +22,10 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
   const config: RadiusdLogConfig = {
     destination: 'files', file: DEFAULT_RADIUS_LOG_FILE,
     auth: false, authAccept: false, authReject: false, authBadpass: false, authGoodpass: false,
-    radacctDir: root.pairs.find((pair) => pair.name === 'radacctdir')?.value ?? DEFAULT_RADACCT_DIR,
+    detail: null,
   };
   const section = root.sections.find((candidate) => candidate.name1 === 'log');
-  if (!section) return config;
+  if (!section) return withDetail(root, config);
   const flags: Record<string, 'auth' | 'authAccept' | 'authReject' | 'authBadpass' | 'authGoodpass'> = {
     auth: 'auth', auth_accept: 'authAccept', auth_reject: 'authReject', auth_badpass: 'authBadpass', auth_goodpass: 'authGoodpass',
   };
@@ -43,5 +43,11 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
       config.file = pair.value;
     }
   }
-  return config;
+  return withDetail(root, config);
+}
+
+function withDetail(root: ConfSection, config: RadiusdLogConfig): RadiusdLogConfig | { error: string } {
+  const detail = readDetailSettings(root);
+  if (detail !== null && 'error' in detail) return detail;
+  return { ...config, detail: detail as DetailSettings | null };
 }

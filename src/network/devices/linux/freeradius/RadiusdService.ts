@@ -22,10 +22,9 @@ import { parseClientsConf } from './ClientsConfParser';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, type UsersEntry } from './UsersFileParser';
 import type { RadiusUser, RadiusAttribute, RadiusPacket } from '@/network/radius/types';
-import { formatRadiusAttribute } from '@/network/radius/attributeText';
-import { formatLocalTime } from '../system/SystemInfo';
+import { detailPath, detailEntry, type DetailRecord } from './DetailModule';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
-import { parseFreeradiusConf } from './FreeradiusConf';
+import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { formatCtime } from '../time/ctime';
 import { simulationNowMs } from '@/network/core/SystemClock';
@@ -35,6 +34,7 @@ import type { EndHost } from '@/network/devices/EndHost';
 export interface RadiusdFiles {
   read(path: string): string | null;
   append(path: string, text: string, umask?: number): void;
+  list?(path: string): readonly string[] | null;
 }
 
 export interface RadiusdCheckReport {
@@ -194,17 +194,10 @@ export class RadiusdService {
 
   appendLog(path: string, text: string): void { this.files.append(path, text); }
 
-  private writeDetail(record: { sourceIp: string; packet: RadiusPacket; atMs: number }): void {
-    const log = this.logConfig;
-    if (log === null) return;
-    const lines = [formatCtime(new Date(record.atMs))];
-    for (const attribute of record.packet.attributes) {
-      if (attribute.type === 'user-password') continue;
-      lines.push(`\t${formatRadiusAttribute(attribute)}`);
-    }
-    lines.push(`\tTimestamp = ${Math.floor(record.atMs / 1000)}`, '', '');
-    const day = formatLocalTime('%Y%m%d', record.atMs);
-    this.files.append(`${log.radacctDir}/${record.sourceIp}/detail-${day}`, lines.join('\n'), 0o177);
+  private writeDetail(record: DetailRecord): void {
+    const settings = this.logConfig?.detail ?? null;
+    if (settings === null) return;
+    this.files.append(detailPath(settings, record), detailEntry(settings, record), ~settings.permissions & 0o777);
   }
 
   private boundPorts: number[] = [];
@@ -230,13 +223,19 @@ export class RadiusdService {
     return { username, password: match.password, replyAttributes: match.reply };
   }
 
+  private confReader(): ConfFileReader {
+    const read = ((path: string) => this.files.read(path)) as ConfFileReader;
+    read.list = (path) => this.files.list?.(path) ?? null;
+    return read;
+  }
+
   private loadConfig(paths?: RadiusdConfigPaths): ConfigLoadResult {
     const mainPath = paths?.main ?? RADIUSD_CONF_PATH;
     const clientsPath = paths?.clients ?? this.clientsConfPath;
     const usersPath = paths?.users ?? this.usersFilePath;
     const mainSource = this.files.read(mainPath);
     if (mainSource === null) return { ok: false, error: `Unable to open file '${mainPath}': No such file or directory` };
-    const main = parseFreeradiusConf(mainSource, mainPath, (path) => this.files.read(path));
+    const main = parseFreeradiusConf(mainSource, mainPath, this.confReader());
     if ('error' in main) return { ok: false, error: main.error };
     const log = readRadiusdLogConfig(main.root);
     if ('error' in log) return { ok: false, error: log.error };

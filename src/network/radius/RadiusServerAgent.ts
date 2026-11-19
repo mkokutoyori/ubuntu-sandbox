@@ -116,6 +116,10 @@ export interface RadiusUserResolverContext {
   attributes: RadiusAttribute[];
 }
 
+function srcIpOfPort(port: { getIPAddress(): { toString(): string } | null } | undefined): string {
+  return port?.getIPAddress()?.toString() ?? '0.0.0.0';
+}
+
 export class RadiusServerAgent {
   private config: RadiusServerAgentConfig = createDefaultServerConfig();
   private running = false;
@@ -186,9 +190,9 @@ export class RadiusServerAgent {
 
   readonly clientTable = new RadiusClientTable();
 
-  private accountingListener: ((record: { sourceIp: string; packet: RadiusPacket; atMs: number }) => void) | null = null;
+  private accountingListener: ((record: { sourceIp: string; destinationIp: string; sourcePort: number; destinationPort: number; packet: RadiusPacket; atMs: number }) => void) | null = null;
 
-  setAccountingListener(listener: ((record: { sourceIp: string; packet: RadiusPacket; atMs: number }) => void) | null): void {
+  setAccountingListener(listener: ((record: { sourceIp: string; destinationIp: string; sourcePort: number; destinationPort: number; packet: RadiusPacket; atMs: number }) => void) | null): void {
     this.accountingListener = listener;
   }
 
@@ -321,7 +325,10 @@ export class RadiusServerAgent {
     Logger.info(this.host.id, 'radius:accounting',
       `${this.host.name}: ${status} for ${username} (session ${sessionId})`);
 
-    this.accountingListener?.({ sourceIp: senderIp, packet: payload, atMs: now });
+    this.accountingListener?.({
+      sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
+      packet: payload, atMs: now,
+    });
     this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
   }
 
