@@ -21,13 +21,14 @@ import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
 import { parseClientsConf } from './ClientsConfParser';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
-import { parseUsersFile, matchUsersEntries, type UsersEntry } from './UsersFileParser';
+import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
 import type { RadiusUser, RadiusAttribute, RadiusPacket } from '@/network/radius/types';
 import { detailPath, detailEntry, type DetailRecord } from './DetailModule';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
+import { readPreprocess, applyPreprocess, type PreprocessFiles } from './PreprocessModule';
 import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
 import { RadiusClientTable } from '@/network/radius/ClientTable';
 import { formatCtime } from '../time/ctime';
@@ -42,9 +43,10 @@ export interface RadiusdFiles {
   list?(path: string): readonly string[] | null;
 }
 
-export interface RadiusdWallClock {
+export interface RadiusdMachine {
   zone(): string | undefined;
   nowMs(): number;
+  groupsOf(username: string): readonly string[];
 }
 
 export interface RadutmpEntry {
@@ -88,7 +90,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; files: readonly string[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; files: readonly string[] }
   | { ok: false; error: string };
 
 export class RadiusdService {
@@ -101,7 +103,7 @@ export class RadiusdService {
     private readonly files: RadiusdFiles,
     private readonly clientsConfPath: string = CLIENTS_CONF_PATH,
     private readonly usersFilePath: string = USERS_FILE_PATH,
-    private readonly wallClock: RadiusdWallClock = { zone: () => undefined, nowMs: () => simulationNowMs() },
+    private readonly wallClock: RadiusdMachine = { zone: () => undefined, nowMs: () => simulationNowMs(), groupsOf: () => [] },
   ) {}
 
   utmpEntries(): RadutmpEntry[] {
@@ -305,8 +307,13 @@ export class RadiusdService {
     this.files.append(log.file, `${formatCtime(new Date(simulationNowMs()))} : ${level}: ${message}\n`);
   }
 
-  private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[]): RadiusUser | undefined {
-    const match = matchUsersEntries(entries, username, (name) => attributes.find((candidate) => candidate.type === name)?.value);
+  private preprocessFiles: PreprocessFiles = { hints: null, huntgroups: null };
+
+  private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = ''): RadiusUser | undefined {
+    const groupsOf = (name: string) => this.wallClock.groupsOf(name);
+    const prepared = applyPreprocess(this.preprocessFiles, username, attributes, nasIp, groupsOf);
+    if (prepared.rejected) return undefined;
+    const match = matchUsersEntries(entries, username, requestViewOf([...attributes, ...prepared.extra], prepared.overlay, groupsOf, username));
     if (match === null || match.rejected) return undefined;
     const known = knownGoodPassword(match.knownGood);
     if (known === null && !match.acceptAny) return undefined;
@@ -337,6 +344,8 @@ export class RadiusdService {
     if ('error' in security) return { ok: false, error: security.error };
     const site = readSiteConfig(main.root);
     if ('error' in site) return { ok: false, error: site.error };
+    const preprocess = readPreprocess(main.root, (path) => this.files.read(path));
+    if ('error' in preprocess) return { ok: false, error: preprocess.error };
     const clientsSource = this.files.read(clientsPath);
     if (clientsSource === null) return { ok: false, error: `open: ${clientsPath}: file not found` };
     const usersSource = this.files.read(usersPath);
@@ -345,11 +354,12 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, files: main.files };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, files: main.files };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles }): void {
     this.logConfig = loaded.log;
+    this.preprocessFiles = loaded.preprocess;
     this.radiusServer.setStatusServer(loaded.security.statusServer);
     this.radiusServer.setDeniedMessage(loaded.log.msgDenied);
     this.radiusServer.setWallClock(() => this.wallClock.nowMs(), (epochMs) => {
@@ -361,6 +371,6 @@ export class RadiusdService {
     this.radiusServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
     for (const client of loaded.clients) this.radiusServer.clientTable.add(client);
-    this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? []));
+    this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? ''));
   }
 }

@@ -9,6 +9,7 @@ export const DEFAULT_RADIUSD_CONF = [
   'radacctdir = ${logdir}/radacct',
   'name = freeradius',
   'confdir = ${raddbdir}',
+  'modconfdir = ${confdir}/mods-config',
   'run_dir = ${localstatedir}/run/${name}',
   'db_dir = ${raddbdir}',
   'pidfile = ${run_dir}/${name}.pid',

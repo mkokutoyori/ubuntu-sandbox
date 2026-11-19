@@ -20,7 +20,16 @@ export interface UsersEntry {
 
 export type ParsedUsers = { ok: true; entries: UsersEntry[] } | { ok: false; error: string };
 
-export type UsersRequestView = (attributeName: string) => string | number | undefined;
+export type UsersRequestView = (attributeName: string, wanted?: string) => string | number | undefined;
+
+export function requestViewOf(
+  attributes: readonly RadiusAttribute[], overlay: ReadonlyMap<string, string>, groupsOf: (username: string) => readonly string[], username: string,
+): UsersRequestView {
+  return (name, wanted) => {
+    if (name === 'group') return wanted !== undefined && groupsOf(username).includes(wanted) ? wanted : '';
+    return overlay.get(name) ?? attributes.find((candidate) => candidate.type === name)?.value;
+  };
+}
 
 export interface UsersMatch {
   password: string | null;
@@ -94,11 +103,13 @@ export function parsePairList(text: string): PairListResult {
   }
 }
 
-const CONTROL_ONLY = new Set(['cleartext-password', 'crypt-password', 'md5-password', 'smd5-password', 'sha-password', 'ssha-password', 'nt-password', 'sha2-password', 'password-with-header', 'auth-type', 'fall-through', 'hint', 'huntgroup-name', 'user-category', 'group', 'simultaneous-use', 'login-time']);
+const CONTROL_ONLY = new Set(['cleartext-password', 'crypt-password', 'md5-password', 'smd5-password', 'sha-password', 'ssha-password', 'nt-password', 'sha2-password', 'password-with-header', 'auth-type', 'fall-through', 'hint', 'huntgroup-name', 'user-category', 'group', 'simultaneous-use', 'login-time', 'strip-user-name']);
+
+const FILE_ONLY_NAMES = new Set(['suffix', 'strip-user-name', 'realm']);
 
 function knownName(name: string): boolean {
   const key = name.toLowerCase();
-  return key in RADIUS_ATTR || CONTROL_ONLY.has(key);
+  return key in RADIUS_ATTR || CONTROL_ONLY.has(key) || FILE_ONLY_NAMES.has(key);
 }
 
 export function parseUsersFile(source: string, fileName: string, readFile: (path: string) => string | null): ParsedUsers {
@@ -214,6 +225,17 @@ function matches(op: UsersOperator, actual: string | number | undefined, wanted:
 
 const SETTING_OPS = new Set<UsersOperator>([':=', '+=', '-=']);
 
+export function isSettingPair(pair: UsersPair): boolean {
+  return SETTING_OPS.has(pair.op) || (pair.op === '=' && CONTROL_ONLY.has(pair.name.toLowerCase()));
+}
+
+export function pairMatches(pair: UsersPair, username: string, request: UsersRequestView): boolean {
+  const key = pair.name.toLowerCase();
+  const wanted = String(usersPairToAttribute(pair)?.value ?? pair.value);
+  const actual = key === 'user-name' ? username : request(key, wanted);
+  return matches(pair.op, actual, wanted);
+}
+
 export function matchUsersEntries(entries: UsersEntry[], username: string, request: UsersRequestView): UsersMatch | null {
   const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, loginTime: null, simultaneousUse: null, reply: [] };
   let matched = false;
@@ -223,13 +245,11 @@ export function matchUsersEntries(entries: UsersEntry[], username: string, reque
     let selected = true;
     for (const pair of entry.check) {
       const key = pair.name.toLowerCase();
-      if (SETTING_OPS.has(pair.op) || (pair.op === '=' && CONTROL_ONLY.has(key))) {
+      if (isSettingPair(pair)) {
         control.push([key, pair.value]);
         continue;
       }
-      const actual = key === 'user-name' ? username : request(key);
-      const wanted = String(usersPairToAttribute(pair)?.value ?? pair.value);
-      if (!matches(pair.op, actual, wanted)) { selected = false; break; }
+      if (!pairMatches(pair, username, request)) { selected = false; break; }
     }
     if (!selected) continue;
     matched = true;

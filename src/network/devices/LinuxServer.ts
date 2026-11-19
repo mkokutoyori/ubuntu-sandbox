@@ -29,6 +29,7 @@ import { RADIUS_PACKET_NAME } from '../radius/types';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
 import { DEFAULT_SITE, STATUS_SITE } from './linux/freeradius/DefaultSites';
+import { DEFAULT_PREPROCESS_MODULE, DEFAULT_HINTS, DEFAULT_HUNTGROUPS } from './linux/freeradius/DefaultPreprocess';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
@@ -95,7 +96,7 @@ export class LinuxServer extends LinuxMachine {
       read: (path) => this.executor.vfs.readFile(path),
       append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
       list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
-    }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime() });
+    }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime(), groupsOf: (name: string) => this.executor.userMgr.getUserGroups(name).map((group) => group.name) });
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'postfix') return;
@@ -283,6 +284,13 @@ export class LinuxServer extends LinuxMachine {
     if (!this.executor.vfs.exists(`${modulesDir}/detail`)) {
       this.executor.vfs.writeFile(`${modulesDir}/detail`, DEFAULT_DETAIL_MODULE, 0, 0, 0o022);
     }
+    if (!this.executor.vfs.exists(`${modulesDir}/preprocess`)) {
+      this.executor.vfs.writeFile(`${modulesDir}/preprocess`, DEFAULT_PREPROCESS_MODULE, 0, 0, 0o022);
+    }
+    const preprocessDir = `${dir}/mods-config/preprocess`;
+    if (!this.executor.vfs.exists(preprocessDir)) this.executor.vfs.mkdirp(preprocessDir, 0o755, 0, 0);
+    if (!this.executor.vfs.exists(`${preprocessDir}/hints`)) this.executor.vfs.writeFile(`${preprocessDir}/hints`, DEFAULT_HINTS, 0, 0, 0o022);
+    if (!this.executor.vfs.exists(`${preprocessDir}/huntgroups`)) this.executor.vfs.writeFile(`${preprocessDir}/huntgroups`, DEFAULT_HUNTGROUPS, 0, 0, 0o022);
     const available = `${dir}/sites-available`;
     const enabled = `${dir}/sites-enabled`;
     for (const folder of [available, enabled]) if (!this.executor.vfs.exists(folder)) this.executor.vfs.mkdirp(folder, 0o755, 0, 0);
