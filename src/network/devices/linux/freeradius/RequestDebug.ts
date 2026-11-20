@@ -7,7 +7,7 @@ export type { ModuleResult };
 export interface ResolutionTrace {
   lines: string[];
   result: ModuleResult;
-  authType: 'PAP' | 'CHAP' | 'Accept' | null;
+  authType: 'PAP' | 'CHAP' | 'MS-CHAP' | 'Accept' | null;
 }
 
 export interface DebugInput {
@@ -60,7 +60,8 @@ export function requestDebugLines(input: DebugInput): string[] {
       const place = pipeline?.authTypes.get(authType);
       inner(`# Executing group from file ${place?.file ?? ''} line ${place?.line ?? 0}`.replace(' from file  line 0', ''), 1);
       inner(`Auth-Type ${authType} {`, 2);
-      const module = authType === 'PAP' ? 'pap' : 'chap';
+      const module = authType === 'PAP' ? 'pap' : authType === 'CHAP' ? 'chap' : 'mschap';
+      const userName = String(request.attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '');
       if (authType === 'PAP') {
         inner('pap: Login attempt with password', 4);
         const name = user?.knownGoodName ?? 'Cleartext-Password';
@@ -70,6 +71,10 @@ export function requestDebugLines(input: DebugInput): string[] {
           inner(name === 'Cleartext-Password' ? 'pap: ERROR: Cleartext password does not match "known good" password' : `pap: ERROR: ${name} does not match "known good" digest`, 4);
           inner("pap: Passwords don't match", 4);
         }
+      } else if (authType === 'MS-CHAP') {
+        inner(`mschap: Creating challenge hash with username: ${userName}`, 4);
+        inner('mschap: Client is using MS-CHAPv2', 4);
+        inner(input.accepted ? 'mschap: Adding MS-CHAPv2 MPPE keys' : 'mschap: ERROR: MS-CHAP2-Response is incorrect', 4);
       } else if (input.accepted) {
         inner('chap: Comparing with "known good" Cleartext-Password', 4);
         inner(`chap: CHAP user "${String(request.attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '')}" authenticated successfully`, 4);

@@ -458,7 +458,7 @@ export class RadiusdService {
     const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
     const outcome = run(program, context, host, lines, 3);
     const authType = context.control.get('auth-type')?.toLowerCase();
-    const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : null;
+    const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : authType === 'mschap' ? 'MS-CHAP' : null;
     this.lastResolution = { lines, result: outcome.result, authType: trace };
     if (outcome.result === 'reject' || authType === 'reject') return undefined;
     if (this.proxyDecision !== null && this.proxyDecision !== undefined) return { username, password: '', proxy: this.proxyDecision };
@@ -491,6 +491,8 @@ export class RadiusdService {
     }
     if (name === 'mschap') {
       const present = context.request.some((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === MICROSOFT_VENDOR_ID && attribute.vendor.type === 25);
+      if (present && !context.control.has('auth-type')) context.control.set('auth-type', 'mschap');
+      if (present) messages.push("mschap: Found MS-CHAP attributes.  Setting 'Auth-Type  = mschap'");
       return { result: present ? 'ok' : 'noop', messages };
     }
     if (name === 'eap') {

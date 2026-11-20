@@ -989,14 +989,17 @@ export class RadiusServerAgent {
     inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
     username: string, user: RadiusUser | undefined, responseVsa: RadiusAttribute, dedupKey: string,
   ): void {
+    const trace = (accepted: boolean): void => this.emitRequestDebug(request, dstIp, username, user, accepted, [], []);
     const challengeVsa = getVsa(request, MICROSOFT_VENDOR_ID, 11);
     const blob = hexToBytes(String(responseVsa.value));
     if (!challengeVsa || blob.length < 50) {
+      trace(false);
       this.publishRejected(dstIp.toString(), username, 'bad-password');
       this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
       return;
     }
     if (!user) {
+      trace(false);
       this.publishRejected(dstIp.toString(), username, 'unknown-user');
       this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
       return;
@@ -1008,6 +1011,7 @@ export class RadiusServerAgent {
 
     const expected = generateNtResponse(authChallenge, peerChallenge, username, user.password);
     if (bytesToHex(expected) !== bytesToHex(ntResponse)) {
+      trace(false);
       this.publishRejected(dstIp.toString(), username, 'bad-password');
       this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
       return;
@@ -1015,6 +1019,7 @@ export class RadiusServerAgent {
 
     const denial = this.simultaneousUseDenial(user, username);
     if (denial !== null) {
+      trace(true);
       this.publishRejected(dstIp.toString(), username, 'simultaneous-use');
       this.reply(inPort, dstIp, clientPort, request, false, user, dedupKey, denial);
       return;
@@ -1050,6 +1055,7 @@ export class RadiusServerAgent {
       attr('vendor-specific', encryptMppeKey(recvKey, this.secretFor(dstIp), request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 17 }),
     ];
     if (user.replyAttributes) attrs.push(...user.replyAttributes);
+    this.emitRequestDebug(request, dstIp, username, user, true, [], attrs);
     this.publishDecision(request, dstIp, true);
 
     let response: RadiusPacket = {
