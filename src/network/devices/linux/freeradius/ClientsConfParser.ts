@@ -17,6 +17,17 @@ function policyOf(value: string | undefined): MessageAuthenticatorPolicy {
   return value as MessageAuthenticatorPolicy;
 }
 
+function renderSection(section: ConfSection, indent: number): string[] {
+  const tabs = '\t'.repeat(indent);
+  const lines = [section.name2 === null ? `${tabs}${section.name1} {` : `${tabs}${section.name1} ${section.name2} {`];
+  for (const item of section.items) {
+    if ('items' in item) lines.push(...renderSection(item, indent + 1));
+    else lines.push(item.value === '' ? `${tabs}\t${item.name}` : `${tabs}\t${item.name} = ${item.value}`);
+  }
+  lines.push(`${tabs}}`);
+  return lines;
+}
+
 function pair(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
 }
@@ -74,6 +85,7 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
       name: longname,
       shortname: pair(section, 'shortname') ?? name2,
       section: name2,
+      confLines: renderSection(section, 0),
       address: spec.address,
       prefix: spec.prefix,
       secret,

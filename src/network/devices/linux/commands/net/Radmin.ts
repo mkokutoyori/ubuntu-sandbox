@@ -28,6 +28,17 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     if (rest[0] !== 'verbose') return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };
     return { text: ctx.radiusd!.clientListing(true).join('\n'), failed: false };
   }
+  if (words[0] === 'show' && words[1] === 'client' && words[2] === 'config') {
+    const rest = words.slice(3);
+    if (rest.length === 0) return { text: 'ERROR: Must specify <ipaddr>', failed: true };
+    if (IPAddress.tryParse(rest[0]) === null) return { text: 'ERROR: Failed parsing IP address', failed: true };
+    for (const option of rest.slice(1)) {
+      if (option === 'listen') return { text: 'ERROR: The client option listen is not implemented in this simulator: clients of a virtual server are not listed per listener', failed: true };
+      if (option !== 'udp' && option !== 'tcp') return { text: `ERROR: Unknown argument ${option}.`, failed: true };
+    }
+    const lines = ctx.radiusd!.clientConfig(rest[0]);
+    return lines === null ? { text: 'ERROR: No such client', failed: true } : { text: lines.join('\n'), failed: false };
+  }
   if (words[0] === 'show' && words[1] === 'home_server' && words[2] === 'list') {
     const rest = words.slice(3);
     if (rest.length > 1 || (rest.length === 1 && rest[0] !== 'all')) return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };

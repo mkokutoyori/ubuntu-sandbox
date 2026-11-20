@@ -6,8 +6,13 @@
  * The control listener is read from the site (top level or in a server); its keys other than type/socket/mode are refused naming
  * them. Commands the real radmin has and the simulator lacks are refused naming the limit; unknown words get the source's wording.
  *
- * Discriminated with git stash on src: 8 of 9 fall before the fix (no radmin command); the one passing either way is the witness
- * (a top-level control listener was ignored before, so the daemon starts and answers a request the same way).
+ * `show client config <ipaddr>` prints the client's configuration section (command.c cprint_conf_section: `name1 name2 {`, one tab per
+ * level, `name = value` in file order), finds the client by longest prefix, and answers `Must specify <ipaddr>` / `No such client` /
+ * `Unknown argument X.`; the `listen` option is refused. The `Failed parsing IP address` suffix of the real answer is not reproduced.
+ *
+ * Discriminated with git stash on src: the first 9 cases fall 8 of 9 before the commit that added radmin (the witness passes either way:
+ * a top-level control listener was ignored before, so the daemon starts and answers a request the same way); the 4 cases for show client
+ * config all fall on the commit that precedes them.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -103,5 +108,28 @@ describe('radmin and the control listener', () => {
   it('refuses an option it cannot honour instead of ignoring it', async () => {
     const { target } = await lab(true);
     expect((await radmin(target, '-i commands.txt')).output).toBe('radmin: -i is not implemented in this simulator');
+  });
+
+  it('show client config prints the client section as written, pairs in file order', async () => {
+    const { target } = await lab(true);
+    expect(await radmin(target, '-f ' + SOCKET + ' -e "show client config 10.0.0.1"')).toEqual({ output: 'client lab {\n\tipaddr = 10.0.0.1\n\tsecret = shared\n}', code: '0' });
+  });
+
+  it('show client config finds a network client by longest prefix and keeps its other pairs', async () => {
+    const { target } = await lab(true);
+    const { output } = await radmin(target, '-f ' + SOCKET + ' -e "show client config 192.168.7.9"');
+    expect(output).toBe('client net {\n\tipaddr = 192.168.0.0/16\n\tsecret = other\n\tshortname = lan\n}');
+  });
+
+  it('show client config answers the source errors', async () => {
+    const { target } = await lab(true);
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "show client config"')).output).toBe('ERROR: Must specify <ipaddr>');
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "show client config 172.16.0.1"')).output).toBe('ERROR: No such client');
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "show client config 10.0.0.1 sctp"')).output).toBe('ERROR: Unknown argument sctp.');
+  });
+
+  it('refuses the listen option, naming the limit', async () => {
+    const { target } = await lab(true);
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "show client config 10.0.0.1 listen 10.0.0.2 1812"')).output).toContain('listen is not implemented in this simulator');
   });
 });

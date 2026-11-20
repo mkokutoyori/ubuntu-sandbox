@@ -145,6 +145,12 @@ export class RadiusdService {
     return loaded.ok ? loaded.site.controlSockets.map((socket) => socket.path) : [];
   }
 
+  clientConfig(address: string): string[] | null {
+    const ip = IPAddress.tryParse(address);
+    if (ip === null) return null;
+    return this.radiusServer.clientTable.find(ip)?.confLines?.slice() ?? null;
+  }
+
   clientListing(verbose: boolean): string[] {
     const entries = this.radiusServer.clientTable.list();
     const address = (entry: RadiusClientEntry) => entry.prefix === 32 ? entry.address.toString() : `${entry.address.toString()}/${entry.prefix}`;

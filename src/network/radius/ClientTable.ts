@@ -6,6 +6,7 @@ export interface RadiusClientEntry {
   readonly name: string;
   readonly shortname: string;
   readonly section?: string;
+  readonly confLines?: readonly string[];
   readonly address: IPAddress;
   readonly prefix: number;
   readonly secret: string;
