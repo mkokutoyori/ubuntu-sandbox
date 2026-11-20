@@ -212,10 +212,13 @@ export interface RadiusUser {
   verify?: (clear: string) => boolean;
   acceptAny?: boolean;
   loginTime?: string;
+  simultaneousUse?: number;
+  knownGoodName?: string;
   serviceType?: number;
   replyAttributes?: RadiusAttribute[];
   /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
   challenge?: { prompt: string };
+  proxy?: { realm: string; forwardName: string; homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number; fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number }[] };
 }
 
 export interface RadiusAttributePolicy {
@@ -252,6 +255,8 @@ export interface RadiusServerAgentConfig {
   requireAuthorizedClient?: boolean;
   rejectReplyMessage?: string | null;
   statusServer?: boolean;
+  deniedMessage?: string;
+  callerIdInUtmp?: boolean;
 }
 
 export function createDefaultClientConfig(): RadiusClientConfig {

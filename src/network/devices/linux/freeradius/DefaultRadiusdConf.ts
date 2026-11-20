@@ -9,6 +9,7 @@ export const DEFAULT_RADIUSD_CONF = [
   'radacctdir = ${logdir}/radacct',
   'name = freeradius',
   'confdir = ${raddbdir}',
+  'modconfdir = ${confdir}/mods-config',
   'run_dir = ${localstatedir}/run/${name}',
   'db_dir = ${raddbdir}',
   'pidfile = ${run_dir}/${name}.pid',
@@ -33,4 +34,10 @@ export const DEFAULT_RADIUSD_CONF = [
   '\tmsg_denied = "You are already logged in - access denied"',
   '}',
   '',
+  '$INCLUDE sites-enabled/',
+  '',
+  '$INCLUDE proxy.conf',
+  '',
 ].join('\n');
+
+export const DEFAULT_PROXY_CONF = ['realm LOCAL {', '}', ''].join('\n');

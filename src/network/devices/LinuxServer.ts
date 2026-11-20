@@ -27,7 +27,9 @@ import { CoaClient } from '../radius/CoaClient';
 import { formatRadiusAttribute } from '../radius/attributeText';
 import { RADIUS_PACKET_NAME } from '../radius/types';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
-import { DEFAULT_RADIUSD_CONF } from './linux/freeradius/DefaultRadiusdConf';
+import { DEFAULT_RADIUSD_CONF, DEFAULT_PROXY_CONF } from './linux/freeradius/DefaultRadiusdConf';
+import { DEFAULT_SITE, STATUS_SITE } from './linux/freeradius/DefaultSites';
+import { DEFAULT_PREPROCESS_MODULE, DEFAULT_HINTS, DEFAULT_HUNTGROUPS } from './linux/freeradius/DefaultPreprocess';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
@@ -40,6 +42,7 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 const RADTEST_SOURCE_PORT = 49999;
 const RADCLIENT_ACCT_SOURCE_PORT = 49998;
 const RADCLIENT_COA_SOURCE_PORT = 49997;
+const RADIUS_UTILS_SOCKET = 'freeradius-utils';
 
 const SMTPD_FIRST_PID = 3100;
 
@@ -88,12 +91,12 @@ export class LinuxServer extends LinuxMachine {
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
     };
     this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());
-    this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack());
+    this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack(), this.radiusServer);
     this.radiusd = new RadiusdService(this, this.radiusServer, this.radiusTcpServer, {
       read: (path) => this.executor.vfs.readFile(path),
       append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
       list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
-    }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime() });
+    }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime(), groupsOf: (name: string) => this.executor.userMgr.getUserGroups(name).map((group) => group.name) });
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'postfix') return;
@@ -126,10 +129,10 @@ export class LinuxServer extends LinuxMachine {
     this.coaClient.setFixedSourcePort(RADCLIENT_COA_SOURCE_PORT);
     this.udpBind(RADCLIENT_COA_SOURCE_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    }, 'radclient');
+    }, RADIUS_UTILS_SOCKET);
     this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    }, 'radclient');
+    }, RADIUS_UTILS_SOCKET);
     // A standalone client agent has no destination port of its own to be
     // dispatched to on this host's socket-table-based UDP model (unlike a
     // router, which inline-checks every packet regardless of port) — pin
@@ -138,7 +141,7 @@ export class LinuxServer extends LinuxMachine {
     this.radtestClient.setFixedSourcePort(RADTEST_SOURCE_PORT);
     this.udpBind(RADTEST_SOURCE_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.radtestClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
-    }, 'radtest');
+    }, RADIUS_UTILS_SOCKET);
 
     const smtpSubject = `CN=${this.getHostname()}`;
     let smtpTlsConfig: TlsServerConfig | null = null;
@@ -281,9 +284,23 @@ export class LinuxServer extends LinuxMachine {
     if (!this.executor.vfs.exists(`${modulesDir}/detail`)) {
       this.executor.vfs.writeFile(`${modulesDir}/detail`, DEFAULT_DETAIL_MODULE, 0, 0, 0o022);
     }
+    if (!this.executor.vfs.exists(`${modulesDir}/preprocess`)) {
+      this.executor.vfs.writeFile(`${modulesDir}/preprocess`, DEFAULT_PREPROCESS_MODULE, 0, 0, 0o022);
+    }
+    const preprocessDir = `${dir}/mods-config/preprocess`;
+    if (!this.executor.vfs.exists(preprocessDir)) this.executor.vfs.mkdirp(preprocessDir, 0o755, 0, 0);
+    if (!this.executor.vfs.exists(`${preprocessDir}/hints`)) this.executor.vfs.writeFile(`${preprocessDir}/hints`, DEFAULT_HINTS, 0, 0, 0o022);
+    if (!this.executor.vfs.exists(`${preprocessDir}/huntgroups`)) this.executor.vfs.writeFile(`${preprocessDir}/huntgroups`, DEFAULT_HUNTGROUPS, 0, 0, 0o022);
+    const available = `${dir}/sites-available`;
+    const enabled = `${dir}/sites-enabled`;
+    for (const folder of [available, enabled]) if (!this.executor.vfs.exists(folder)) this.executor.vfs.mkdirp(folder, 0o755, 0, 0);
+    if (!this.executor.vfs.exists(`${available}/default`)) this.executor.vfs.writeFile(`${available}/default`, DEFAULT_SITE, 0, 0, 0o022);
+    if (!this.executor.vfs.exists(`${available}/status`)) this.executor.vfs.writeFile(`${available}/status`, STATUS_SITE, 0, 0, 0o022);
+    if (!this.executor.vfs.exists(`${enabled}/default`)) this.executor.vfs.createSymlink(`${enabled}/default`, '../sites-available/default', 0, 0);
     if (!this.executor.vfs.exists(RADIUSD_CONF_PATH)) {
       this.executor.vfs.writeFile(RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF, 0, 0, 0o022);
     }
+    if (!this.executor.vfs.exists(`${dir}/proxy.conf`)) this.executor.vfs.writeFile(`${dir}/proxy.conf`, DEFAULT_PROXY_CONF, 0, 0, 0o022);
     if (!this.executor.vfs.exists(USERS_FILE_PATH)) {
       this.executor.vfs.writeFile(USERS_FILE_PATH, '', 0, 0, 0o022);
     }
@@ -312,7 +329,11 @@ export class LinuxServer extends LinuxMachine {
       for (const attribute of event.packet.attributes) sink(`${prefix}   ${formatRadiusAttribute(attribute)}`);
       if (event.direction === 'sent') sink(`${prefix} Finished request`);
     });
-    return () => this.radiusServer.setPacketTrace(null);
+    this.radiusServer.setDebugEmit((number, lines) => { for (const line of lines) sink(`(${number}) ${line}`); });
+    return () => {
+      this.radiusServer.setPacketTrace(null);
+      this.radiusServer.setDebugEmit(null);
+    };
   }
 
   getSmtpServer(): SmtpServer { return this.smtpServer; }

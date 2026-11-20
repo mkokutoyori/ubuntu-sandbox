@@ -111,7 +111,7 @@ describe('Status-Server', () => {
     const { target } = await lab();
     write(target, RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF.replace('status_server = yes', 'status_server = maybe'));
     expect(target.getRadiusd().checkConfig())
-      .toEqual({ ok: false, error: `${RADIUSD_CONF_PATH}[16]: Invalid value 'maybe' for boolean variable status_server` });
+      .toEqual({ ok: false, error: `${RADIUSD_CONF_PATH}[${DEFAULT_RADIUSD_CONF.split('\n').findIndex((line) => line.includes('status_server')) + 1}]: Invalid value 'maybe' for boolean variable status_server` });
   });
 
   it('a wrong secret fails the Message-Authenticator: no reply', async () => {

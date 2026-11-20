@@ -20,7 +20,56 @@ export interface UsersEntry {
 
 export type ParsedUsers = { ok: true; entries: UsersEntry[] } | { ok: false; error: string };
 
-export type UsersRequestView = (attributeName: string) => string | number | undefined;
+export type UsersRequestView = (attributeName: string, wanted?: string) => string | number | undefined;
+
+export interface PacketFacts {
+  sourceIp: string;
+  sourcePort: number;
+  destinationIp: string;
+  destinationPort: number;
+  server: string;
+  type: string;
+  authenticator: string;
+}
+
+export interface ViewContext {
+  username: string;
+  strippedName: string | null;
+  request: readonly RadiusAttribute[];
+  overlay: Map<string, string>;
+  packet: PacketFacts | null;
+}
+
+const PACKET_ATTRIBUTES: Record<string, (packet: PacketFacts) => string | number> = {
+  'packet-src-ip-address': (packet) => packet.sourceIp,
+  'client-ip-address': (packet) => packet.sourceIp,
+  'packet-dst-ip-address': (packet) => packet.destinationIp,
+  'packet-src-port': (packet) => packet.sourcePort,
+  'packet-dst-port': (packet) => packet.destinationPort,
+  'virtual-server': (packet) => packet.server,
+  'packet-type': (packet) => packet.type,
+};
+
+export function requestViewOf(context: ViewContext, groupsOf: (username: string) => readonly string[], strip: () => boolean = () => true): UsersRequestView {
+  return (name, wanted) => {
+    if (name === 'group') return wanted !== undefined && groupsOf(context.username).includes(wanted) ? wanted : '';
+    if (name === 'prefix' || name === 'suffix') {
+      if (wanted === undefined) return undefined;
+      const current = context.strippedName ?? context.username;
+      const matched = name === 'prefix' ? current.startsWith(wanted) : current.length >= wanted.length && current.endsWith(wanted);
+      if (!matched) return '';
+      if (strip()) {
+        context.strippedName = name === 'prefix' ? current.slice(wanted.length) : current.slice(0, current.length - wanted.length);
+        context.overlay.set('stripped-user-name', context.strippedName);
+      }
+      return wanted;
+    }
+    if (name === 'user-name') return context.username;
+    const fact = PACKET_ATTRIBUTES[name];
+    if (fact !== undefined) return context.packet === null ? undefined : fact(context.packet);
+    return context.overlay.get(name) ?? context.request.find((candidate) => candidate.type === name)?.value;
+  };
+}
 
 export interface UsersMatch {
   password: string | null;
@@ -28,6 +77,8 @@ export interface UsersMatch {
   acceptAny: boolean;
   rejected: boolean;
   loginTime: string | null;
+  simultaneousUse: number | null;
+  matchedEntries: Array<{ name: string; line: number }>;
   reply: RadiusAttribute[];
 }
 
@@ -93,11 +144,13 @@ export function parsePairList(text: string): PairListResult {
   }
 }
 
-const CONTROL_ONLY = new Set(['cleartext-password', 'crypt-password', 'md5-password', 'smd5-password', 'sha-password', 'ssha-password', 'nt-password', 'sha2-password', 'password-with-header', 'auth-type', 'fall-through', 'hint', 'huntgroup-name', 'user-category', 'group', 'simultaneous-use', 'login-time']);
+const CONTROL_ONLY = new Set(['cleartext-password', 'crypt-password', 'md5-password', 'smd5-password', 'sha-password', 'ssha-password', 'nt-password', 'sha2-password', 'password-with-header', 'auth-type', 'fall-through', 'hint', 'huntgroup-name', 'user-category', 'group', 'simultaneous-use', 'login-time', 'strip-user-name']);
+
+const FILE_ONLY_NAMES = new Set(['suffix', 'prefix', 'strip-user-name', 'stripped-user-name', 'realm', 'packet-src-ip-address', 'client-ip-address', 'packet-dst-ip-address', 'packet-src-port', 'packet-dst-port', 'virtual-server', 'packet-type']);
 
 function knownName(name: string): boolean {
   const key = name.toLowerCase();
-  return key in RADIUS_ATTR || CONTROL_ONLY.has(key);
+  return key in RADIUS_ATTR || CONTROL_ONLY.has(key) || FILE_ONLY_NAMES.has(key);
 }
 
 export function parseUsersFile(source: string, fileName: string, readFile: (path: string) => string | null): ParsedUsers {
@@ -213,8 +266,19 @@ function matches(op: UsersOperator, actual: string | number | undefined, wanted:
 
 const SETTING_OPS = new Set<UsersOperator>([':=', '+=', '-=']);
 
+export function isSettingPair(pair: UsersPair): boolean {
+  return SETTING_OPS.has(pair.op) || (pair.op === '=' && CONTROL_ONLY.has(pair.name.toLowerCase()));
+}
+
+export function pairMatches(pair: UsersPair, username: string, request: UsersRequestView): boolean {
+  const key = pair.name.toLowerCase();
+  const wanted = String(usersPairToAttribute(pair)?.value ?? pair.value);
+  const actual = key === 'user-name' ? username : request(key, wanted);
+  return matches(pair.op, actual, wanted);
+}
+
 export function matchUsersEntries(entries: UsersEntry[], username: string, request: UsersRequestView): UsersMatch | null {
-  const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, loginTime: null, reply: [] };
+  const result: UsersMatch = { password: null, knownGood: [], acceptAny: false, rejected: false, loginTime: null, simultaneousUse: null, matchedEntries: [], reply: [] };
   let matched = false;
   for (const entry of entries) {
     if (entry.name !== 'DEFAULT' && entry.name !== username) continue;
@@ -222,22 +286,22 @@ export function matchUsersEntries(entries: UsersEntry[], username: string, reque
     let selected = true;
     for (const pair of entry.check) {
       const key = pair.name.toLowerCase();
-      if (SETTING_OPS.has(pair.op) || (pair.op === '=' && CONTROL_ONLY.has(key))) {
+      if (isSettingPair(pair)) {
         control.push([key, pair.value]);
         continue;
       }
-      const actual = key === 'user-name' ? username : request(key);
-      const wanted = String(usersPairToAttribute(pair)?.value ?? pair.value);
-      if (!matches(pair.op, actual, wanted)) { selected = false; break; }
+      if (!pairMatches(pair, username, request)) { selected = false; break; }
     }
     if (!selected) continue;
     matched = true;
+    result.matchedEntries.push({ name: entry.name, line: entry.line });
     for (const [key, value] of control) {
       if (isKnownGoodName(key)) result.knownGood = [...result.knownGood.filter((item) => item.name !== key), { name: key, value }];
       if (key === 'cleartext-password') result.password = value;
       else if (key === 'auth-type' && value.toLowerCase() === 'accept') result.acceptAny = true;
       else if (key === 'auth-type' && value.toLowerCase() === 'reject') result.rejected = true;
       else if (key === 'login-time') result.loginTime = value;
+      else if (key === 'simultaneous-use') result.simultaneousUse = Number(value);
     }
     let fallThrough = false;
     for (const pair of entry.reply) {

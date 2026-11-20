@@ -29,7 +29,7 @@ export interface RadiusAuthCompletedPayload extends RadiusDeviceRef {
 export interface RadiusAuthRejectedByServerPayload extends RadiusDeviceRef {
   fromIp: string;
   username: string;
-  reason: 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time';
+  reason: 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time' | 'simultaneous-use';
 }
 
 export interface RadiusAccountingRecordPayload extends RadiusDeviceRef {
@@ -85,6 +85,7 @@ export interface RadiusAuthDecidedPayload extends RadiusDeviceRef {
   password: string;
   nasPort: number;
   callingStationId: string | number | null;
+  precedingMessage?: string;
 }
 
 export type RadiusDomainEvent =

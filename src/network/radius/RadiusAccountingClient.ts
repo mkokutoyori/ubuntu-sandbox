@@ -1,3 +1,4 @@
+import { clientSourceAddress } from './sourceAddress';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
@@ -230,7 +231,7 @@ export class RadiusAccountingClient {
   }
 
   private transmitRaw(pending: PendingRaw, port: number): void {
-    const srcIp = this.host.sourceAddressFor(new IPAddress(pending.server.ip));
+    const srcIp = clientSourceAddress(this.host, new IPAddress(pending.server.ip));
     if (!srcIp) return;
     const payload = this.signRaw(pending);
     pending.exchange = {
@@ -356,7 +357,7 @@ export class RadiusAccountingClient {
   }
 
   private transmit(pending: PendingAcct): void {
-    const srcIp = this.host.sourceAddressFor(new IPAddress(pending.server.ip));
+    const srcIp = clientSourceAddress(this.host, new IPAddress(pending.server.ip));
     if (!srcIp) return;
     const record: AcctRecord = {
       ...pending.record, nasIp: srcIp.toString(),

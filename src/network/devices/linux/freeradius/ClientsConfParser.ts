@@ -30,14 +30,8 @@ function parseAddressSpec(text: string, netmask: number | null): { address: IPAd
   return Number.isInteger(prefix) && prefix >= 0 && prefix <= 32 ? { address, prefix } : null;
 }
 
-export function parseClientsConf(source: string, fileName: string, readFile: ConfFileReader = () => null): ParsedClients {
-  const result: ParsedClients = { clients: [], errors: [], warnings: [] };
-  const parsed = parseFreeradiusConf(source, fileName, readFile);
-  if ('error' in parsed) {
-    result.errors.push(parsed.error);
-    return result;
-  }
-  for (const section of parsed.root.sections) {
+export function readClientSections(sections: readonly ConfSection[], result: ParsedClients): void {
+  for (const section of sections) {
     if (section.name1 !== 'client') continue;
     const where = `${section.file}[${section.line}]`;
     const name2 = section.name2 ?? '';
@@ -87,6 +81,16 @@ export function parseClientsConf(source: string, fileName: string, readFile: Con
       limitProxyState: policyOf(pair(section, 'limit_proxy_state')),
     });
   }
+}
+
+export function parseClientsConf(source: string, fileName: string, readFile: ConfFileReader = () => null): ParsedClients {
+  const result: ParsedClients = { clients: [], errors: [], warnings: [] };
+  const parsed = parseFreeradiusConf(source, fileName, readFile);
+  if ('error' in parsed) {
+    result.errors.push(parsed.error);
+    return result;
+  }
+  readClientSections(parsed.root.sections, result);
   if (result.clients.length === 0 && result.errors.length === 0) {
     result.errors.push(`${fileName}: No "client" section found in client file`);
   }

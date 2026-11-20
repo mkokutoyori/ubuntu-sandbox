@@ -32,12 +32,15 @@ import type { LinuxNetworkConfigManager } from '../LinuxNetworkConfigManager';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { SshdServerConfigSnapshot } from '@/network/protocols/ssh/server/SshdServerConfig';
 import type { Signal } from '../LinuxProcessManager';
-import type { RadiusdCheckReport, RadiusdConfigPaths, RadiusdListenOverride } from '../freeradius/RadiusdService';
+import type { ListenerSpec } from '../freeradius/RadiusdSiteConfig';
+import type { RadiusdCheckReport, RadiusdConfigPaths, RadiusdListenOverride, RadutmpEntry } from '../freeradius/RadiusdService';
 
 export interface RadiusdCommandPort {
   checkConfigReport(paths?: RadiusdConfigPaths): RadiusdCheckReport;
   startFromCommandLine(listen?: RadiusdListenOverride): { ok: true } | { ok: false; errors: string[] };
   appendLog(path: string, text: string): void;
+  utmpEntries(): RadutmpEntry[];
+  listeners(): readonly ListenerSpec[];
 }
 
 export interface LinuxCommandContext {

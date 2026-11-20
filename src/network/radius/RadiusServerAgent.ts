@@ -11,7 +11,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
   type RadiusAttribute,
-  createDefaultServerConfig, attr, getAttr, getVsa,
+  createDefaultServerConfig, attr, getAttr, getVsa, RADIUS_PACKET_NAME,
   decryptUserPassword, encryptUserPassword, isPrintablePassword,
 } from './types';
 import {
@@ -21,6 +21,7 @@ import {
 } from './authenticators';
 import { parseChapPasswordHex, verifyChapResponse } from './passwords';
 import { loginTimeSecondsLeft } from './LoginTime';
+import { formatRadiusAttribute } from './attributeText';
 import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
@@ -46,6 +47,8 @@ function randomSalt(): number {
   return Math.floor(Math.random() * 0x10000);
 }
 
+const UTMP_PORT_TYPES = ['A', 'S', 'I', 'T', 'X'];
+
 const ACCT_STATUS_BY_NUMBER = new Map<number, AcctStatusType>(
   (Object.keys(ACCT_STATUS_TYPE) as AcctStatusType[]).map((k) => [ACCT_STATUS_TYPE[k], k]),
 );
@@ -64,6 +67,16 @@ export interface AcctSessionRecord {
   inputOctets: number;
   outputOctets: number;
   terminateCause?: AcctTerminateCause;
+  utmp?: UtmpFields;
+}
+
+export interface UtmpFields {
+  nasPort: number;
+  protocol: 'P' | 'S' | 'T';
+  portType: string;
+  framedAddress: string | null;
+  callerId: string;
+  startedAtMs: number;
 }
 
 export interface RadiusServerHost {
@@ -85,7 +98,7 @@ const DEDUP_TTL_MS = 30_000;
 /** How long an issued Access-Challenge's State stays redeemable (RFC 2865 §4.4). */
 const CHALLENGE_TTL_MS = 60_000;
 
-type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time';
+type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time' | 'simultaneous-use';
 
 const LOGIN_TIME_MINIMUM_TIMEOUT_SECONDS = 60;
 
@@ -125,7 +138,32 @@ export interface RadiusPacketTrace {
   length: number;
 }
 
+export interface RequestDebugInfo {
+  port: number;
+  request: RadiusPacket;
+  username: string;
+  user: RadiusUser | undefined;
+  accepted: boolean;
+  receivedLines: string[];
+  replyLines: string[];
+  postAuthLines: string[];
+}
+
+export interface AccountingRun {
+  packet: RadiusPacket;
+  sourceIp: string;
+  destinationIp: string;
+  sourcePort: number;
+  destinationPort: number;
+  atMs: number;
+  recordUtmp: (attributes: readonly RadiusAttribute[]) => void;
+}
+
+export type RequestFeature = 'pap' | 'chap' | 'mschap' | 'eap' | 'session' | 'accounting-utmp';
+
 export interface RadiusUserResolverContext {
+  listenPort?: number;
+  packet?: { sourceIp: string; sourcePort: number; destinationIp: string; destinationPort: number; type: string; authenticator: string };
   /** The requesting NAS's source IP, as seen on this Access-Request. */
   nasIp: string;
   attributes: RadiusAttribute[];
@@ -180,20 +218,55 @@ export class RadiusServerAgent {
 
   setStatusServer(on: boolean): void { this.config.statusServer = on; }
 
-  private minuteOfWeek: () => number = () => {
-    const date = new Date(simulationNowMs());
+  setDeniedMessage(message: string): void { this.config.deniedMessage = message; }
+
+  private featurePolicy: (feature: RequestFeature, listenPort: number) => boolean = () => true;
+
+  setFeaturePolicy(policy: (feature: RequestFeature, listenPort: number) => boolean): void { this.featurePolicy = policy; }
+
+  private allows(feature: RequestFeature): boolean {
+    return this.featurePolicy(feature, this.servedPort ?? this.config.port);
+  }
+
+  private simultaneousUseDenial(user: RadiusUser | undefined, username: string): { reply: RadiusAttribute[]; note: string } | null {
+    if (user?.simultaneousUse === undefined || !this.allows('session')) return null;
+    const maximum = user.simultaneousUse;
+    const active = this.utmpSessions().filter((record) => record.username === username);
+    if (active.length < maximum) return null;
+    for (const record of active) {
+      const nasType = this.clientTable.find(new IPAddress(record.nasIp))?.nasType ?? 'other';
+      if (nasType !== 'other' && nasType !== '') return null;
+    }
+    const denied = this.config.deniedMessage ?? 'You are already logged in - access denied';
+    return { reply: [attr('reply-message', maximum > 1 ? `${denied} (${maximum})` : denied)], note: `Multiple logins (max ${maximum}) ` };
+  }
+
+  private wallClockMs: () => number = () => simulationNowMs();
+  private minuteOfWeek: (epochMs: number) => number = (epochMs) => {
+    const date = new Date(epochMs);
     return date.getUTCDay() * 1440 + date.getUTCHours() * 60 + date.getUTCMinutes();
   };
 
-  setMinuteOfWeekClock(clock: () => number): void { this.minuteOfWeek = clock; }
+  setWallClock(nowMs: () => number, minuteOfWeek: (epochMs: number) => number): void {
+    this.wallClockMs = nowMs;
+    this.minuteOfWeek = minuteOfWeek;
+  }
 
   private loginTimeVerdict(user: RadiusUser | undefined): { allowed: boolean; secondsLeft: number } {
     if (user?.loginTime === undefined) return { allowed: true, secondsLeft: 0 };
-    const left = loginTimeSecondsLeft(user.loginTime, this.minuteOfWeek());
+    const left = loginTimeSecondsLeft(user.loginTime, this.minuteOfWeek(this.wallClockMs()));
     if (left < 0) return { allowed: false, secondsLeft: 0 };
     if (left > 0 && left < LOGIN_TIME_MINIMUM_TIMEOUT_SECONDS) return { allowed: false, secondsLeft: 0 };
     return { allowed: true, secondsLeft: left };
   }
+
+  private anyPort = false;
+  private servedPort: number | null = null;
+
+  setAnyPort(on: boolean): void { this.anyPort = on; }
+
+  private authSource(): number { return this.servedPort ?? this.config.port; }
+  private acctSource(): number { return this.servedPort ?? this.config.acctPort; }
 
   private unknownClientListener: ((event: { kind: 'auth' | 'acct'; port: number; clientIp: string; clientPort: number }) => void) | null = null;
   private lastUnknownClientSecond = -1;
@@ -202,14 +275,14 @@ export class RadiusServerAgent {
     this.unknownClientListener = listener;
   }
 
-  private reportUnknownClient(kind: 'auth' | 'acct', senderIp: string, clientPort: number): void {
+  private reportUnknownClient(kind: 'auth' | 'acct', senderIp: string, clientPort: number, listenPort: number): void {
     if (this.unknownClientListener === null) return;
     if (this.packetTrace === null) {
       const second = Math.floor(simulationNowMs() / 1000);
       if (second === this.lastUnknownClientSecond) return;
       this.lastUnknownClientSecond = second;
     }
-    this.unknownClientListener({ kind, port: kind === 'auth' ? this.config.port : this.config.acctPort, clientIp: senderIp, clientPort });
+    this.unknownClientListener({ kind, port: listenPort, clientIp: senderIp, clientPort });
   }
 
   private warningListener: ((message: string) => void) | null = null;
@@ -259,15 +332,51 @@ export class RadiusServerAgent {
     this.traceOpen = false;
   }
 
-  private traceReceived(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstPort: number, inPort: string, decrypt: boolean): void {
-    if (this.packetTrace === null) return;
-    const attributes = decrypt
+  private displayAttributes(packet: RadiusPacket, srcIp: IPAddress, decrypt: boolean): RadiusAttribute[] {
+    return decrypt
       ? packet.attributes.map((attribute) => {
         if (attribute.type !== 'user-password') return attribute;
         const clear = decryptUserPassword(String(attribute.value), this.secretFor(srcIp), packet.authenticator);
         return isPrintablePassword(clear) ? { ...attribute, value: clear } : attribute;
       })
       : packet.attributes;
+  }
+
+  private accountingRunner: ((run: AccountingRun) => boolean) | null = null;
+
+  setAccountingRunner(runner: ((run: AccountingRun) => boolean) | null): void { this.accountingRunner = runner; }
+
+  private postAuthHook: ((info: { port: number; accepted: boolean; userReply: readonly RadiusAttribute[] }) => { reply: RadiusAttribute[]; lines: string[] } | null) | null = null;
+
+  setPostAuthHook(hook: ((info: { port: number; accepted: boolean; userReply: readonly RadiusAttribute[] }) => { reply: RadiusAttribute[]; lines: string[] } | null) | null): void { this.postAuthHook = hook; }
+
+  private debugEmit: ((number: number, lines: string[]) => void) | null = null;
+  private debugBuilder: ((info: RequestDebugInfo) => string[]) | null = null;
+
+  setDebugEmit(emit: ((number: number, lines: string[]) => void) | null): void { this.debugEmit = emit; }
+
+  setDebugBuilder(builder: ((info: RequestDebugInfo) => string[]) | null): void { this.debugBuilder = builder; }
+
+  loginTimeOutcome(user: RadiusUser | undefined): { result: 'noop' | 'ok' | 'updated' | 'userlock'; secondsLeft: number } {
+    if (user?.loginTime === undefined) return { result: 'noop', secondsLeft: 0 };
+    const verdict = this.loginTimeVerdict(user);
+    if (!verdict.allowed) return { result: 'userlock', secondsLeft: 0 };
+    return { result: verdict.secondsLeft > 0 ? 'updated' : 'ok', secondsLeft: verdict.secondsLeft };
+  }
+
+  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[]): void {
+    if (this.debugEmit === null || this.debugBuilder === null) return;
+    const lineOf = (attribute: RadiusAttribute) => `  ${formatRadiusAttribute(attribute)}`;
+    this.debugEmit(this.requestNumber, this.debugBuilder({
+      port: this.servedPort ?? this.config.port, request, username, user, accepted,
+      receivedLines: this.displayAttributes(request, srcIp, true).map(lineOf),
+      replyLines: finalReply.map(lineOf), postAuthLines,
+    }));
+  }
+
+  private traceReceived(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstPort: number, inPort: string, decrypt: boolean): void {
+    if (this.packetTrace === null) return;
+    const attributes = this.displayAttributes(packet, srcIp, decrypt);
     this.traceOpen = true;
     this.packetTrace({
       number: this.requestNumber, direction: 'received', packet: { ...packet, attributes },
@@ -290,7 +399,7 @@ export class RadiusServerAgent {
 
   setDecisionListener(listener: ((payload: RadiusAuthDecidedPayload) => void) | null): void { this.decisionListener = listener; }
 
-  private publishDecision(request: RadiusPacket, clientIp: IPAddress, accepted: boolean): void {
+  private publishDecision(request: RadiusPacket, clientIp: IPAddress, accepted: boolean, precedingMessage?: string): void {
     const passwordAttr = getAttr(request, 'user-password');
     const chapAttr = getAttr(request, 'chap-password');
     let password = '<no User-Password attribute>';
@@ -303,6 +412,7 @@ export class RadiusServerAgent {
       username: getAttr(request, 'user-name')?.value ?? null,
       password, nasPort: Number(getAttr(request, 'nas-port')?.value ?? 0),
       callingStationId: getAttr(request, 'calling-station-id')?.value ?? null,
+      ...(precedingMessage === undefined ? {} : { precedingMessage }),
     };
     this.getBus().publish({ topic: 'radius.auth.decided', payload });
     this.decisionListener?.(payload);
@@ -324,6 +434,10 @@ export class RadiusServerAgent {
   revokeClient(clientIp: string): void { this.config.clients.delete(clientIp); }
 
   listUsers(): RadiusUser[] { return Array.from(this.config.users.values()); }
+
+  utmpSessions(): AcctSessionRecord[] {
+    return Array.from(this.acctSessions.values()).filter((record) => record.status !== 'stop' && record.utmp !== undefined);
+  }
 
   /** Accounting journal — last known state per Acct-Session-Id (RFC 2866). */
   listAccountingSessions(): AcctSessionRecord[] { return Array.from(this.acctSessions.values()); }
@@ -354,9 +468,32 @@ export class RadiusServerAgent {
   setUserResolver(fn: ((username: string, context?: RadiusUserResolverContext) => RadiusUser | undefined) | null): void { this.userResolver = fn; }
 
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
-  handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleStreamRequest(
+    srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    request: RadiusPacket, reply: (response: RadiusPacket) => void,
+  ): void {
+    const inPort = this.host.getPorts().find((candidate) => candidate.getIPAddress()?.toString() === localIp.toString());
+    if (!inPort) return;
+    const udp = { type: 'udp', sourcePort: srcPort, destinationPort: localPort, length: 0, checksum: 0, payload: request } as UDPPacket;
+    const previousSink = this.streamSink;
+    const previousPort = this.servedPort;
+    this.streamSink = reply;
+    this.servedPort = localPort;
+    try {
+      if (request.code === 'accounting-request') this.handleAcctUdp(inPort.getName(), srcIp, udp, true);
+      else this.handleUdp(inPort.getName(), srcIp, udp, true);
+    } finally {
+      this.streamSink = previousSink;
+      this.servedPort = previousPort;
+    }
+  }
+
+  private streamSink: ((response: RadiusPacket) => void) | null = null;
+
+  handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
-    if (udp.destinationPort !== this.config.acctPort) return;
+    if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.acctPort) return;
+    if (this.anyPort) this.servedPort = udp.destinationPort;
     const payload = udp.payload as RadiusPacket | undefined;
     if (payload?.type === 'radius' && payload.code === 'status-server') {
       this.handleStatusServer(inPort, srcIp, udp, payload, 'accounting-response', this.recentAcctReplies);
@@ -366,7 +503,7 @@ export class RadiusServerAgent {
 
     const senderIp = srcIp.toString();
     if (this.clientRefused(senderIp)) {
-      this.reportUnknownClient('acct', senderIp, udp.sourcePort);
+      this.reportUnknownClient('acct', senderIp, udp.sourcePort, udp.destinationPort);
       return;
     }
     if (!verifyAccountingRequestAuthenticator(payload, this.secretFor(srcIp))) {
@@ -387,6 +524,22 @@ export class RadiusServerAgent {
     const sessionIdAttr = getAttr(payload, 'acct-session-id');
     const usernameAttr = getAttr(payload, 'user-name');
     const statusAttr = getAttr(payload, 'acct-status-type');
+    const nasRebootStatus = statusAttr === undefined ? undefined : ACCT_STATUS_BY_NUMBER.get(Number(statusAttr.value));
+    if (nasRebootStatus === 'accounting-on' || nasRebootStatus === 'accounting-off') {
+      const rebootedNas = String(getAttr(payload, 'nas-ip-address')?.value ?? senderIp);
+      const at = simulationNowMs();
+      for (const record of this.acctSessions.values()) {
+        if (record.nasIp === rebootedNas && record.status !== 'stop') {
+          Object.assign(record, { status: 'stop', updatedAt: at, terminateCause: 'nas-reboot' });
+        }
+      }
+      this.accountingListener?.({
+        sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
+        packet: payload, atMs: at,
+      });
+      this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
+      return;
+    }
     if (!sessionIdAttr || !usernameAttr || !statusAttr) return; // malformed — nothing sane to journal or ack
     const status = ACCT_STATUS_BY_NUMBER.get(Number(statusAttr.value));
     if (status !== 'start' && status !== 'interim-update' && status !== 'stop') return;
@@ -402,12 +555,32 @@ export class RadiusServerAgent {
       ? ACCT_TERMINATE_CAUSE_BY_NUMBER.get(Number(terminateCauseAttr.value)) : undefined;
 
     const now = simulationNowMs();
-    const existing = this.acctSessions.get(sessionId);
-    this.acctSessions.set(sessionId, {
+    const wallNow = this.wallClockMs();
+    const sessionKey = `${nasIp}|${sessionId}`;
+    const existing = this.acctSessions.get(sessionKey);
+    const nasPortAttribute = getAttr(payload, 'nas-port');
+    const framedProtocol = Number(getAttr(payload, 'framed-protocol')?.value);
+    this.acctSessions.set(sessionKey, {
       sessionId, username, nasIp, status,
       startedAt: status === 'start' ? now : (existing?.startedAt ?? now),
       updatedAt: now, sessionTimeSec, inputOctets, outputOctets, terminateCause,
+      ...(existing?.utmp === undefined ? {} : { utmp: existing.utmp }),
     });
+    const recordUtmp = (attributes: readonly RadiusAttribute[]): void => {
+      const record = this.acctSessions.get(sessionKey);
+      if (record === undefined || record.utmp !== undefined || status === 'stop' || username === '!root') return;
+      const nasPortOf = attributes.find((attribute) => attribute.type === 'nas-port');
+      if (nasPortOf === undefined) return;
+      const protocolOf = Number(attributes.find((attribute) => attribute.type === 'framed-protocol')?.value);
+      record.utmp = {
+        nasPort: Number(nasPortOf.value),
+        protocol: protocolOf === 1 ? 'P' : protocolOf === 2 ? 'S' : 'T',
+        portType: UTMP_PORT_TYPES[Number(attributes.find((attribute) => attribute.type === 'nas-port-type')?.value)] ?? 'A',
+        framedAddress: String(attributes.find((attribute) => attribute.type === 'framed-ip-address')?.value ?? attributes.find((attribute) => attribute.type === 'login-ip-host')?.value ?? '') || null,
+        callerId: this.config.callerIdInUtmp === false ? '' : String(attributes.find((attribute) => attribute.type === 'calling-station-id')?.value ?? '').slice(0, 15),
+        startedAtMs: wallNow - Number(attributes.find((attribute) => attribute.type === 'acct-delay-time')?.value ?? 0) * 1000,
+      };
+    };
 
     this.getBus().publish({
       topic: 'radius.accounting.record',
@@ -421,16 +594,26 @@ export class RadiusServerAgent {
     Logger.info(this.host.id, 'radius:accounting',
       `${this.host.name}: ${status} for ${username} (session ${sessionId})`);
 
-    this.accountingListener?.({
-      sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
-      packet: payload, atMs: now,
-    });
+    if (this.accountingRunner !== null) {
+      const answered = this.accountingRunner({
+        packet: payload, sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort,
+        destinationPort: udp.destinationPort, atMs: now, recordUtmp,
+      });
+      if (!answered) return;
+    } else {
+      if (this.allows('accounting-utmp')) recordUtmp(payload.attributes);
+      this.accountingListener?.({
+        sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
+        packet: payload, atMs: now,
+      });
+    }
     this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
   }
 
-  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
-    if (udp.destinationPort !== this.config.port) return;
+    if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.port) return;
+    if (this.anyPort) this.servedPort = udp.destinationPort;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
 
@@ -480,7 +663,7 @@ export class RadiusServerAgent {
     });
 
     if (this.clientRefused(senderIp)) {
-      this.reportUnknownClient('auth', senderIp, udp.sourcePort);
+      this.reportUnknownClient('auth', senderIp, udp.sourcePort, udp.destinationPort);
       this.publishRejected(senderIp, getAttr(payload, 'user-name')?.value as string ?? '', 'client-not-authorized');
       return;
     }
@@ -499,7 +682,12 @@ export class RadiusServerAgent {
       return;
     }
 
-    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes });
+    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes, listenPort: this.servedPort ?? this.config.port, packet: { sourceIp: senderIp, sourcePort: udp.sourcePort, destinationIp: srcIpOfPort(this.host.getPort(inPort)), destinationPort: udp.destinationPort, type: RADIUS_PACKET_NAME[payload.code], authenticator: payload.authenticator } });
+    if (resolved?.proxy !== undefined) {
+      const { realm: proxiedRealm, forwardName, fallbacks, ...route } = resolved.proxy;
+      this.forwardToRealm(inPort, srcIp, udp.sourcePort, payload, forwardName, proxiedRealm, route, dedupKey, fallbacks);
+      return;
+    }
     const loginTime = this.loginTimeVerdict(resolved);
     if (!loginTime.allowed) {
       this.publishRejected(senderIp, username, 'outside-login-time');
@@ -508,12 +696,22 @@ export class RadiusServerAgent {
     }
     const user = loginTime.secondsLeft === 0 || resolved === undefined ? resolved : this.withSessionTimeout(resolved, loginTime.secondsLeft);
 
+    if (eapAttr && !this.allows('eap')) {
+      this.publishRejected(senderIp, username, 'bad-password');
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey);
+      return;
+    }
     if (eapAttr) {
       this.handleEapRequest(inPort, srcIp, udp.sourcePort, payload, username, user, dedupKey);
       return;
     }
 
     const msChap2ResponseVsa = getVsa(payload, MICROSOFT_VENDOR_ID, 25);
+    if (msChap2ResponseVsa && !this.allows('mschap')) {
+      this.publishRejected(senderIp, username, 'bad-password');
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey);
+      return;
+    }
     if (msChap2ResponseVsa) {
       this.handleMsChapV2Request(inPort, srcIp, udp.sourcePort, payload, username, user, msChap2ResponseVsa, dedupKey);
       return;
@@ -552,27 +750,47 @@ export class RadiusServerAgent {
       const parsed = parseChapPasswordHex(String(chapAttr.value));
       const challengeAttr = getAttr(payload, 'chap-challenge');
       const challenge = challengeAttr ? hexToBytes(String(challengeAttr.value)) : hexToBytes(payload.authenticator);
-      accepted = !!user && (user.acceptAny === true || (!!parsed && user.password !== '' && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge)));
+      accepted = !!user && (user.acceptAny === true || (this.allows('chap') && !!parsed && user.password !== '' && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge)));
       reason = !user ? 'unknown-user' : 'bad-password';
     } else {
       const decrypted = decryptUserPassword(String(passwordAttr!.value), this.secretFor(srcIp), payload.authenticator);
       const secretLooksWrong = !isPrintablePassword(decrypted);
-      accepted = !secretLooksWrong && !!user && (user.acceptAny === true || (user.verify ? user.verify(decrypted) : user.password === decrypted));
+      accepted = !secretLooksWrong && !!user && (user.acceptAny === true || (this.allows('pap') && (user.verify ? user.verify(decrypted) : user.password === decrypted)));
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
     }
 
+    const denial = accepted ? this.simultaneousUseDenial(user, username) : null;
+    const finalAccepted = accepted && denial === null;
+    const post = this.postAuthHook?.({ port: this.servedPort ?? this.config.port, accepted: finalAccepted, userReply: user?.replyAttributes ?? [] }) ?? null;
+    const finalUser = finalAccepted && post !== null && user !== undefined ? { ...user, replyAttributes: post.reply } : user;
+    const rejectExtra = !finalAccepted && post !== null ? post.reply : [];
+    this.emitRequestDebug(payload, srcIp, username, user, accepted, post?.lines ?? [], finalAccepted ? (finalUser?.replyAttributes ?? []) : rejectExtra);
+    if (denial !== null) {
+      this.publishRejected(senderIp, username, 'simultaneous-use');
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey, denial, rejectExtra);
+      return;
+    }
     if (!accepted) this.publishRejected(senderIp, username, reason);
-    this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, user, dedupKey);
+    this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, finalUser, dedupKey, null, rejectExtra);
+  }
+
+  handleStatusUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, clients: RadiusClientTable): void {
+    if (!this.running || !this.config.enabled) return;
+    const payload = udp.payload as RadiusPacket | undefined;
+    if (!payload || payload.type !== 'radius' || payload.code !== 'status-server') return;
+    this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies, clients);
   }
 
   private handleStatusServer(
     inPort: string, srcIp: IPAddress, udp: UDPPacket, request: RadiusPacket,
     replyCode: 'access-accept' | 'accounting-response',
     cache: Map<string, { response: RadiusPacket; sentAt: number }>,
+    clients: RadiusClientTable | null = null,
   ): void {
     const senderIp = srcIp.toString();
-    if (this.clientRefused(senderIp)) {
-      this.reportUnknownClient(replyCode === 'access-accept' ? 'auth' : 'acct', senderIp, udp.sourcePort);
+    const refused = clients === null ? this.clientRefused(senderIp) : clients.find(srcIp) === null;
+    if (refused) {
+      this.reportUnknownClient(replyCode === 'access-accept' ? 'auth' : 'acct', senderIp, udp.sourcePort, udp.destinationPort);
       return;
     }
     if (this.config.statusServer !== true) {
@@ -586,7 +804,7 @@ export class RadiusServerAgent {
         `${this.host.name}: Insecure packet from host ${senderIp}:  Packet does not contain required Message-Authenticator attribute.  You may need to set 'require_message_authenticator = no' in the configuration`);
       return;
     }
-    const secret = this.secretFor(srcIp);
+    const secret = clients === null ? this.secretFor(srcIp) : clients.find(srcIp)!.secret;
     if (!verifyMessageAuthenticator(request, request.authenticator, secret)) {
       Logger.warn(this.host.id, 'radius:bad-message-authenticator',
         `${this.host.name}: Received packet from ${senderIp} with invalid Message-Authenticator!  (Shared secret is incorrect.)`);
@@ -786,6 +1004,12 @@ export class RadiusServerAgent {
       return;
     }
 
+    const denial = this.simultaneousUseDenial(user, username);
+    if (denial !== null) {
+      this.publishRejected(dstIp.toString(), username, 'simultaneous-use');
+      this.reply(inPort, dstIp, clientPort, request, false, user, dedupKey, denial);
+      return;
+    }
     this.replyMsChapV2Success(inPort, dstIp, clientPort, request, username, user, peerChallenge, authChallenge, ntResponse, dedupKey);
   }
 
@@ -834,7 +1058,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user.username,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:mschapv2',
       `${this.host.name}: ${dstIp} access-accept (MS-CHAPv2) for ${user.username}`);
   }
@@ -864,7 +1088,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: null,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap', `${this.host.name}: ${dstIp} EAP-Request/MD5-Challenge issued`);
   }
 
@@ -877,8 +1101,15 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
+    const denial = accepted && user ? this.simultaneousUseDenial(user, user.username) : null;
+    if (denial !== null) {
+      accepted = false;
+      eapResult = { type: 'eap', code: 'failure', identifier: eapResult.identifier };
+      this.publishRejected(dstIp.toString(), user!.username, 'simultaneous-use');
+    }
     const attrs: RadiusAttribute[] = [attr('eap-message', eapPacketToWireHex(eapResult))];
-    this.publishDecision(request, dstIp, accepted);
+    this.publishDecision(request, dstIp, accepted, denial?.note);
+    if (denial !== null) attrs.push(...denial.reply);
     if (accepted && user?.replyAttributes) attrs.push(...user.replyAttributes);
     let response: RadiusPacket = {
       type: 'radius', code: accepted ? 'access-accept' : 'access-reject', identifier: request.identifier,
@@ -895,7 +1126,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user?.username ?? null,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap',
       `${this.host.name}: ${dstIp} ${response.code} (EAP-${eapResult.code}) for ${user?.username ?? '(unknown)'}`);
   }
@@ -941,7 +1172,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user.username,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:challenge',
       `${this.host.name}: ${dstIp} Access-Challenge for ${user.username}`);
   }
@@ -949,6 +1180,8 @@ export class RadiusServerAgent {
   private reply(
     inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
     accepted: boolean, user: RadiusUser | undefined, dedupKey: string,
+    denial: { reply: RadiusAttribute[]; note: string } | null = null,
+    rejectExtra: readonly RadiusAttribute[] = [],
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
@@ -957,8 +1190,10 @@ export class RadiusServerAgent {
     const replyAttrs: RadiusAttribute[] = [];
     if (accepted && user?.replyAttributes) replyAttrs.push(...user.replyAttributes);
     const rejectMessage = this.config.rejectReplyMessage === undefined ? 'Authentication failed' : this.config.rejectReplyMessage;
-    if (!accepted && rejectMessage !== null) replyAttrs.push(attr('reply-message', rejectMessage));
-    this.publishDecision(request, dstIp, accepted);
+    if (denial !== null) replyAttrs.push(...denial.reply);
+    else if (!accepted && rejectMessage !== null) replyAttrs.push(attr('reply-message', rejectMessage));
+    if (!accepted) replyAttrs.push(...rejectExtra);
+    this.publishDecision(request, dstIp, accepted, denial?.note);
     let response: RadiusPacket = {
       type: 'radius',
       code: accepted ? 'access-accept' : 'access-reject',
@@ -981,7 +1216,7 @@ export class RadiusServerAgent {
         username: user?.username ?? null,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:reply',
       `${this.host.name}: ${dstIp} ${response.code} for ${user?.username ?? '(unknown)'}`);
   }
@@ -992,7 +1227,7 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:resend',
       `${this.host.name}: retransmission from ${dstIp} → cached ${response.code}`);
   }
@@ -1011,7 +1246,7 @@ export class RadiusServerAgent {
     };
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentAcctReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.acctSource(), response);
   }
 
   private resendAcct(inPort: string, dstIp: IPAddress, clientPort: number, response: RadiusPacket): void {
@@ -1019,7 +1254,7 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.acctSource(), response);
     Logger.info(this.host.id, 'radius:resend',
       `${this.host.name}: accounting retransmission from ${dstIp} → cached ${response.code}`);
   }
@@ -1032,7 +1267,7 @@ export class RadiusServerAgent {
   /** RFC 2607 — forward this Access-Request to the realm's home server, tracking it under our own identifier space. */
   private forwardToRealm(
     inPort: string, nasIp: IPAddress, nasPort: number, request: RadiusPacket,
-    username: string, realm: string, route: RealmRoute, dedupKey: string,
+    username: string, realm: string, route: RealmRoute, dedupKey: string, fallbacks: readonly RealmRoute[] = [],
   ): void {
     const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
     if (!homeSrcIp) {
@@ -1072,6 +1307,7 @@ export class RadiusServerAgent {
 
     const timer = this.getScheduler().setTimeout(() => {
       this.pendingProxy.delete(outIdentifier);
+      if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1));
     }, route.timeoutMs);
 
     this.pendingProxy.set(outIdentifier, {
@@ -1144,6 +1380,16 @@ export class RadiusServerAgent {
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
     this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
+    if (this.streamSink !== null) {
+      this.streamSink(response);
+      return;
+    }
+    if (dstIp.isLoopback() || dstIp.toString() === srcIp.toString()) {
+      this.host.sendUdpDatagram({
+        destination: dstIp, destinationPort: clientPort, sourcePort, payload: response, payloadBytes: 20 + 16 - 8, source: srcIp,
+      });
+      return;
+    }
     const ipPkt = buildUdpOverIpv4(srcIp, {
       destination: dstIp,
       destinationPort: clientPort, sourcePort,
