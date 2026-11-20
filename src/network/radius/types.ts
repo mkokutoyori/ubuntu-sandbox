@@ -206,6 +206,12 @@ export interface RadiusServerConfig {
   retransmit: number;
 }
 
+export interface StatusCheck {
+  intervalMs: number;
+  timeoutMs: number;
+  answers: number;
+}
+
 export interface ProxyRoute {
   realm: string;
   forwardName: string;
@@ -213,7 +219,8 @@ export interface ProxyRoute {
   homePort: number;
   homeSecret: string;
   timeoutMs: number;
-  fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number }[];
+  statusCheck?: StatusCheck;
+  fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number; statusCheck?: StatusCheck }[];
 }
 
 export interface RadiusUser {

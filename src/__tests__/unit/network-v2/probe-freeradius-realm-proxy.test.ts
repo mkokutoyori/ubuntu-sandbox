@@ -5,7 +5,7 @@
  * Stripped-User-Name", "Adding Realm", "Proxying request from user X to realm Y", "Authentication realm is LOCAL"; nostrip keeps the
  * name; DEFAULT and regular-expression realms), src/main/realms.c (pool types, missing home_server / secret refusals).
  * The Access-Request is relayed over a real UDP exchange to the home server, which authenticates with its own clients.conf secret.
- * Keys the simulator cannot honour (proto tcp, status_check, ...) are refused naming them, never ignored.
+ * Keys the simulator cannot honour (proto tcp, max_outstanding, ...) are refused naming them, never ignored.
  *
  * Discriminated with git stash on src: the first 10 cases fall before the realm change, the witness included; the fail-over case and the default-site case each fall on the commit before theirs; because proxy.conf is never read
  * and the shipped default site (which now calls suffix after mschap, as the 3.2 site does) refuses nothing but resolves no realm. The witness still proves
@@ -108,8 +108,8 @@ describe('proxy.conf and the realm modules', () => {
   });
 
   it('refuses a home_server key the simulator cannot honour, naming it and its line', async () => {
-    const { started } = await lab(HOME_POOL('status_check = status-server'));
-    expect(started).toContain('The home_server setting "status_check" is not implemented in this simulator');
+    const { started } = await lab(HOME_POOL('max_outstanding = 5'));
+    expect(started).toContain('The home_server setting "max_outstanding" is not implemented in this simulator');
   });
 
   it('refuses a pool naming an unknown home_server', async () => {

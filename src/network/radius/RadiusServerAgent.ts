@@ -10,7 +10,7 @@ import { md4 } from '@/crypto/hash';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
-  type RadiusAttribute, type ProxyRoute,
+  type RadiusAttribute, type ProxyRoute, type StatusCheck,
   createDefaultServerConfig, attr, getAttr, getVsa, RADIUS_PACKET_NAME,
   decryptUserPassword, encryptUserPassword, isPrintablePassword,
 } from './types';
@@ -108,6 +108,7 @@ interface RealmRoute {
   homePort: number;
   homeSecret: string;
   timeoutMs: number;
+  statusCheck?: StatusCheck;
 }
 
 /** Context kept while an Access-Request forwarded to a realm's home server is in flight. */
@@ -194,6 +195,8 @@ export class RadiusServerAgent {
   private readonly realms = new Map<string, RealmRoute>();
   /** Forwarded Access-Requests awaiting the home server's Access-Accept/Reject, keyed by the identifier this proxy issued to the home server (its own space, distinct from the NAS's). */
   private readonly pendingProxy = new Map<number, PendingProxyContext>();
+  private readonly probeLoops = new Map<string, { timer: TimerHandle | null; answers: number; route: RealmRoute; accounting: boolean }>();
+  private readonly pendingProbes = new Map<number, { key: string; authenticator: string; secret: string; address: string; port: number; timer: TimerHandle | null }>();
   private readonly homeActivity = new Map<string, { lastReplyMs: number | null; timedOutAtMs: number | null; adminDown?: boolean }>();
   private nextProxyIdentifier = 1;
 
@@ -210,6 +213,10 @@ export class RadiusServerAgent {
       if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
     }
     this.pendingProxy.clear();
+    for (const loop of this.probeLoops.values()) if (loop.timer !== null) this.getScheduler().clear(loop.timer);
+    this.probeLoops.clear();
+    for (const probe of this.pendingProbes.values()) if (probe.timer !== null) this.getScheduler().clear(probe.timer);
+    this.pendingProbes.clear();
   }
 
   getConfig(): Readonly<RadiusServerAgentConfig> { return this.config; }
@@ -526,7 +533,7 @@ export class RadiusServerAgent {
       this.handleStatusServer(inPort, srcIp, udp, payload, 'accounting-response', this.recentAcctReplies);
       return;
     }
-    if (payload?.type === 'radius' && payload.code === 'accounting-response' && this.pendingProxy.size > 0 && this.tryCompleteProxyReply(srcIp, udp, payload)) return;
+    if (payload?.type === 'radius' && payload.code === 'accounting-response' && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0) && this.tryCompleteProxyReply(srcIp, udp, payload)) return;
     if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-request') return;
 
     const senderIp = srcIp.toString();
@@ -650,7 +657,7 @@ export class RadiusServerAgent {
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
 
-    if ((payload.code === 'access-accept' || payload.code === 'access-reject') && this.pendingProxy.size > 0) {
+    if ((payload.code === 'access-accept' || payload.code === 'access-reject') && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0)) {
       if (this.tryCompleteProxyReply(srcIp, udp, payload)) return;
     }
     if (payload.code === 'status-server') {
@@ -1316,11 +1323,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    let outIdentifier = this.nextProxyIdentifier;
-    for (let i = 0; i < 256 && this.pendingProxy.has(outIdentifier); i++) {
-      outIdentifier = (outIdentifier + 1) & 0xff;
-    }
-    this.nextProxyIdentifier = (outIdentifier + 1) & 0xff;
+    const outIdentifier = this.freeProxyIdentifier();
     let outAuthenticator = randomRequestAuthenticator();
 
     const attrs: RadiusAttribute[] = kind === 'acct'
@@ -1356,6 +1359,7 @@ export class RadiusServerAgent {
       const activity = this.homeActivity.get(`${route.homeServerIp}:${route.homePort}`) ?? { lastReplyMs: null, timedOutAtMs: null };
       if (activity.timedOutAtMs === null) activity.timedOutAtMs = simulationNowMs();
       this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, activity);
+      this.startProbing(route, kind === 'acct');
       if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1), kind);
     }, route.timeoutMs);
 
@@ -1383,8 +1387,63 @@ export class RadiusServerAgent {
     });
   }
 
+  private freeProxyIdentifier(): number {
+    let identifier = this.nextProxyIdentifier;
+    for (let i = 0; i < 256 && (this.pendingProxy.has(identifier) || this.pendingProbes.has(identifier)); i++) identifier = (identifier + 1) & 0xff;
+    this.nextProxyIdentifier = (identifier + 1) & 0xff;
+    return identifier;
+  }
+
+  private startProbing(route: RealmRoute, accounting: boolean): void {
+    const key = `${route.homeServerIp}:${route.homePort}`;
+    if (route.statusCheck === undefined || this.probeLoops.has(key)) return;
+    const loop = { timer: null as TimerHandle | null, answers: 0, route, accounting };
+    this.probeLoops.set(key, loop);
+    const tick = (): void => {
+      const check = route.statusCheck!;
+      const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
+      if (homeSrcIp) {
+        const identifier = this.freeProxyIdentifier();
+        const authenticator = randomRequestAuthenticator();
+        const probe = withMessageAuthenticator(
+          { type: 'radius', code: 'status-server', identifier, authenticator, attributes: [] }, authenticator, route.homeSecret,
+        );
+        const timer = this.getScheduler().setTimeout(() => {
+          this.pendingProbes.delete(identifier);
+          loop.answers = 0;
+        }, check.timeoutMs);
+        this.pendingProbes.set(identifier, { key, authenticator, secret: route.homeSecret, address: route.homeServerIp, port: route.homePort, timer });
+        this.host.sendUdpDatagram({
+          destination: new IPAddress(route.homeServerIp), source: homeSrcIp,
+          destinationPort: route.homePort, sourcePort: accounting ? this.acctSource() : this.config.port,
+          payload: probe, payloadBytes: 20 + 16 - 8,
+        });
+      }
+      loop.timer = this.getScheduler().setTimeout(tick, check.intervalMs);
+    };
+    loop.timer = this.getScheduler().setTimeout(tick, route.statusCheck.intervalMs);
+  }
+
+  private tryCompleteProbe(srcIp: IPAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
+    const probe = this.pendingProbes.get(payload.identifier);
+    if (probe === undefined || srcIp.toString() !== probe.address || udp.sourcePort !== probe.port) return false;
+    if (!verifyResponseAuthenticator(payload, probe.authenticator, probe.secret)) return false;
+    this.pendingProbes.delete(payload.identifier);
+    if (probe.timer !== null) this.getScheduler().clear(probe.timer);
+    const loop = this.probeLoops.get(probe.key);
+    if (loop === undefined) return true;
+    loop.answers++;
+    if (loop.answers >= (loop.route.statusCheck?.answers ?? 1)) {
+      if (loop.timer !== null) this.getScheduler().clear(loop.timer);
+      this.probeLoops.delete(probe.key);
+      this.homeActivity.set(probe.key, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
+    }
+    return true;
+  }
+
   /** The home server's Access-Accept/Reject for a request we forwarded — translate it back to the original NAS. Returns false when the reply doesn't match any pending proxied request (so the caller can fall through to normal handling). */
   private tryCompleteProxyReply(srcIp: IPAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
+    if (this.tryCompleteProbe(srcIp, udp, payload)) return true;
     const ctx = this.pendingProxy.get(payload.identifier);
     if (!ctx) return false;
     if (srcIp.toString() !== ctx.homeServerIp || udp.sourcePort !== ctx.homePort) return false;

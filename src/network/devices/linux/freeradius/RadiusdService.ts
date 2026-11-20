@@ -583,7 +583,7 @@ export class RadiusdService {
     }
     messages.push(`${instanceName}: Proxying request from user ${name} to realm ${realm.name}`);
     const server = this.pickHomeServer(pool, accounting);
-    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: accounting ? candidate.acctPort ?? candidate.port : candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs });
+    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: accounting ? candidate.acctPort ?? candidate.port : candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs, ...(candidate.statusCheck === null ? {} : { statusCheck: candidate.statusCheck }) });
     const rest = pool.servers.filter((candidate) => candidate !== server);
     this.proxyDecision = {
       realm: realm.name, forwardName: realm.strip && position >= 0 ? local : name,

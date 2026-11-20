@@ -12,6 +12,7 @@ export interface HomeServer {
   readonly pingIntervalMs: number;
   readonly zombiePeriodMs: number;
   readonly reviveIntervalMs: number;
+  readonly statusCheck: { intervalMs: number; timeoutMs: number; answers: number } | null;
 }
 
 export interface HomePool {
@@ -43,7 +44,7 @@ export interface ProxyConfig {
 
 export const NO_PROXY: ProxyConfig = { realms: [], homeServers: [], instances: new Map() };
 
-const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto', 'ping_interval', 'zombie_period', 'revive_interval']);
+const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto', 'ping_interval', 'zombie_period', 'revive_interval', 'status_check', 'check_interval', 'check_timeout', 'num_answers_to_alive']);
 const POOL_KEYS = new Set(['type', 'home_server']);
 const REALM_KEYS = new Set(['type', 'auth_pool', 'acct_pool', 'nostrip', 'authhost', 'accthost', 'secret']);
 const POOL_TYPES = new Set(['fail-over', 'load-balance', 'client-balance', 'client-port-balance', 'keyed-balance']);
@@ -100,8 +101,16 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     const ping = bounded('ping_interval', 30, 6, 120);
     const zombie = bounded('zombie_period', 40, 1, 120);
     const revive = bounded('revive_interval', 120, 60, 3600);
-    for (const checked of [ping, zombie, revive]) if (typeof checked === 'string') return { error: checked };
-    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000, pingIntervalMs: (ping as number) * 1000, zombiePeriodMs: (zombie as number) * 1000, reviveIntervalMs: (revive as number) * 1000 });
+    const checkInterval = bounded('check_interval', 30, 6, 120);
+    const checkTimeout = bounded('check_timeout', 4, 1, 10);
+    const answers = bounded('num_answers_to_alive', 3, 1, 10);
+    for (const checked of [ping, zombie, revive, checkInterval, checkTimeout, answers]) if (typeof checked === 'string') return { error: checked };
+    const check = value(section, 'status_check') ?? 'none';
+    if (check !== 'none' && check !== 'status-server') {
+      return { error: `${located(section)}: ${check === 'request' ? 'The home_server status_check "request" is not implemented in this simulator: it needs a username and password to build an Access-Request' : `Invalid status_check "${check}" for home server ${name}`}` };
+    }
+    if (check === 'status-server' && type !== 'auth' && type !== 'acct' && type !== 'auth+acct') return { error: `${located(section)}: status_check = status-server is not valid for a home server of type ${type}` };
+    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000, pingIntervalMs: (ping as number) * 1000, zombiePeriodMs: (zombie as number) * 1000, reviveIntervalMs: (revive as number) * 1000, statusCheck: check === 'status-server' ? { intervalMs: (checkInterval as number) * 1000, timeoutMs: (checkTimeout as number) * 1000, answers: answers as number } : null });
   }
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'home_server_pool')) {
     const refusal = refuseUnknown(section, POOL_KEYS, 'home_server_pool');
@@ -130,7 +139,7 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
       const [address, portText] = host.split(':');
       const secret = value(section, 'secret');
       if (IPAddress.tryParse(address) === null || secret === undefined) return `${located(section)}: Invalid ${hostKey} "${host}" or missing secret for realm ${name}`;
-      const server: HomeServer = { name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000, pingIntervalMs: 30000, zombiePeriodMs: 40000, reviveIntervalMs: 120000 };
+      const server: HomeServer = { name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000, pingIntervalMs: 30000, zombiePeriodMs: 40000, reviveIntervalMs: 120000, statusCheck: null };
       return { name: server.name, type: 'fail-over', servers: [server] };
     };
     const authPool = poolFor('auth_pool', 'authhost', 'auth', 1812);
