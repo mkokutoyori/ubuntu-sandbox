@@ -36,7 +36,7 @@ import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
-import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
+import { type ControlSocket, readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
 import { RadiusClientTable } from '@/network/radius/ClientTable';
 import { formatCtime } from '../time/ctime';
 import { formatLocalTime } from '../system/SystemInfo';
@@ -136,13 +136,13 @@ export class RadiusdService {
     return this.running;
   }
 
-  controlSocketPaths(): readonly string[] {
+  controlSocketPaths(): readonly ControlSocket[] {
     return this.running ? this.controlSockets : [];
   }
 
   configuredControlSockets(): readonly string[] {
     const loaded = this.loadConfig();
-    return loaded.ok ? loaded.site.controlSockets : [];
+    return loaded.ok ? loaded.site.controlSockets.map((socket) => socket.path) : [];
   }
 
   clientListing(verbose: boolean): string[] {
@@ -294,7 +294,7 @@ export class RadiusdService {
 
   private pipelines = new Map<string, Pipeline>();
   private proxyConfig: ProxyConfig = NO_PROXY;
-  private controlSockets: readonly string[] = [];
+  private controlSockets: readonly ControlSocket[] = [];
   private proxyDecision: ProxyRoute | null = null;
   private proxyRotation = new Map<string, number>();
   private portServers = new Map<number, string>();
@@ -597,12 +597,33 @@ export class RadiusdService {
   }
 
   private pickHomeServer(pool: HomePool, accounting: boolean): HomeServer {
-    const usable = pool.servers.filter((server) => this.homeStateOf(server, accounting).state !== 'dead');
+    const usable = pool.servers.filter((server) => !['dead', 'down'].includes(this.homeStateOf(server, accounting).state));
     const candidates = usable.length > 0 ? usable : pool.servers;
     if (pool.type === 'fail-over') return candidates[0];
     const turn = this.proxyRotation.get(pool.name) ?? 0;
     this.proxyRotation.set(pool.name, turn + 1);
     return candidates[turn % candidates.length];
+  }
+
+  private findHomeServer(address: string, port: number): { server: HomeServer; accounting: boolean } | null {
+    for (const server of this.proxyConfig.homeServers) {
+      if (server.address !== address) continue;
+      if (server.port === port && server.type !== 'acct') return { server, accounting: false };
+      if (server.acctPort === port && server.type !== 'auth') return { server, accounting: true };
+    }
+    return null;
+  }
+
+  homeServerStateText(address: string, port: number): string | null {
+    const found = this.findHomeServer(address, port);
+    return found === null ? null : this.radiusServer.homeServerState(found.server.address, port, found.server).state;
+  }
+
+  setHomeServerState(address: string, port: number, state: 'alive' | 'dead' | 'down'): boolean {
+    const found = this.findHomeServer(address, port);
+    if (found === null) return false;
+    this.radiusServer.setHomeServerState(address, port, found.server, state);
+    return true;
   }
 
   homeServerListing(all: boolean): string[] {

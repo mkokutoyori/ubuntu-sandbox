@@ -194,7 +194,7 @@ export class RadiusServerAgent {
   private readonly realms = new Map<string, RealmRoute>();
   /** Forwarded Access-Requests awaiting the home server's Access-Accept/Reject, keyed by the identifier this proxy issued to the home server (its own space, distinct from the NAS's). */
   private readonly pendingProxy = new Map<number, PendingProxyContext>();
-  private readonly homeActivity = new Map<string, { lastReplyMs: number | null; timedOutAtMs: number | null }>();
+  private readonly homeActivity = new Map<string, { lastReplyMs: number | null; timedOutAtMs: number | null; adminDown?: boolean }>();
   private nextProxyIdentifier = 1;
 
   constructor(
@@ -464,10 +464,19 @@ export class RadiusServerAgent {
 
   removeRealm(realm: string): void { this.realms.delete(realm); }
 
-  homeServerState(address: string, port: number, timing: { pingIntervalMs: number; zombiePeriodMs: number; reviveIntervalMs: number }): { state: 'alive' | 'zombie' | 'dead' | 'unknown'; outstanding: number } {
+  setHomeServerState(address: string, port: number, timing: { pingIntervalMs: number; zombiePeriodMs: number }, state: 'alive' | 'dead' | 'down'): void {
+    const now = simulationNowMs();
+    const key = `${address}:${port}`;
+    if (state === 'alive') this.homeActivity.set(key, { lastReplyMs: now, timedOutAtMs: null });
+    else if (state === 'dead') this.homeActivity.set(key, { lastReplyMs: null, timedOutAtMs: now - timing.zombiePeriodMs });
+    else this.homeActivity.set(key, { lastReplyMs: null, timedOutAtMs: null, adminDown: true });
+  }
+
+  homeServerState(address: string, port: number, timing: { pingIntervalMs: number; zombiePeriodMs: number; reviveIntervalMs: number }): { state: 'alive' | 'zombie' | 'dead' | 'down' | 'unknown'; outstanding: number } {
     const outstanding = Array.from(this.pendingProxy.values()).filter((ctx) => ctx.homeServerIp === address && ctx.homePort === port).length;
     const activity = this.homeActivity.get(`${address}:${port}`);
     const now = simulationNowMs();
+    if (activity?.adminDown === true) return { state: 'down', outstanding };
     if (activity?.timedOutAtMs !== null && activity?.timedOutAtMs !== undefined) {
       const silent = now - activity.timedOutAtMs;
       if (silent < timing.zombiePeriodMs) return { state: 'zombie', outstanding };

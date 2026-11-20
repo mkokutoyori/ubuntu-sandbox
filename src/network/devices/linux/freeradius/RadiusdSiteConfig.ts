@@ -15,10 +15,15 @@ export interface ListenerSpec {
   readonly line: number;
 }
 
+export interface ControlSocket {
+  readonly path: string;
+  readonly writable: boolean;
+}
+
 export interface SiteConfig {
   readonly listeners: ListenerSpec[];
   readonly serverClients: ReadonlyMap<string, RadiusClientEntry[]>;
-  readonly controlSockets: readonly string[];
+  readonly controlSockets: readonly ControlSocket[];
 }
 
 const SUPPORTED_TYPES = new Set<string>(['auth', 'acct', 'auth+acct', 'status']);
@@ -36,24 +41,26 @@ function pairValue(section: ConfSection, name: string): string | undefined {
 
 const CONTROL_KEYS = new Set(['type', 'socket', 'mode']);
 
-function readControlSocket(section: ConfSection): string | { error: string } {
+const CONTROL_MODES: Readonly<Record<string, boolean>> = { ro: false, 'read-only': false, rw: true, 'read-write': true };
+
+function readControlSocket(section: ConfSection): ControlSocket | { error: string } {
   const where = `${section.file}[${section.line}]`;
   for (const pair of section.pairs) {
     if (!CONTROL_KEYS.has(pair.name)) return { error: `${pair.file}[${pair.line}]: The control listener setting "${pair.name}" is not implemented in this simulator` };
   }
   const mode = pairValue(section, 'mode');
-  if (mode !== undefined && mode !== 'rw' && mode !== 'ro') return { error: `${where}: Invalid value "${mode}" for variable mode` };
+  if (mode !== undefined && CONTROL_MODES[mode] === undefined) return { error: `${where}: Invalid mode name '${mode}'` };
   const path = pairValue(section, 'socket');
   if (path === undefined || path === '') return { error: `${where}: No "socket" given in control listener` };
-  return path;
+  return { path, writable: mode !== undefined && CONTROL_MODES[mode] };
 }
 
 export function readSiteConfig(root: ConfSection): SiteConfig | { error: string } {
   const servers = root.sections.filter((section) => section.name1 === 'server');
-  const controlSockets: string[] = [];
+  const controlSockets: ControlSocket[] = [];
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'listen' && pairValue(candidate, 'type') === 'control')) {
     const path = readControlSocket(section);
-    if (typeof path !== 'string') return path;
+    if ('error' in path) return path;
     controlSockets.push(path);
   }
   if (servers.length === 0) return { listeners: defaultListeners(), serverClients: new Map(), controlSockets };
@@ -67,7 +74,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
       const type = pairValue(section, 'type');
       if (type === 'control') {
         const path = readControlSocket(section);
-        if (typeof path !== 'string') return path;
+        if ('error' in path) return path;
         controlSockets.push(path);
         continue;
       }

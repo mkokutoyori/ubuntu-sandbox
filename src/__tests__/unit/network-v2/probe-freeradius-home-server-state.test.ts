@@ -7,8 +7,14 @@
  * zombie_period, tried again after revive_interval; a fail-over pool skips a dead server). The state is the one the proxy measured:
  * unknown until a reply, alive within ping_interval of the last reply.
  *
- * Discriminated with git stash on src: 8 of 9 fall before the fix; the one passing either way is the witness that the lab proxies
- * a user to the home server.
+ * `show home_server state <ip> <port>` prints the state word; `set home_server state <ip> <port> alive|dead|down` forces it (command.c
+ * command_set_home_server_state: alive revives, dead marks it dead for revive_interval, down keeps it down until set alive), and the
+ * socket's `mode` decides who may write (command.c: default read-only; ro, read-only, rw, read-write; refusal text quoted; an unknown mode name
+ * is a configuration error).
+ *
+ * Discriminated with git stash on src, in two steps: the first 9 cases fall 8 of 9 before the commit that added the states (the one passing either way
+ * is the witness that the lab proxies a user to the home server); the 8 cases for show/set state and the socket mode all fall on the
+ * commit that precedes them, and the 9 earlier cases pass there.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -61,9 +67,9 @@ const SOCKET = '/var/run/freeradius/freeradius.sock';
 const CONTROL = '/etc/freeradius/3.0/sites-enabled/control-socket';
 const login = (user: string) => `printf 'User-Name = "${user}"\\nUser-Password = "wonderland"\\n' | radclient -r 1 10.0.0.2 auth shared`;
 
-async function withControl(proxyConf: string) {
+async function withControl(proxyConf: string, mode = 'rw') {
   const made = await lab(proxyConf);
-  write(made.edge, CONTROL, 'listen {\n  type = control\n  socket = ${run_dir}/${name}.sock\n}\n');
+  write(made.edge, CONTROL, `listen {\n  type = control\n  socket = \${run_dir}/\${name}.sock\n  mode = ${mode}\n}\n`);
   await made.edge.executeCommand('systemctl restart freeradius');
   return made;
 }
@@ -126,5 +132,71 @@ describe('radmin show home_server list and the zombie / dead states', () => {
   it('refuses a ping_interval outside its bounds, naming the variable', async () => {
     const { started } = await withControl(HOME_POOL('ping_interval = 5'));
     expect(started).toContain('Invalid value "5" for variable ping_interval');
+  });
+
+  const dead = 'home_server dead {\n  ipaddr = 10.0.0.9\n  secret = x\n  response_window = 1\n}\n';
+  const failOver = () => dead + HOME_POOL().replace('home_server = home1', 'home_server = dead\n  home_server = home1');
+  const radmin = async (edge: LinuxServer, command: string) => (await edge.executeCommand(`radmin -f ${SOCKET} -e "${command}"`)).trim();
+
+  it('show home_server state prints the state word of the server on that port', async () => {
+    const { client, edge } = await withControl(HOME_POOL());
+    expect(await radmin(edge, 'show home_server state 10.0.0.3 1812')).toBe('unknown');
+    await client.executeCommand(login('alice@example.com'));
+    expect(await radmin(edge, 'show home_server state 10.0.0.3 1812')).toBe('alive');
+    expect(await radmin(edge, 'show home_server state 10.0.0.3 1813')).toBe('unknown');
+  });
+
+  it('answers the source error for a home server that does not exist, and for a bad state', async () => {
+    const { edge } = await withControl(HOME_POOL());
+    expect(await radmin(edge, 'show home_server state 10.0.0.77 1812')).toBe('ERROR: No such home server - 10.0.0.77 1812');
+    expect(await radmin(edge, 'set home_server state 10.0.0.3 1812 sleepy')).toBe("ERROR: Unknown state 'sleepy'");
+    expect(await radmin(edge, 'set home_server state 10.0.0.3')).toBe('ERROR: Must specify <ipaddr> <port> [udp|tcp] <state>');
+  });
+
+  it('set home_server state dead marks it dead, and alive revives it', async () => {
+    const { edge } = await withControl(HOME_POOL());
+    await radmin(edge, 'set home_server state 10.0.0.3 1812 dead');
+    expect(await radmin(edge, 'show home_server state 10.0.0.3 1812')).toBe('dead');
+    await radmin(edge, 'set home_server state 10.0.0.3 1812 alive');
+    expect(await radmin(edge, 'show home_server state 10.0.0.3 1812')).toBe('alive');
+  });
+
+  it('a server set down is listed down and a fail-over pool skips it at once', async () => {
+    const { client, edge } = await withControl(failOver());
+    await radmin(edge, 'set home_server state 10.0.0.9 1812 down');
+    expect((await listing(edge)).find((line) => line.startsWith('10.0.0.9\t1812'))).toContain('\tdown\t');
+    const output = await client.executeCommand(`t0=$(date +%s); ${login('alice@example.com')}; t1=$(date +%s); echo elapsed=$((t1-t0))`);
+    expect(output).toContain('Access-Accept');
+    expect(output).toContain('elapsed=0');
+  });
+
+  it('a down server stays down however long the silence, until it is set alive', async () => {
+    const { edge } = await withControl(failOver());
+    await radmin(edge, 'set home_server state 10.0.0.9 1812 down');
+    await edge.executeCommand('sleep 200');
+    expect(await radmin(edge, 'show home_server state 10.0.0.9 1812')).toBe('down');
+    await radmin(edge, 'set home_server state 10.0.0.9 1812 alive');
+    expect(await radmin(edge, 'show home_server state 10.0.0.9 1812')).toBe('alive');
+  });
+
+  it('a socket without mode is read-only: set is refused with the source wording, show still works', async () => {
+    const { edge } = await withControl(HOME_POOL(), 'ro');
+    expect(await radmin(edge, 'set home_server state 10.0.0.3 1812 dead')).toBe("ERROR: You do not have write permission.  See 'mode = rw' in the 'listen' section for this socket.");
+    expect(await radmin(edge, 'show home_server state 10.0.0.3 1812')).toBe('unknown');
+  });
+
+  it('the default mode of the shipped control-socket site is read-only too', async () => {
+    const made = await lab(HOME_POOL());
+    write(made.edge, CONTROL, 'listen {\n  type = control\n  socket = ${run_dir}/${name}.sock\n}\n');
+    await made.edge.executeCommand('systemctl restart freeradius');
+    expect(await radmin(made.edge, 'set home_server state 10.0.0.3 1812 dead')).toContain('You do not have write permission');
+  });
+
+  it('read-write is accepted as a mode name, an unknown mode name is refused', async () => {
+    const accepted = await withControl(HOME_POOL(), 'read-write');
+    expect(await radmin(accepted.edge, 'set home_server state 10.0.0.3 1812 dead')).toBe('');
+    const refused = await lab(HOME_POOL());
+    write(refused.edge, CONTROL, 'listen {\n  type = control\n  socket = /tmp/x.sock\n  mode = sometimes\n}\n');
+    expect(await refused.edge.executeCommand('systemctl restart freeradius')).toContain("Invalid mode name 'sometimes'");
   });
 });

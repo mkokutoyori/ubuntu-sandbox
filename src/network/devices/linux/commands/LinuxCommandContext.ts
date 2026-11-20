@@ -41,10 +41,12 @@ export interface RadiusdCommandPort {
   appendLog(path: string, text: string): void;
   utmpEntries(): RadutmpEntry[];
   listeners(): readonly ListenerSpec[];
-  controlSocketPaths(): readonly string[];
+  controlSocketPaths(): readonly { path: string; writable: boolean }[];
   configuredControlSockets(): readonly string[];
   clientListing(verbose: boolean): string[];
   homeServerListing(all: boolean): string[];
+  homeServerStateText(address: string, port: number): string | null;
+  setHomeServerState(address: string, port: number, state: 'alive' | 'dead' | 'down'): boolean;
 }
 
 export interface LinuxCommandContext {

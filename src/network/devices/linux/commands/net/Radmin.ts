@@ -1,3 +1,4 @@
+import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
@@ -16,7 +17,7 @@ const USAGE = [
   '  -v              Print version information.',
 ].join('\n');
 
-function commandOutput(ctx: LinuxCommandContext, command: string): { text: string; failed: boolean } {
+function commandOutput(ctx: LinuxCommandContext, command: string, writable: boolean): { text: string; failed: boolean } {
   const words = command.trim().split(/\s+/).filter((word) => word !== '');
   if (words.length === 0) return { text: '', failed: false };
   if (words[0] === 'exit' || words[0] === 'quit') return { text: '', failed: false };
@@ -32,8 +33,34 @@ function commandOutput(ctx: LinuxCommandContext, command: string): { text: strin
     if (rest.length > 1 || (rest.length === 1 && rest[0] !== 'all')) return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };
     return { text: ctx.radiusd!.homeServerListing(rest.length === 1).join('\n'), failed: false };
   }
+  if (words[0] === 'show' && words[1] === 'home_server' && words[2] === 'state') return homeServerState(ctx, words.slice(3), null);
+  if (words[0] === 'set' && words[1] === 'home_server' && words[2] === 'state') {
+    if (!writable) return { text: "ERROR: You do not have write permission.  See 'mode = rw' in the 'listen' section for this socket.", failed: true };
+    return homeServerState(ctx, words.slice(3), 'set');
+  }
   if (REAL_ROOT_WORDS.has(words[0])) return { text: `ERROR: The command '${command.trim()}' is not implemented in this simulator`, failed: true };
   return { text: `ERROR: Unknown command '${words[0]}'`, failed: true };
+}
+
+function homeServerState(ctx: LinuxCommandContext, args: string[], mode: 'set' | null): { text: string; failed: boolean } {
+  const need = mode === 'set' ? 3 : 2;
+  if (args.length < need) return { text: mode === 'set' ? 'ERROR: Must specify <ipaddr> <port> [udp|tcp] <state>' : 'ERROR: Must specify <ipaddr> <port> [udp|tcp] OR <name> <type>', failed: true };
+  const address = IPAddress.tryParse(args[0]);
+  if (address === null || !/^\d/.test(args[1])) return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
+  let index = 2;
+  while (index < args.length && (args[index] === 'udp' || args[index] === 'tcp')) {
+    if (args[index] === 'tcp') return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
+    index++;
+  }
+  if (args[index] === 'src') return { text: 'ERROR: The home server option src is not implemented in this simulator', failed: true };
+  const port = Number(args[1]);
+  const current = ctx.radiusd!.homeServerStateText(address.toString(), port);
+  if (current === null) return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
+  if (mode === null) return { text: current, failed: false };
+  const state = args[index];
+  if (state !== 'alive' && state !== 'dead' && state !== 'down') return { text: `ERROR: Unknown state '${state}'`, failed: true };
+  ctx.radiusd!.setHomeServerState(address.toString(), port, state);
+  return { text: '', failed: false };
 }
 
 async function runRadmin(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
@@ -72,13 +99,14 @@ async function runRadmin(ctx: LinuxCommandContext, args: string[]): Promise<{ ou
   }
   const command = values.get('e');
   if (command === undefined) return { output: 'radmin: interactive mode is not implemented in this simulator; use -e command', exitCode: 1 };
-  if (!ctx.radiusd.controlSocketPaths().includes(socket)) {
+  const control = ctx.radiusd.controlSocketPaths().find((candidate) => candidate.path === socket);
+  if (control === undefined) {
     return {
       output: [`radmin: Failed connecting to ${socket}: No such file or directory`, 'Perhaps you need to run the commands:\tcd /etc/raddb', '\tln -s sites-available/control-socket sites-enabled/control-socket', 'and then re-start the server?', 'Failed to connect to server'].join('\n'),
       exitCode: 1,
     };
   }
-  const result = commandOutput(ctx, command);
+  const result = commandOutput(ctx, command, control.writable);
   return { output: result.text, exitCode: result.failed ? 1 : 0 };
 }
 
