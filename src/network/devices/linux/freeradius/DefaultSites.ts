@@ -97,6 +97,7 @@ export const DEFAULT_SITE = [
   "",
   "\tpreacct {",
   "\t\tpreprocess",
+  "\t\tsuffix",
   "\t\tacct_unique",
   "\t}",
   "",

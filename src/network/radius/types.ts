@@ -206,6 +206,16 @@ export interface RadiusServerConfig {
   retransmit: number;
 }
 
+export interface ProxyRoute {
+  realm: string;
+  forwardName: string;
+  homeServerIp: string;
+  homePort: number;
+  homeSecret: string;
+  timeoutMs: number;
+  fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number }[];
+}
+
 export interface RadiusUser {
   username: string;
   password: string;
@@ -218,7 +228,7 @@ export interface RadiusUser {
   replyAttributes?: RadiusAttribute[];
   /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
   challenge?: { prompt: string };
-  proxy?: { realm: string; forwardName: string; homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number; fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number }[] };
+  proxy?: ProxyRoute;
 }
 
 export interface RadiusAttributePolicy {

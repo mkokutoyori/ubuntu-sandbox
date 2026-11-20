@@ -22,7 +22,7 @@ import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/typ
 import { parseClientsConf } from './ClientsConfParser';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
-import type { RadiusUser, RadiusAttribute, RadiusPacket } from '@/network/radius/types';
+import type { RadiusUser, RadiusAttribute, RadiusPacket, ProxyRoute } from '@/network/radius/types';
 import { detailPath, detailEntry, acctUniqueFor, type DetailRecord } from './DetailModule';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
@@ -101,7 +101,7 @@ type ConfigLoadResult =
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
-const DEFAULT_PREACCT_PROGRAM = moduleProgram(['preprocess', 'acct_unique']);
+const DEFAULT_PREACCT_PROGRAM = moduleProgram(['preprocess', 'suffix', 'acct_unique']);
 const DEFAULT_ACCOUNTING_PROGRAM = moduleProgram(['detail', 'radutmp']);
 const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
 
@@ -295,7 +295,7 @@ export class RadiusdService {
   private pipelines = new Map<string, Pipeline>();
   private proxyConfig: ProxyConfig = NO_PROXY;
   private controlSockets: readonly string[] = [];
-  private proxyDecision: RadiusUser['proxy'] | null = null;
+  private proxyDecision: ProxyRoute | null = null;
   private proxyRotation = new Map<string, number>();
   private portServers = new Map<number, string>();
 
@@ -315,7 +315,7 @@ export class RadiusdService {
     this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique') ? acctUniqueFor(record) : null), ~settings.permissions & 0o777);
   }
 
-  private runAccounting(info: AccountingRun): boolean {
+  private runAccounting(info: AccountingRun): boolean | ProxyRoute {
     const pipeline = this.pipelines.get(this.portServers.get(info.destinationPort) ?? 'default');
     const attributes = info.packet.attributes;
     const username = String(attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '');
@@ -333,6 +333,7 @@ export class RadiusdService {
           const rejected = applyPreprocess(this.preprocessFiles, ctx, info.sourceIp, Math.floor(this.wallClock.nowMs() / 1000), (user) => this.wallClock.groupsOf(user));
           return { result: rejected ? 'reject' : 'ok', messages: [] };
         }
+        if (name === 'suffix' || name === 'ntdomain') return this.runRealmModule(name, ctx);
         if (name === 'acct_unique') {
           ctx.overlay.set('acct-unique-session-id', acctUniqueFor(recordOf()));
           return { result: 'updated', messages: [] };
@@ -363,12 +364,14 @@ export class RadiusdService {
       lines.push(`    } # ${section} = ${outcome.result}`);
       return outcome;
     };
+    this.proxyDecision = null;
     const preacct = runSection('preacct', pipeline?.preacct ?? DEFAULT_PREACCT_PROGRAM);
     const rejected = preacct.result === 'reject' || preacct.result === 'fail';
-    if (!rejected) runSection('accounting', pipeline?.accounting ?? DEFAULT_ACCOUNTING_PROGRAM);
+    const proxied = !rejected ? this.proxyDecision : null;
+    if (!rejected && proxied === null) runSection('accounting', pipeline?.accounting ?? DEFAULT_ACCOUNTING_PROGRAM);
     lines.push(`} # server ${server}`, 'Virtual server sending reply');
     this.radiusServer.emitDebugLines(lines);
-    return !rejected;
+    return proxied ?? !rejected;
   }
 
   private boundPorts: number[] = [];
@@ -570,14 +573,16 @@ export class RadiusdService {
     }
     context.overlay.set('realm', realm.name);
     messages.push(`${instanceName}: Adding Realm = "${realm.name}"`);
-    if (realm.authPool === null) {
-      messages.push(`${instanceName}: Authentication realm is LOCAL`);
+    const accounting = context.packet?.type === 'Accounting-Request';
+    const pool = accounting ? realm.acctPool : realm.authPool;
+    if (pool === null) {
+      messages.push(`${instanceName}: ${accounting ? 'Accounting' : 'Authentication'} realm is LOCAL`);
       return { result: 'ok', messages };
     }
     messages.push(`${instanceName}: Proxying request from user ${name} to realm ${realm.name}`);
-    const server = this.pickHomeServer(realm.authPool);
-    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs });
-    const rest = realm.authPool.servers.filter((candidate) => candidate !== server);
+    const server = this.pickHomeServer(pool);
+    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: accounting ? candidate.acctPort ?? candidate.port : candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs });
+    const rest = pool.servers.filter((candidate) => candidate !== server);
     this.proxyDecision = {
       realm: realm.name, forwardName: realm.strip && position >= 0 ? local : name,
       ...route(server), fallbacks: rest.map(route),

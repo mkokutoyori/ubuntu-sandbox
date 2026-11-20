@@ -5,6 +5,8 @@ export interface HomeServer {
   readonly name: string;
   readonly address: string;
   readonly port: number;
+  readonly type: 'auth' | 'acct' | 'auth+acct';
+  readonly acctPort: number | null;
   readonly secret: string;
   readonly responseWindowMs: number;
 }
@@ -20,6 +22,7 @@ export interface RealmDefinition {
   readonly pattern: RegExp | null;
   readonly strip: boolean;
   readonly authPool: HomePool | null;
+  readonly acctPool: HomePool | null;
 }
 
 export interface RadiusFormat {
@@ -38,7 +41,7 @@ export const NO_PROXY: ProxyConfig = { realms: [], instances: new Map() };
 
 const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto']);
 const POOL_KEYS = new Set(['type', 'home_server']);
-const REALM_KEYS = new Set(['type', 'auth_pool', 'nostrip', 'authhost', 'secret']);
+const REALM_KEYS = new Set(['type', 'auth_pool', 'acct_pool', 'nostrip', 'authhost', 'accthost', 'secret']);
 const POOL_TYPES = new Set(['fail-over', 'load-balance', 'client-balance', 'client-port-balance', 'keyed-balance']);
 
 function located(section: { file: string; line: number }): string {
@@ -74,7 +77,7 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     const refusal = refuseUnknown(section, HOME_SERVER_KEYS, 'home_server');
     if (refusal !== null) return { error: refusal };
     const name = section.name2 ?? '';
-    const type = value(section, 'type') ?? 'auth';
+    const type = value(section, 'type') ?? 'auth+acct';
     if (type !== 'auth' && type !== 'auth+acct' && type !== 'acct') return { error: `${located(section)}: Invalid type "${type}" for home server ${name}` };
     if ((value(section, 'proto') ?? 'udp') !== 'udp') return { error: `${located(section)}: The home server protocol "${value(section, 'proto')}" is not implemented in this simulator` };
     const address = value(section, 'ipaddr') ?? value(section, 'ipv4addr');
@@ -82,8 +85,9 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     const secret = value(section, 'secret');
     if (secret === undefined || secret === '') return { error: `${located(section)}: No shared secret defined for home server ${name}` };
     const port = Number(value(section, 'port') ?? (type === 'acct' ? 1813 : 1812));
+    const acctPort = type === 'auth' ? null : type === 'acct' ? port : port + 1;
     const windowSeconds = Number(value(section, 'response_window') ?? 20);
-    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, secret, responseWindowMs: windowSeconds * 1000 });
+    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000 });
   }
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'home_server_pool')) {
     const refusal = refuseUnknown(section, POOL_KEYS, 'home_server_pool');
@@ -104,25 +108,28 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     const refusal = refuseUnknown(section, REALM_KEYS, 'realm');
     if (refusal !== null) return { error: refusal };
     const name = section.name2 ?? '';
-    let authPool: HomePool | null = null;
-    const poolName = value(section, 'auth_pool');
-    if (poolName !== undefined) {
-      authPool = pools.get(poolName) ?? null;
-      if (authPool === null) return { error: `${located(section)}: Failed to find home_server_pool "${poolName}"` };
-    }
-    const host = value(section, 'authhost');
-    if (host !== undefined && host !== 'LOCAL') {
+    const poolFor = (poolKey: string, hostKey: string, suffix: string, defaultPort: number): HomePool | null | string => {
+      const poolName = value(section, poolKey);
+      if (poolName !== undefined) return pools.get(poolName) ?? `${located(section)}: Failed to find home_server_pool "${poolName}"`;
+      const host = value(section, hostKey);
+      if (host === undefined || host === 'LOCAL') return null;
       const [address, portText] = host.split(':');
       const secret = value(section, 'secret');
-      if (IPAddress.tryParse(address) === null || secret === undefined) return { error: `${located(section)}: Invalid authhost "${host}" or missing secret for realm ${name}` };
-      const server: HomeServer = { name: `${name}-auth`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? 1812 : Number(portText), secret, responseWindowMs: 20000 };
-      authPool = { name: `${name}-auth`, type: 'fail-over', servers: [server] };
-    }
+      if (IPAddress.tryParse(address) === null || secret === undefined) return `${located(section)}: Invalid ${hostKey} "${host}" or missing secret for realm ${name}`;
+      const server: HomeServer = { name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000 };
+      return { name: server.name, type: 'fail-over', servers: [server] };
+    };
+    const authPool = poolFor('auth_pool', 'authhost', 'auth', 1812);
+    if (typeof authPool === 'string') return { error: authPool };
+    const acctPool = poolFor('acct_pool', 'accthost', 'acct', 1813);
+    if (typeof acctPool === 'string') return { error: acctPool };
+    const misused = authPool?.servers.find((server) => server.type === 'acct') ?? acctPool?.servers.find((server) => server.type === 'auth');
+    if (misused !== undefined) return { error: `${located(section)}: Home server "${misused.name}" of type ${misused.type} cannot be used in an ${misused.type === 'acct' ? 'auth_pool' : 'acct_pool'}` };
     let pattern: RegExp | null = null;
     if (name.startsWith('~')) {
       try { pattern = new RegExp(name.slice(1), 'i'); } catch { return { error: `${located(section)}: Invalid regular expression in realm name "${name}"` }; }
     }
-    realms.push({ name, pattern, strip: !section.pairs.some((pair) => pair.name === 'nostrip'), authPool });
+    realms.push({ name, pattern, strip: !section.pairs.some((pair) => pair.name === 'nostrip'), authPool, acctPool });
   }
   return { realms, instances };
 }
