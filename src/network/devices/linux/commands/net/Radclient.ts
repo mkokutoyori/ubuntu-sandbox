@@ -310,9 +310,11 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   const fileArgument = options.values.get('f');
   if (fileArgument !== undefined) {
     const file = fileArgument.split(':')[0];
-    const content = ctx.executor.vfs.readFile(file);
-    if (content === null) return { output: `radclient: Error opening ${file}: No such file or directory`, exitCode: 1 };
-    input = content;
+    if (file !== '-') {
+      const content = ctx.executor.vfs.readFile(file);
+      if (content === null) return { output: `radclient: Error opening ${file}: No such file or directory`, exitCode: 1 };
+      input = content;
+    }
   }
   const packets = readPackets(input);
   if ('error' in packets) return { output: packets.error, exitCode: 1 };

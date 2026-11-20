@@ -28,6 +28,7 @@ import { formatRadiusAttribute } from '../radius/attributeText';
 import { RADIUS_PACKET_NAME } from '../radius/types';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF, DEFAULT_PROXY_CONF } from './linux/freeradius/DefaultRadiusdConf';
+import { RADZAP_PATH, RADZAP_SCRIPT } from './linux/freeradius/DefaultRadzap';
 import { DEFAULT_SITE, STATUS_SITE, CONTROL_SOCKET_SITE } from './linux/freeradius/DefaultSites';
 import { DEFAULT_PREPROCESS_MODULE, DEFAULT_HINTS, DEFAULT_HUNTGROUPS } from './linux/freeradius/DefaultPreprocess';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
@@ -300,6 +301,10 @@ export class LinuxServer extends LinuxMachine {
     if (!this.executor.vfs.exists(`${enabled}/default`)) this.executor.vfs.createSymlink(`${enabled}/default`, '../sites-available/default', 0, 0);
     if (!this.executor.vfs.exists(RADIUSD_CONF_PATH)) {
       this.executor.vfs.writeFile(RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF, 0, 0, 0o022);
+    }
+    if (!this.executor.vfs.exists(RADZAP_PATH)) {
+      this.executor.vfs.writeFile(RADZAP_PATH, RADZAP_SCRIPT, 0, 0, 0o022);
+      this.executor.vfs.chmod(RADZAP_PATH, 0o755);
     }
     if (!this.executor.vfs.exists(`${dir}/proxy.conf`)) this.executor.vfs.writeFile(`${dir}/proxy.conf`, DEFAULT_PROXY_CONF, 0, 0, 0o022);
     if (!this.executor.vfs.exists(USERS_FILE_PATH)) {

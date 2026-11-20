@@ -1098,7 +1098,7 @@ export abstract class LinuxMachine extends EndHost
     });
     this.executor.setNetworkCommandNamePredicate((name) => {
       const cmd = this.commands.get(name);
-      return !!cmd && !!cmd.needsNetworkContext;
+      return (!!cmd && !!cmd.needsNetworkContext) || this.executor.pathScript(name) !== null;
     });
     this.executor.setForegroundClientPredicate((name) => this.commands.get(name)?.foregroundClient === true);
     this.executor.setScheduler(() => this.getScheduler());
@@ -4334,6 +4334,7 @@ export abstract class LinuxMachine extends EndHost
     if (LinuxMachine.TRANSFER_RE.test(input)) return true;
     const words = LinuxCommandRegistry.commandWordsIn(input);
     if (words.some(w => w === 'ps' || w === 'man' || w === 'sshd')) return true;
+    if (words.some(w => this.executor.pathScript(w) !== null)) return true;
     // `bash script.sh` / `./script.sh` / `run-parts DIR` at the top of the
     // line: a network command (`ssh`, `curl`, …) may be hiding inside the
     // script file's content, invisible to the string scan above — treat
