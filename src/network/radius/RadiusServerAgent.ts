@@ -149,6 +149,16 @@ export interface RequestDebugInfo {
   postAuthLines: string[];
 }
 
+export interface AccountingRun {
+  packet: RadiusPacket;
+  sourceIp: string;
+  destinationIp: string;
+  sourcePort: number;
+  destinationPort: number;
+  atMs: number;
+  recordUtmp: (attributes: readonly RadiusAttribute[]) => void;
+}
+
 export type RequestFeature = 'pap' | 'chap' | 'mschap' | 'eap' | 'session' | 'accounting-utmp';
 
 export interface RadiusUserResolverContext {
@@ -331,6 +341,10 @@ export class RadiusServerAgent {
       })
       : packet.attributes;
   }
+
+  private accountingRunner: ((run: AccountingRun) => boolean) | null = null;
+
+  setAccountingRunner(runner: ((run: AccountingRun) => boolean) | null): void { this.accountingRunner = runner; }
 
   private postAuthHook: ((info: { port: number; accepted: boolean; userReply: readonly RadiusAttribute[] }) => { reply: RadiusAttribute[]; lines: string[] } | null) | null = null;
 
@@ -546,20 +560,27 @@ export class RadiusServerAgent {
     const existing = this.acctSessions.get(sessionKey);
     const nasPortAttribute = getAttr(payload, 'nas-port');
     const framedProtocol = Number(getAttr(payload, 'framed-protocol')?.value);
-    const utmp: UtmpFields | undefined = existing?.utmp ?? (nasPortAttribute === undefined || username === '!root' || status === 'stop' || !this.allows('accounting-utmp') ? undefined : {
-      nasPort: Number(nasPortAttribute.value),
-      protocol: framedProtocol === 1 ? 'P' : framedProtocol === 2 ? 'S' : 'T',
-      portType: UTMP_PORT_TYPES[Number(getAttr(payload, 'nas-port-type')?.value)] ?? 'A',
-      framedAddress: String(getAttr(payload, 'framed-ip-address')?.value ?? getAttr(payload, 'login-ip-host')?.value ?? '') || null,
-      callerId: this.config.callerIdInUtmp === false ? '' : String(getAttr(payload, 'calling-station-id')?.value ?? '').slice(0, 15),
-      startedAtMs: wallNow - Number(getAttr(payload, 'acct-delay-time')?.value ?? 0) * 1000,
-    });
     this.acctSessions.set(sessionKey, {
       sessionId, username, nasIp, status,
       startedAt: status === 'start' ? now : (existing?.startedAt ?? now),
       updatedAt: now, sessionTimeSec, inputOctets, outputOctets, terminateCause,
-      ...(utmp === undefined ? {} : { utmp }),
+      ...(existing?.utmp === undefined ? {} : { utmp: existing.utmp }),
     });
+    const recordUtmp = (attributes: readonly RadiusAttribute[]): void => {
+      const record = this.acctSessions.get(sessionKey);
+      if (record === undefined || record.utmp !== undefined || status === 'stop' || username === '!root') return;
+      const nasPortOf = attributes.find((attribute) => attribute.type === 'nas-port');
+      if (nasPortOf === undefined) return;
+      const protocolOf = Number(attributes.find((attribute) => attribute.type === 'framed-protocol')?.value);
+      record.utmp = {
+        nasPort: Number(nasPortOf.value),
+        protocol: protocolOf === 1 ? 'P' : protocolOf === 2 ? 'S' : 'T',
+        portType: UTMP_PORT_TYPES[Number(attributes.find((attribute) => attribute.type === 'nas-port-type')?.value)] ?? 'A',
+        framedAddress: String(attributes.find((attribute) => attribute.type === 'framed-ip-address')?.value ?? attributes.find((attribute) => attribute.type === 'login-ip-host')?.value ?? '') || null,
+        callerId: this.config.callerIdInUtmp === false ? '' : String(attributes.find((attribute) => attribute.type === 'calling-station-id')?.value ?? '').slice(0, 15),
+        startedAtMs: wallNow - Number(attributes.find((attribute) => attribute.type === 'acct-delay-time')?.value ?? 0) * 1000,
+      };
+    };
 
     this.getBus().publish({
       topic: 'radius.accounting.record',
@@ -573,10 +594,19 @@ export class RadiusServerAgent {
     Logger.info(this.host.id, 'radius:accounting',
       `${this.host.name}: ${status} for ${username} (session ${sessionId})`);
 
-    this.accountingListener?.({
-      sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
-      packet: payload, atMs: now,
-    });
+    if (this.accountingRunner !== null) {
+      const answered = this.accountingRunner({
+        packet: payload, sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort,
+        destinationPort: udp.destinationPort, atMs: now, recordUtmp,
+      });
+      if (!answered) return;
+    } else {
+      if (this.allows('accounting-utmp')) recordUtmp(payload.attributes);
+      this.accountingListener?.({
+        sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
+        packet: payload, atMs: now,
+      });
+    }
     this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
   }
 

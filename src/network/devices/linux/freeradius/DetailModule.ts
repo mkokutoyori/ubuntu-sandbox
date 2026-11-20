@@ -121,7 +121,11 @@ export function detailPath(settings: DetailSettings, record: DetailRecord): stri
   return expandTemplate(settings.filename, lookupFor(record), record.atMs, escape);
 }
 
-export function detailEntry(settings: DetailSettings, record: DetailRecord, acctUnique = true): string {
+export function acctUniqueFor(record: DetailRecord): string {
+  return acctUniqueSessionId(lookupFor(record));
+}
+
+export function detailEntry(settings: DetailSettings, record: DetailRecord, acctUniqueId: string | null): string {
   const lookup = lookupFor(record);
   const lines = [expandTemplate(settings.header, lookup, record.atMs, (value) => value)];
   if (settings.logPacketHeader) {
@@ -132,7 +136,7 @@ export function detailEntry(settings: DetailSettings, record: DetailRecord, acct
     if (settings.suppressed.has(attribute.type) || attribute.type === 'user-password') continue;
     lines.push(`\t${renderAttribute(settings, attribute)}`);
   }
-  if (acctUnique) lines.push(`\tAcct-Unique-Session-Id = "${acctUniqueSessionId(lookup)}"`);
+  if (acctUniqueId !== null) lines.push(`\tAcct-Unique-Session-Id = "${acctUniqueId}"`);
   lines.push(`\tTimestamp = ${Math.floor(record.atMs / 1000)}`, '', '');
   return lines.join('\n');
 }

@@ -1,4 +1,5 @@
-import { RADIUS_ATTR, type RadiusAttribute } from '@/network/radius/types';
+import { RADIUS_ATTR, type RadiusAttribute, type RadiusAttrType } from '@/network/radius/types';
+import { RADIUS_VALUE_NAMES } from '@/network/radius/dictionary';
 import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodPassword';
 import type { ConfPair, ConfSection } from './FreeradiusConf';
 import { usersPairToAttribute, requestViewOf, type PacketFacts, type ViewContext } from './UsersFileParser';
@@ -180,6 +181,12 @@ function checkTemplate(text: string, file: string, line: number): void {
   }
 }
 
+function enumValue(attributeSide: Term, literalSide: Term, text: string): string {
+  if (attributeSide.kind !== 'attribute' || literalSide.kind !== 'literal' || /^-?\d+$/.test(text)) return text;
+  const named = RADIUS_VALUE_NAMES[attributeSide.name.toLowerCase() as RadiusAttrType]?.[text.toLowerCase()];
+  return named === undefined ? text : String(named);
+}
+
 export function evaluate(condition: Condition, context: UnlangContext): boolean {
   if (condition.kind === 'or' || condition.kind === 'and') {
     const pair = condition as Extract<Condition, { kind: 'or' | 'and' }>;
@@ -195,8 +202,8 @@ export function evaluate(condition: Condition, context: UnlangContext): boolean 
   const left = valueOf(context, compare.left);
   const right = valueOf(context, compare.right);
   if (left === undefined || right === undefined) return false;
-  const a = String(left);
-  const b = String(right);
+  const a = enumValue(compare.right, compare.left, String(left));
+  const b = enumValue(compare.left, compare.right, String(right));
   const regex = compare.right.kind === 'literal' ? (compare.right as Literal).regex : undefined;
   switch (compare.op) {
     case '==': return a === b;

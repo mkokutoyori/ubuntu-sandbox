@@ -14,6 +14,8 @@ export interface Pipeline {
   readonly authTypes: ReadonlyMap<string, SectionLocation>;
   readonly authorize: readonly Statement[] | null;
   readonly postAuth: readonly Statement[] | null;
+  readonly preacct: readonly Statement[] | null;
+  readonly accounting: readonly Statement[] | null;
 }
 
 const SECTION_NAMES: readonly ProcessingSection[] = ['authorize', 'authenticate', 'preacct', 'accounting', 'session', 'post-auth'];
@@ -35,6 +37,8 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
     const authTypes = new Map<string, SectionLocation>();
     let authorize: Statement[] | null = null;
     let postAuth: Statement[] | null = null;
+    let preacct: Statement[] | null = null;
+    let accounting: Statement[] | null = null;
     for (const section of server.sections) {
       if (!SECTION_NAMES.includes(section.name1 as ProcessingSection)) continue;
       locations.set(section.name1 as ProcessingSection, { file: section.file, line: section.line });
@@ -42,7 +46,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
         for (const child of section.sections) if (child.name1 === 'Auth-Type' && child.name2 !== null) authTypes.set(child.name2, { file: child.file, line: child.line });
       }
       const names = new Set<string>();
-      if (section.name1 === 'authorize' || section.name1 === 'post-auth') {
+      if (section.name1 === 'authorize' || section.name1 === 'post-auth' || section.name1 === 'preacct' || section.name1 === 'accounting') {
         let program: Statement[];
         try {
           program = parseStatements(section, resolveModule);
@@ -51,7 +55,9 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
           throw error;
         }
         if (section.name1 === 'authorize') authorize = program;
-        else postAuth = program;
+        else if (section.name1 === 'post-auth') postAuth = program;
+        else if (section.name1 === 'preacct') preacct = program;
+        else accounting = program;
         moduleNames(program, names);
       } else {
         const failure = collectModules(section, names);
@@ -59,7 +65,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
       }
       sections.set(section.name1 as ProcessingSection, names);
     }
-    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize, postAuth });
+    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize, postAuth, preacct, accounting });
   }
   return pipelines;
 }

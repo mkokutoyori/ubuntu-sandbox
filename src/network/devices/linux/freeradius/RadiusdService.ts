@@ -23,13 +23,13 @@ import { parseClientsConf } from './ClientsConfParser';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
 import type { RadiusUser, RadiusAttribute, RadiusPacket } from '@/network/radius/types';
-import { detailPath, detailEntry, type DetailRecord } from './DetailModule';
+import { detailPath, detailEntry, acctUniqueFor, type DetailRecord } from './DetailModule';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
 import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from './RequestDebug';
-import type { RadiusUserResolverContext } from '@/network/radius/RadiusServerAgent';
+import type { RadiusUserResolverContext, AccountingRun } from '@/network/radius/RadiusServerAgent';
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
@@ -98,6 +98,9 @@ type ConfigLoadResult =
   | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; files: readonly string[] }
   | { ok: false; error: string };
 
+const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
+const DEFAULT_PREACCT_PROGRAM = moduleProgram(['preprocess', 'acct_unique']);
+const DEFAULT_ACCOUNTING_PROGRAM = moduleProgram(['detail', 'radutmp']);
 const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
 
 export class RadiusdService {
@@ -283,7 +286,50 @@ export class RadiusdService {
   private writeDetail(record: DetailRecord): void {
     const settings = this.logConfig?.detail ?? null;
     if (settings === null || !this.sectionAllows(record.destinationPort, 'accounting', 'detail')) return;
-    this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique')), ~settings.permissions & 0o777);
+    this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique') ? acctUniqueFor(record) : null), ~settings.permissions & 0o777);
+  }
+
+  private runAccounting(info: AccountingRun): boolean {
+    const pipeline = this.pipelines.get(this.portServers.get(info.destinationPort) ?? 'default');
+    const attributes = info.packet.attributes;
+    const username = String(attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '');
+    const context = newContext(username, attributes, {
+      sourceIp: info.sourceIp, sourcePort: info.sourcePort, destinationIp: info.destinationIp, destinationPort: info.destinationPort,
+      server: this.portServers.get(info.destinationPort) ?? 'default', type: 'Accounting-Request', authenticator: info.packet.authenticator,
+    }, this.wallClock.nowMs());
+    const recordOf = (): DetailRecord => ({
+      sourceIp: info.sourceIp, destinationIp: info.destinationIp, sourcePort: info.sourcePort, destinationPort: info.destinationPort,
+      packet: { ...info.packet, attributes: context.request }, atMs: info.atMs,
+    });
+    const host: UnlangHost = {
+      runModule: (name, ctx) => {
+        if (name === 'preprocess') {
+          const rejected = applyPreprocess(this.preprocessFiles, ctx, info.sourceIp, Math.floor(this.wallClock.nowMs() / 1000), (user) => this.wallClock.groupsOf(user));
+          return { result: rejected ? 'reject' : 'ok', messages: [] };
+        }
+        if (name === 'acct_unique') {
+          ctx.overlay.set('acct-unique-session-id', acctUniqueFor(recordOf()));
+          return { result: 'updated', messages: [] };
+        }
+        if (name === 'detail') {
+          const settings = this.logConfig?.detail ?? null;
+          if (settings === null) return { result: 'noop', messages: [] };
+          const record = recordOf();
+          this.files.append(detailPath(settings, record), detailEntry(settings, record, ctx.overlay.get('acct-unique-session-id') ?? null), ~settings.permissions & 0o777);
+          return { result: 'ok', messages: [] };
+        }
+        if (name === 'radutmp') {
+          info.recordUtmp(ctx.request);
+          return { result: 'ok', messages: [] };
+        }
+        return { result: 'noop', messages: [] };
+      },
+    };
+    const lines: string[] = [];
+    const preacct = run(pipeline?.preacct ?? DEFAULT_PREACCT_PROGRAM, context, host, lines, 3);
+    if (preacct.result === 'reject' || preacct.result === 'fail') return false;
+    run(pipeline?.accounting ?? DEFAULT_ACCOUNTING_PROGRAM, context, host, lines, 3);
+    return true;
   }
 
   private boundPorts: number[] = [];
@@ -489,6 +535,7 @@ export class RadiusdService {
     this.logConfig = loaded.log;
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
+    this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
     this.radiusServer.setPostAuthHook((info) => this.runPostAuth(info.port, info.accepted, info.userReply));
     this.radiusServer.setDebugBuilder((info) => requestDebugLines({
       server: this.portServers.get(info.port) ?? 'default', pipeline: this.pipelines.get(this.portServers.get(info.port) ?? 'default'),
