@@ -321,6 +321,27 @@ export class RadiusdService {
     this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique') ? acctUniqueFor(record) : null), ~settings.permissions & 0o777);
   }
 
+  private runProxyStage(section: 'pre-proxy' | 'post-proxy', port: number, request: readonly RadiusAttribute[], outbound: RadiusAttribute[], reply: RadiusAttribute[]): { attributes: RadiusAttribute[] | null } {
+    const server = this.portServers.get(port) ?? 'default';
+    const pipeline = this.pipelines.get(server);
+    const program = section === 'pre-proxy' ? pipeline?.preProxy : pipeline?.postProxy;
+    const keep = section === 'pre-proxy' ? outbound : reply;
+    if (program === null || program === undefined || program.length === 0) return { attributes: keep };
+    const username = String(request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
+    const context = newContext(username, request, null, this.wallClock.nowMs());
+    context.proxyRequest = [...outbound];
+    context.proxyReply = [...reply];
+    const lines: string[] = [];
+    const host: UnlangHost = { runModule: (name, ctx) => (name === 'suffix' || name === 'ntdomain' ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }) };
+    const outcome = run(program, context, host, lines, 3);
+    const place = pipeline?.locations.get(section);
+    this.radiusServer.emitDebugLines([
+      `# Executing section ${section}${place === undefined ? '' : ` from file ${place.file} line ${place.line}`}`, `  ${section} {`, ...lines, `  } # ${section} = ${outcome.result}`,
+    ]);
+    if (outcome.result === 'reject' || outcome.result === 'fail') return { attributes: null };
+    return { attributes: section === 'pre-proxy' ? context.proxyRequest : context.proxyReply };
+  }
+
   private runAccounting(info: AccountingRun): boolean | ProxyRoute {
     const pipeline = this.pipelines.get(this.portServers.get(info.destinationPort) ?? 'default');
     const attributes = info.packet.attributes;
@@ -702,6 +723,10 @@ export class RadiusdService {
     this.pipelines = loaded.pipelines;
     this.proxyConfig = loaded.proxy;
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
+    this.radiusServer.setProxyHooks({
+      pre: (info) => this.runProxyStage('pre-proxy', info.port, info.request, info.outbound, []).attributes,
+      post: (info) => this.runProxyStage('post-proxy', info.port, info.request, [], info.reply).attributes,
+    });
     this.radiusServer.setPostAuthHook((info) => this.runPostAuth(info.port, info.accepted, info.userReply));
     this.radiusServer.setDebugBuilder((info) => requestDebugLines({
       server: this.portServers.get(info.port) ?? 'default', pipeline: this.pipelines.get(this.portServers.get(info.port) ?? 'default'),

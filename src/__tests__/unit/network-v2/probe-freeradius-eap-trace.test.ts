@@ -76,7 +76,7 @@ async function exchange(password: string) {
 
 describe('the -X trace of an EAP-MD5 conversation', () => {
   it('witness: the right password is accepted and the wrong one rejected', async () => {
-    expect((await exchange('wonderland')).second).toContain('Access-Accept');
+    expect((await exchange('wonderland')).second).toContain('Received Access-Accept');
     expect((await exchange('wrong')).second).toContain('Access-Reject');
   });
 

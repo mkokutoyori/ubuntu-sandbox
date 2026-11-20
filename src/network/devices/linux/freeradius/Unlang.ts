@@ -7,7 +7,7 @@ import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { expandTemplate } from './Xlat';
 
 export type ModuleResult = 'reject' | 'fail' | 'ok' | 'handled' | 'invalid' | 'userlock' | 'notfound' | 'noop' | 'updated';
-export type AttributeList = 'request' | 'control' | 'reply';
+export type AttributeList = 'request' | 'control' | 'reply' | 'proxy-request' | 'proxy-reply';
 
 export interface UnlangContext extends ViewContext {
   nowMs: number;
@@ -15,16 +15,20 @@ export interface UnlangContext extends ViewContext {
   control: Map<string, string>;
   knownGood: KnownGoodItem[];
   reply: RadiusAttribute[];
+  proxyRequest: RadiusAttribute[];
+  proxyReply: RadiusAttribute[];
 }
 
 export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null, nowMs = 0): UnlangContext {
-  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [] };
+  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [] };
 }
 
 export function lookup(context: UnlangContext, list: AttributeList, name: string): string | number | undefined {
   const key = name.toLowerCase();
   if (list === 'request') return requestViewOf(context, () => [])(key);
   if (list === 'control') return context.control.get(key);
+  if (list === 'proxy-request') return context.proxyRequest.find((attribute) => attribute.type === key)?.value;
+  if (list === 'proxy-reply') return context.proxyReply.find((attribute) => attribute.type === key)?.value;
   return context.reply.find((attribute) => attribute.type === key)?.value;
 }
 
@@ -52,7 +56,7 @@ export class UnlangError extends Error {}
 const RESULT_KEYWORDS = new Set<string>(['ok', 'reject', 'noop', 'fail', 'handled', 'invalid', 'userlock', 'notfound', 'updated']);
 const STOPPING = new Set<ModuleResult>(['reject', 'fail', 'userlock', 'invalid', 'handled']);
 const UNSUPPORTED = new Set(['switch', 'case', 'foreach', 'redundant', 'load-balance', 'redundant-load-balance', 'group', 'return', 'break', 'map']);
-const LIST_ALIASES: Record<string, AttributeList> = { request: 'request', control: 'control', config: 'control', reply: 'reply' };
+const LIST_ALIASES: Record<string, AttributeList> = { request: 'request', control: 'control', config: 'control', reply: 'reply', 'proxy-request': 'proxy-request', 'proxy-reply': 'proxy-reply' };
 
 function fail(file: string, line: number, message: string): never {
   throw new UnlangError(`${file}[${line}]: ${message}`);
@@ -297,7 +301,7 @@ function applyAssignment(context: UnlangContext, assignment: Assignment): void {
   }
   const attribute = usersPairToAttribute({ name: assignment.name, op: ':=', value, tag: null });
   if (attribute === null) throw new UnlangError(`${assignment.file}[${assignment.line}]: Failed to parse value for "${assignment.name}"`);
-  const store = assignment.list === 'reply' ? context.reply : context.request;
+  const store = assignment.list === 'reply' ? context.reply : assignment.list === 'proxy-request' ? context.proxyRequest : assignment.list === 'proxy-reply' ? context.proxyReply : context.request;
   const exists = store.some((known) => known.type === attribute.type);
   if (assignment.op === '=' && exists) return;
   if (assignment.op === ':=') for (let at = store.length - 1; at >= 0; at--) if (store[at].type === attribute.type) store.splice(at, 1);

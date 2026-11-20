@@ -85,7 +85,7 @@ describe('radzap', () => {
   it('radclient -f - reads the packets from the pipe', async () => {
     const { client } = await lab();
     const output = await client.executeCommand(`printf 'User-Name = "bob"\\nUser-Password = "builder"\\n' | radclient -f - 10.0.0.2 auth shared`);
-    expect(output).toContain('Access-Accept');
+    expect(output).toContain('Received Access-Accept');
   });
 
   it('a script placed on the PATH runs by its bare name, and a network command inside it is awaited', async () => {

@@ -79,7 +79,7 @@ const listing = async (edge: LinuxServer, all = false) =>
 describe('radmin show home_server list and the zombie / dead states', () => {
   it('witness: the realm user is proxied to the home server', async () => {
     const { client } = await withControl(HOME_POOL());
-    expect(await client.executeCommand(login('alice@example.com'))).toContain('Access-Accept');
+    expect(await client.executeCommand(login('alice@example.com'))).toContain('Received Access-Accept');
   });
 
   it('lists an auth+acct home server twice, the second on port + 1, as unknown before any reply', async () => {
@@ -120,7 +120,7 @@ describe('radmin show home_server list and the zombie / dead states', () => {
     await client.executeCommand(login('alice@example.com').replace('-r 1', '-r 3 -t 2'));
     await edge.executeCommand('sleep 2');
     const output = await client.executeCommand(`t0=$(date +%s); ${login('alice@example.com')}; t1=$(date +%s); echo elapsed=$((t1-t0))`);
-    expect(output).toContain('Access-Accept');
+    expect(output).toContain('Received Access-Accept');
     expect(output).toContain('elapsed=0');
   });
 
@@ -166,7 +166,7 @@ describe('radmin show home_server list and the zombie / dead states', () => {
     await radmin(edge, 'set home_server state 10.0.0.9 1812 down');
     expect((await listing(edge)).find((line) => line.startsWith('10.0.0.9\t1812'))).toContain('\tdown\t');
     const output = await client.executeCommand(`t0=$(date +%s); ${login('alice@example.com')}; t1=$(date +%s); echo elapsed=$((t1-t0))`);
-    expect(output).toContain('Access-Accept');
+    expect(output).toContain('Received Access-Accept');
     expect(output).toContain('elapsed=0');
   });
 

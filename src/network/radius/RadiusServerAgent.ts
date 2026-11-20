@@ -126,6 +126,9 @@ interface PendingProxyContext {
   dedupKey: string;
   timer: TimerHandle | null;
   kind: 'auth' | 'acct';
+  realm: string;
+  listenPort: number;
+  request: RadiusAttribute[];
 }
 
 /** Extra context a `setUserResolver` callback may need beyond the username itself. */
@@ -150,6 +153,11 @@ export interface RequestDebugInfo {
   replyLines: string[];
   postAuthLines: string[];
   eap?: { lines: string[]; result: 'ok' | 'handled' | 'reject' };
+}
+
+export interface ProxyHooks {
+  pre(info: { kind: 'auth' | 'acct'; port: number; realm: string; request: readonly RadiusAttribute[]; outbound: RadiusAttribute[] }): RadiusAttribute[] | null;
+  post(info: { kind: 'auth' | 'acct'; port: number; realm: string; request: readonly RadiusAttribute[]; reply: RadiusAttribute[] }): RadiusAttribute[] | null;
 }
 
 export interface AccountingRun {
@@ -351,6 +359,10 @@ export class RadiusServerAgent {
       })
       : packet.attributes;
   }
+
+  private proxyHooks: ProxyHooks | null = null;
+
+  setProxyHooks(hooks: ProxyHooks | null): void { this.proxyHooks = hooks; }
 
   private accountingRunner: ((run: AccountingRun) => boolean | ProxyRoute) | null = null;
 
@@ -1362,6 +1374,16 @@ export class RadiusServerAgent {
       }
     }
     if (kind === 'auth') attrs.push(attr('nas-ip-address', homeSrcIp.toString()));
+    const listenPort = this.servedPort ?? (kind === 'acct' ? this.config.acctPort : this.config.port);
+    const staged = this.proxyHooks === null ? attrs : this.proxyHooks.pre({ kind, port: listenPort, realm, request: request.attributes, outbound: attrs });
+    if (staged === null) {
+      if (kind === 'auth') {
+        this.publishRejected(nasIp.toString(), username, 'bad-password');
+        this.reply(inPort, nasIp, nasPort, request, false, undefined, dedupKey);
+      }
+      return;
+    }
+    attrs.splice(0, attrs.length, ...staged);
 
     let outbound: RadiusPacket = {
       type: 'radius', code: kind === 'acct' ? 'accounting-request' : 'access-request', identifier: outIdentifier,
@@ -1386,7 +1408,7 @@ export class RadiusServerAgent {
       originalIdentifier: request.identifier, originalAuthenticator: request.authenticator,
       nasSecret: this.secretFor(nasIp),
       homeServerIp: route.homeServerIp, homePort: route.homePort, homeSecret: route.homeSecret,
-      outAuthenticator, dedupKey, timer, kind,
+      outAuthenticator, dedupKey, timer, kind, realm, listenPort, request: [...request.attributes],
     });
 
     this.getBus().publish({
@@ -1476,11 +1498,20 @@ export class RadiusServerAgent {
     const nasSrcIp = port.getIPAddress();
     if (!nasSrcIp) return true;
 
-    const forwardedAttrs = payload.attributes.filter(
+    let forwardedAttrs = payload.attributes.filter(
       (a) => a.type !== 'message-authenticator' && a.type !== 'state',
     );
+    let replyCode = payload.code;
+    if (this.proxyHooks !== null) {
+      const staged = this.proxyHooks.post({ kind: ctx.kind, port: ctx.listenPort, realm: ctx.realm, request: ctx.request, reply: forwardedAttrs });
+      if (staged === null) {
+        if (ctx.kind === 'acct') return true;
+        replyCode = 'access-reject';
+        forwardedAttrs = [];
+      } else forwardedAttrs = staged;
+    }
     let response: RadiusPacket = {
-      type: 'radius', code: payload.code, identifier: ctx.originalIdentifier,
+      type: 'radius', code: replyCode, identifier: ctx.originalIdentifier,
       authenticator: '00'.repeat(16), attributes: forwardedAttrs,
     };
     if (ctx.kind === 'auth') response = withMessageAuthenticator(response, ctx.originalAuthenticator, ctx.nasSecret);

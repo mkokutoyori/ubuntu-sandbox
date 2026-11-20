@@ -70,20 +70,20 @@ const radtest = (client: LinuxServer, args: string) => client.executeCommand(`ra
 describe('freeradius users file known-good password types', () => {
   it('witness: Cleartext-Password is accepted and a wrong password refused', async () => {
     const { client } = await lab('clear Cleartext-Password := "password"\n');
-    expect(await radtest(client, 'clear password')).toContain('Access-Accept');
+    expect(await radtest(client, 'clear password')).toContain('Received Access-Accept');
     expect(await radtest(client, 'clear wrong')).toContain('Access-Reject');
   });
 
   for (const name of ['md5hex', 'md5b64', 'sha1hex', 'ssha', 'smd5', 'nt', 'sha2', 'sha512', 'crypt', 'header']) {
     it(`${name}: right password accepted, wrong refused`, async () => {
       const { client } = await lab(USERS);
-      expect(await radtest(client, `${name} password`)).toContain('Access-Accept');
+      expect(await radtest(client, `${name} password`)).toContain('Received Access-Accept');
       expect(await radtest(client, `${name} passw0rd`)).toContain('Access-Reject');
     });
   }
 
   it('Auth-Type := Accept accepts any password', async () => {
     const { client } = await lab(USERS);
-    expect(await radtest(client, 'anyone whatever')).toContain('Access-Accept');
+    expect(await radtest(client, 'anyone whatever')).toContain('Received Access-Accept');
   });
 });

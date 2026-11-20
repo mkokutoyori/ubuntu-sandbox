@@ -61,7 +61,7 @@ async function traced(password: string) {
 
 describe('the -X trace of an MS-CHAP request', () => {
   it('witness: a right password is accepted and a wrong one rejected', async () => {
-    expect((await traced('wonderland')).output).toContain('Access-Accept');
+    expect((await traced('wonderland')).output).toContain('Received Access-Accept');
     expect((await traced('wrong')).output).toContain('Access-Reject');
   });
 

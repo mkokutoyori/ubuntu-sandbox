@@ -62,33 +62,33 @@ const CONF = `client a {\n  ipaddr = 10.0.0.1\n  secret = secret-a\n}\nclient b 
 describe('clients.conf per client', () => {
   it('WITNESS: the first client\'s own secret works', async () => {
     const { nas } = lab(CONF);
-    expect(await nas[0].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-a')).toContain('Access-Accept');
+    expect(await nas[0].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-a')).toContain('Received Access-Accept');
   });
 
   it('the second client\'s own secret works', async () => {
     const { nas } = lab(CONF);
-    expect(await nas[1].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-b')).toContain('Access-Accept');
+    expect(await nas[1].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-b')).toContain('Received Access-Accept');
   });
 
   it('a client signing with another client\'s secret does not get through', async () => {
     const { nas } = lab(CONF);
-    expect(await nas[1].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-a')).not.toContain('Access-Accept');
+    expect(await nas[1].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-a')).not.toContain('Received Access-Accept');
   });
 
   it('a subnet client serves every address of the subnet with its secret', async () => {
     const { nas } = lab('client lan {\n  ipaddr = 10.0.0.0/24\n  secret = lan-secret\n}\n');
-    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 lan-secret')).toContain('Access-Accept');
+    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 lan-secret')).toContain('Received Access-Accept');
   });
 
   it('the most specific client wins over the subnet', async () => {
     const { nas } = lab('client lan {\n  ipaddr = 10.0.0.0/24\n  secret = lan-secret\n}\nclient one {\n  ipaddr = 10.0.0.9\n  secret = one-secret\n}\n');
-    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 one-secret')).toContain('Access-Accept');
-    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 lan-secret')).not.toContain('Access-Accept');
+    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 one-secret')).toContain('Received Access-Accept');
+    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 lan-secret')).not.toContain('Received Access-Accept');
   });
 
   it('an address that is no client is not answered', async () => {
     const { nas } = lab(CONF);
-    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-a')).not.toContain('Access-Accept');
+    expect(await nas[2].executeCommand('radtest alice wonderland 10.0.0.2 0 secret-a')).not.toContain('Received Access-Accept');
   });
 
   it('require_message_authenticator = yes drops a request that carries none, and answers one that does', () => {

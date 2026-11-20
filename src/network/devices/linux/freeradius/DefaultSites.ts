@@ -114,6 +114,12 @@ export const DEFAULT_SITE = [
   "\t\tPost-Auth-Type REJECT {",
   "\t\t}",
   "\t}",
+  "",
+  "\tpre-proxy {",
+  "\t}",
+  "",
+  "\tpost-proxy {",
+  "\t}",
   "}",
   "",
 ].join('\n');
