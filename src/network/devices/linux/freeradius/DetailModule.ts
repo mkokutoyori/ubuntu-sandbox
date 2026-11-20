@@ -2,8 +2,7 @@ import { confBoolean, type ConfSection } from './FreeradiusConf';
 import { RADIUS_ATTR, type RadiusAttribute, type RadiusPacket } from '@/network/radius/types';
 import { formatRadiusAttribute, radiusAttributeDisplayName } from '@/network/radius/attributeText';
 import { md5Hex } from '@/crypto/hash/md5';
-import { formatCtime } from '../time/ctime';
-import { formatLocalTime } from '../system/SystemInfo';
+import { expandTemplate, type Lookup } from './Xlat';
 
 export interface DetailSettings {
   filename: string;
@@ -72,8 +71,6 @@ export function readDetailSettings(root: ConfSection): DetailSettings | null | {
   return settings;
 }
 
-type Lookup = (name: string) => string | undefined;
-
 function lookupFor(record: DetailRecord): Lookup {
   return (name) => {
     switch (name.toLowerCase()) {
@@ -119,59 +116,14 @@ export function escapeFilename(value: string): string {
   return out;
 }
 
-function expand(template: string, lookup: Lookup, atMs: number, escape: (value: string) => string): string {
-  let out = '';
-  for (let index = 0; index < template.length; index++) {
-    const char = template[index];
-    if (char !== '%') { out += char; continue; }
-    const next = template[index + 1];
-    if (next === '{') {
-      let depth = 1;
-      let end = index + 2;
-      while (end < template.length && depth > 0) {
-        if (template[end] === '{') depth++;
-        else if (template[end] === '}') depth--;
-        end++;
-      }
-      const body = template.slice(index + 2, end - 1);
-      index = end - 1;
-      const alternative = splitAlternative(body);
-      if (alternative !== null) {
-        const first = expand(alternative[0], lookup, atMs, escape);
-        out += first !== '' ? first : expand(alternative[1], lookup, atMs, escape);
-      } else if (body.startsWith('%{')) out += expand(body, lookup, atMs, escape);
-      else {
-        const value = lookup(body);
-        out += value === undefined ? '' : escape(value);
-      }
-      continue;
-    }
-    if (next === 't') { out += formatCtime(new Date(atMs)); index += 1; continue; }
-    if (next === '%') { out += '%'; index += 1; continue; }
-    if (next !== undefined && /[YmdHMSyejabBAZ]/.test(next)) { out += formatLocalTime(`%${next}`, atMs); index += 1; continue; }
-    out += char;
-  }
-  return out;
-}
-
-function splitAlternative(body: string): [string, string] | null {
-  let depth = 0;
-  for (let index = 0; index < body.length - 1; index++) {
-    if (body[index] === '{') depth++;
-    else if (body[index] === '}') depth--;
-    else if (depth === 0 && body[index] === ':' && body[index + 1] === '-') return [body.slice(0, index), body.slice(index + 2)];
-  }
-  return null;
-}
-
 export function detailPath(settings: DetailSettings, record: DetailRecord): string {
   const escape = settings.escapeFilenames ? escapeFilename : makeFilenameSafe;
-  return expand(settings.filename, lookupFor(record), record.atMs, escape);
+  return expandTemplate(settings.filename, lookupFor(record), record.atMs, escape);
 }
 
 export function detailEntry(settings: DetailSettings, record: DetailRecord, acctUnique = true): string {
   const lookup = lookupFor(record);
-  const lines = [expand(settings.header, lookup, record.atMs, (value) => value)];
+  const lines = [expandTemplate(settings.header, lookup, record.atMs, (value) => value)];
   if (settings.logPacketHeader) {
     lines.push(`\tPacket-Src-IP-Address = ${record.sourceIp}`, `\tPacket-Dst-IP-Address = ${record.destinationIp}`,
       `\tPacket-Src-Port = ${record.sourcePort}`, `\tPacket-Dst-Port = ${record.destinationPort}`);

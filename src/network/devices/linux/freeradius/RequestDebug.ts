@@ -20,6 +20,7 @@ export interface DebugInput {
   accepted: boolean;
   receivedLines: string[];
   replyLines: string[];
+  postAuthLines: string[];
 }
 
 const KNOWN_GOOD_NAMES: Record<string, string> = {
@@ -81,6 +82,7 @@ export function requestDebugLines(input: DebugInput): string[] {
       if (!input.accepted) inner('Failed to authenticate the user', 1);
     }
   }
+  lines.push(...input.postAuthLines.map((line) => line));
   lines.push(`} # server ${input.server}`, 'Virtual server sending reply', ...input.replyLines);
   return lines;
 }

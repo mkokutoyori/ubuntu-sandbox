@@ -8,7 +8,7 @@
  * (conditions: ==, !=, <, >, <=, >=, =~ and !~ with /regex/, &&, ||, !, parentheses, an attribute alone as an existence test) and
  * doc/unlang. The list is the context of ONE request: the modules of the section read and write it in order (files puts the
  * known-good password and the reply items into it, pap needs a known-good password there, an update control can supply one).
- * The expansion %{...}, switch, case, foreach, redundant, group, load-balance, map, return and break are refused naming them.
+ * The expansion functions (%{md5:...}), switch, case, foreach, redundant, group, load-balance, map, return and break are refused naming them.
  *
  * Discriminated with git stash on src: 10 of 12 fall before the fix; two pass either way and are named: the witness (a site with
  * no unlang behaves as before) and the refusal of switch (refused before as after).
@@ -141,10 +141,10 @@ describe('unlang: update and if', () => {
     expect(lines).not.toContain('} # if (&User-Name == "zed") = reject');
   });
 
-  it('an expansion is refused naming it, with file and line', async () => {
+  it('an expansion function the simulator has not is refused naming it, with file and line', async () => {
     const { target } = await lab();
-    write(target, SITES, inAuthorize(['\t\tupdate reply {', '\t\t\tReply-Message := "hello %{User-Name}"', '\t\t}'])(site(target)));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/\[\d+\]: The expansion "%\{\.\.\.\}" is not implemented in this simulator$/);
+    write(target, SITES, inAuthorize(['\t\tupdate reply {', '\t\t\tReply-Message := "hello %{md5:x}"', '\t\t}'])(site(target)));
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/\[\d+\]: The expansion function "%\{md5:\.\.\.\}" is not implemented in this simulator$/);
   });
 
   it('an unknown attribute in update, an operator the simulator has not and a syntax error in a condition are refused with file and line', async () => {

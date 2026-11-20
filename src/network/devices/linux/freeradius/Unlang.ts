@@ -3,19 +3,21 @@ import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodP
 import type { ConfPair, ConfSection } from './FreeradiusConf';
 import { usersPairToAttribute, requestViewOf, type PacketFacts, type ViewContext } from './UsersFileParser';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
+import { expandTemplate } from './Xlat';
 
 export type ModuleResult = 'reject' | 'fail' | 'ok' | 'handled' | 'invalid' | 'userlock' | 'notfound' | 'noop' | 'updated';
 export type AttributeList = 'request' | 'control' | 'reply';
 
 export interface UnlangContext extends ViewContext {
+  nowMs: number;
   request: RadiusAttribute[];
   control: Map<string, string>;
   knownGood: KnownGoodItem[];
   reply: RadiusAttribute[];
 }
 
-export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null): UnlangContext {
-  return { username, strippedName: null, packet, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [] };
+export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null, nowMs = 0): UnlangContext {
+  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [] };
 }
 
 export function lookup(context: UnlangContext, list: AttributeList, name: string): string | number | undefined {
@@ -26,7 +28,7 @@ export function lookup(context: UnlangContext, list: AttributeList, name: string
 }
 
 interface Operand { kind: 'attribute'; list: AttributeList; name: string }
-interface Literal { kind: 'literal'; value: string; regex?: RegExp }
+interface Literal { kind: 'literal'; value: string; regex?: RegExp; template?: boolean }
 type Term = Operand | Literal;
 
 export type Condition =
@@ -42,7 +44,7 @@ export type Statement =
   | { kind: 'return'; result: ModuleResult }
   | { kind: 'update'; list: AttributeList; assignments: Assignment[] }
   | { kind: 'if'; branches: Array<{ keyword: 'if' | 'elsif' | 'else'; text: string; condition: Condition | null; body: Statement[] }> }
-  | { kind: 'typed'; name: string; body: Statement[] };
+  | { kind: 'typed'; name: string; body: Statement[]; file: string; line: number };
 
 export class UnlangError extends Error {}
 
@@ -72,7 +74,7 @@ function tokenizeCondition(text: string, file: string, line: number): string[] {
   while (index < text.length) {
     const char = text[index];
     if (/\s/.test(char)) { index++; continue; }
-    if (text.startsWith('%{', index)) fail(file, line, 'The expansion "%{...}" is not implemented in this simulator');
+    if (text.startsWith('%{', index)) fail(file, line, 'An expansion outside a string is not implemented in this simulator');
     if (char === '"' || char === "'") {
       let end = index + 1;
       while (end < text.length && text[end] !== char) end += text[end] === '\\' ? 2 : 1;
@@ -109,7 +111,11 @@ function parseCondition(text: string, file: string, line: number): Condition {
   const term = (): Term => {
     const token = tokens[position++];
     if (token === undefined) fail(file, line, 'Syntax error in condition: unexpected end');
-    if (token.startsWith('"') || token.startsWith("'")) return { kind: 'literal', value: token.slice(1, -1).replace(/\\(.)/g, '$1') };
+    if (token.startsWith('"') || token.startsWith("'")) {
+      const text = token.slice(1, -1).replace(/\\(.)/g, '$1');
+      checkTemplate(text, file, line);
+      return { kind: 'literal', value: text, ...(token.startsWith('"') && text.includes('%{') ? { template: true } : {}) };
+    }
     if (token.startsWith('/')) {
       const close = token.lastIndexOf('/');
       return { kind: 'literal', value: token, regex: new RegExp(token.slice(1, close), token.slice(close + 1).replace(/[xs]/g, '')) };
@@ -156,7 +162,22 @@ function parseCondition(text: string, file: string, line: number): Condition {
 }
 
 function valueOf(context: UnlangContext, term: Term): string | number | undefined {
-  return term.kind === 'literal' ? term.value : lookup(context, term.list, term.name);
+  if (term.kind !== 'literal') return lookup(context, term.list, term.name);
+  if (term.template !== true) return term.value;
+  return expandTemplate(term.value, (name) => {
+    const colon = name.indexOf(':');
+    const list = colon > 0 ? LIST_ALIASES[name.slice(0, colon)] : undefined;
+    const found = list === undefined ? lookup(context, 'request', name) : lookup(context, list, name.slice(colon + 1));
+    return found === undefined ? undefined : String(found);
+  }, context.nowMs, (value) => value);
+}
+
+const TEMPLATE_FUNCTION = /%\{([A-Za-z0-9_-]+):(?!-)/g;
+
+function checkTemplate(text: string, file: string, line: number): void {
+  for (const match of text.matchAll(TEMPLATE_FUNCTION)) {
+    if (LIST_ALIASES[match[1]] === undefined) fail(file, line, `The expansion function "%{${match[1]}:...}" is not implemented in this simulator`);
+  }
 }
 
 export function evaluate(condition: Condition, context: UnlangContext): boolean {
@@ -192,10 +213,11 @@ export function evaluate(condition: Condition, context: UnlangContext): boolean 
 function assignmentOf(pair: ConfPair, defaultList: AttributeList): Assignment {
   const target = parseReference(pair.name, defaultList, pair.file, pair.line);
   if (!['=', ':=', '+='].includes(pair.op)) fail(pair.file, pair.line, `The operator "${pair.op}" in update is not implemented in this simulator`);
-  if (pair.value.includes('%{') || pair.value.includes('`')) fail(pair.file, pair.line, 'The expansion "%{...}" is not implemented in this simulator');
+  if (pair.value.includes('`')) fail(pair.file, pair.line, 'A backtick expansion is not implemented in this simulator');
+  checkTemplate(pair.value, pair.file, pair.line);
   const key = target.name.toLowerCase();
   if (target.list !== 'control' && !(key in RADIUS_ATTR)) fail(pair.file, pair.line, `Unknown attribute "${target.name}"`);
-  const value: Term = !pair.quoted && pair.value.startsWith('&') ? parseReference(pair.value, 'request', pair.file, pair.line) : { kind: 'literal', value: pair.value };
+  const value: Term = !pair.quoted && pair.value.startsWith('&') ? parseReference(pair.value, 'request', pair.file, pair.line) : { kind: 'literal', value: pair.value, ...(pair.quoted && pair.value.includes('%{') ? { template: true } : {}) };
   return { list: target.list, name: target.name, op: pair.op, value, file: pair.file, line: pair.line };
 }
 
@@ -227,7 +249,7 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       fail(item.file, item.line, `The unlang construct "${item.name1}" is not implemented in this simulator`);
     } else if (item.name1.endsWith('-Type')) {
       pending = null;
-      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule) });
+      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule), file: item.file, line: item.line });
     } else fail(item.file, item.line, `Unknown section "${item.name1}" in ${section.name1}`);
   }
   return statements;
@@ -247,8 +269,9 @@ export interface UnlangHost {
   runModule(name: string, context: UnlangContext): ModuleOutcome;
 }
 
-function sourceText(assignment: Assignment): string {
-  const value = assignment.value.kind === 'attribute' ? `&${assignment.value.list}:${assignment.value.name}` : `"${assignment.value.value}"`;
+function sourceText(assignment: Assignment, context: UnlangContext): string {
+  const resolved = valueOf(context, assignment.value);
+  const value = assignment.value.kind === 'attribute' ? (resolved === undefined ? '' : `"${resolved}"`) : `"${resolved}"`;
   return `&${assignment.list}:${assignment.name} ${assignment.op} ${value}`;
 }
 
@@ -297,7 +320,7 @@ export function run(statements: readonly Statement[], context: UnlangContext, ho
       indent(`update ${statement.list} {`);
       for (const assignment of statement.assignments) {
         applyAssignment(context, assignment);
-        indent(sourceText(assignment), 1);
+        indent(sourceText(assignment, context), 1);
       }
       indent(`} # update ${statement.list} = noop`);
       results.push('noop');

@@ -13,6 +13,7 @@ export interface Pipeline {
   readonly locations: ReadonlyMap<ProcessingSection, SectionLocation>;
   readonly authTypes: ReadonlyMap<string, SectionLocation>;
   readonly authorize: readonly Statement[] | null;
+  readonly postAuth: readonly Statement[] | null;
 }
 
 const SECTION_NAMES: readonly ProcessingSection[] = ['authorize', 'authenticate', 'preacct', 'accounting', 'session', 'post-auth'];
@@ -33,6 +34,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
     const locations = new Map<ProcessingSection, SectionLocation>();
     const authTypes = new Map<string, SectionLocation>();
     let authorize: Statement[] | null = null;
+    let postAuth: Statement[] | null = null;
     for (const section of server.sections) {
       if (!SECTION_NAMES.includes(section.name1 as ProcessingSection)) continue;
       locations.set(section.name1 as ProcessingSection, { file: section.file, line: section.line });
@@ -40,21 +42,24 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
         for (const child of section.sections) if (child.name1 === 'Auth-Type' && child.name2 !== null) authTypes.set(child.name2, { file: child.file, line: child.line });
       }
       const names = new Set<string>();
-      if (section.name1 === 'authorize') {
+      if (section.name1 === 'authorize' || section.name1 === 'post-auth') {
+        let program: Statement[];
         try {
-          authorize = parseStatements(section, resolveModule);
+          program = parseStatements(section, resolveModule);
         } catch (error) {
           if (error instanceof UnlangError) return { error: error.message };
           throw error;
         }
-        moduleNames(authorize, names);
+        if (section.name1 === 'authorize') authorize = program;
+        else postAuth = program;
+        moduleNames(program, names);
       } else {
         const failure = collectModules(section, names);
         if (failure !== null) return { error: failure };
       }
       sections.set(section.name1 as ProcessingSection, names);
     }
-    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize });
+    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize, postAuth });
   }
   return pipelines;
 }

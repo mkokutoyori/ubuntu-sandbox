@@ -330,12 +330,41 @@ export class RadiusdService {
 
   private preprocessFiles: PreprocessFiles = NO_PREPROCESS;
   private lastResolution: ResolutionTrace | null = null;
+  private lastContext: UnlangContext | null = null;
+
+  private runPostAuth(port: number, accepted: boolean, userReply: readonly RadiusAttribute[]): { reply: RadiusAttribute[]; lines: string[] } | null {
+    const pipeline = this.pipelines.get(this.portServers.get(port) ?? 'default');
+    const program = pipeline?.postAuth;
+    const context = this.lastContext;
+    if (program === null || program === undefined || context === null) return null;
+    context.reply = accepted ? [...userReply] : [];
+    const place = pipeline?.locations.get('post-auth');
+    const lines: string[] = [];
+    const host: UnlangHost = { runModule: () => ({ result: 'noop', messages: [] }) };
+    const at = (text: string, depth: number): void => { lines.push(`${'  '.repeat(depth)}${text}`); };
+    if (accepted) {
+      at(`# Executing section post-auth from file ${place?.file ?? ''} line ${place?.line ?? 0}`, 1);
+      at('post-auth {', 2);
+      const outcome = run(program.filter((statement) => statement.kind !== 'typed'), context, host, lines, 3);
+      at(`} # post-auth = ${outcome.result}`, 2);
+      return { reply: context.reply, lines };
+    }
+    const typed = program.find((statement) => statement.kind === 'typed' && statement.name === 'Post-Auth-Type REJECT');
+    if (typed === undefined || typed.kind !== 'typed') return { reply: [], lines };
+    at('Using Post-Auth-Type Reject', 1);
+    at(`# Executing group from file ${typed.file} line ${typed.line}`, 1);
+    at('Post-Auth-Type REJECT {', 2);
+    const outcome = run(typed.body, context, host, lines, 3);
+    at(`} # Post-Auth-Type REJECT = ${outcome.result}`, 2);
+    return { reply: context.reply, lines };
+  }
 
   private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH, packet?: RadiusUserResolverContext['packet']): RadiusUser | undefined {
     const groupsOf = (name: string) => this.wallClock.groupsOf(name);
     const pipeline = this.pipelines.get(this.portServers.get(listenPort) ?? 'default');
     const program: readonly Statement[] = pipeline?.authorize ?? DEFAULT_AUTHORIZE_PROGRAM;
-    const context = newContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' });
+    const context = newContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' }, this.wallClock.nowMs());
+    this.lastContext = context;
     const lines: string[] = [];
     const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
     const outcome = run(program, context, host, lines, 3);
@@ -460,10 +489,11 @@ export class RadiusdService {
     this.logConfig = loaded.log;
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
+    this.radiusServer.setPostAuthHook((info) => this.runPostAuth(info.port, info.accepted, info.userReply));
     this.radiusServer.setDebugBuilder((info) => requestDebugLines({
       server: this.portServers.get(info.port) ?? 'default', pipeline: this.pipelines.get(this.portServers.get(info.port) ?? 'default'),
       request: info.request, user: info.user, resolution: this.lastResolution, usersPath: this.usersFilePath, accepted: info.accepted,
-      receivedLines: info.receivedLines, replyLines: info.replyLines,
+      receivedLines: info.receivedLines, replyLines: info.replyLines, postAuthLines: info.postAuthLines,
     }));
     this.radiusServer.setFeaturePolicy((feature, port) => {
       const both = (name: string) => this.sectionAllows(port, 'authorize', name) && this.sectionAllows(port, 'authenticate', name);

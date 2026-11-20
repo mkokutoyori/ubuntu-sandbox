@@ -146,6 +146,7 @@ export interface RequestDebugInfo {
   accepted: boolean;
   receivedLines: string[];
   replyLines: string[];
+  postAuthLines: string[];
 }
 
 export type RequestFeature = 'pap' | 'chap' | 'mschap' | 'eap' | 'session' | 'accounting-utmp';
@@ -331,6 +332,10 @@ export class RadiusServerAgent {
       : packet.attributes;
   }
 
+  private postAuthHook: ((info: { port: number; accepted: boolean; userReply: readonly RadiusAttribute[] }) => { reply: RadiusAttribute[]; lines: string[] } | null) | null = null;
+
+  setPostAuthHook(hook: ((info: { port: number; accepted: boolean; userReply: readonly RadiusAttribute[] }) => { reply: RadiusAttribute[]; lines: string[] } | null) | null): void { this.postAuthHook = hook; }
+
   private debugEmit: ((number: number, lines: string[]) => void) | null = null;
   private debugBuilder: ((info: RequestDebugInfo) => string[]) | null = null;
 
@@ -345,13 +350,13 @@ export class RadiusServerAgent {
     return { result: verdict.secondsLeft > 0 ? 'updated' : 'ok', secondsLeft: verdict.secondsLeft };
   }
 
-  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean): void {
+  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[]): void {
     if (this.debugEmit === null || this.debugBuilder === null) return;
     const lineOf = (attribute: RadiusAttribute) => `  ${formatRadiusAttribute(attribute)}`;
     this.debugEmit(this.requestNumber, this.debugBuilder({
       port: this.servedPort ?? this.config.port, request, username, user, accepted,
       receivedLines: this.displayAttributes(request, srcIp, true).map(lineOf),
-      replyLines: accepted ? (user?.replyAttributes ?? []).map(lineOf) : [],
+      replyLines: finalReply.map(lineOf), postAuthLines,
     }));
   }
 
@@ -719,15 +724,19 @@ export class RadiusServerAgent {
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
     }
 
-    this.emitRequestDebug(payload, srcIp, username, user, accepted);
     const denial = accepted ? this.simultaneousUseDenial(user, username) : null;
+    const finalAccepted = accepted && denial === null;
+    const post = this.postAuthHook?.({ port: this.servedPort ?? this.config.port, accepted: finalAccepted, userReply: user?.replyAttributes ?? [] }) ?? null;
+    const finalUser = finalAccepted && post !== null && user !== undefined ? { ...user, replyAttributes: post.reply } : user;
+    const rejectExtra = !finalAccepted && post !== null ? post.reply : [];
+    this.emitRequestDebug(payload, srcIp, username, user, accepted, post?.lines ?? [], finalAccepted ? (finalUser?.replyAttributes ?? []) : rejectExtra);
     if (denial !== null) {
       this.publishRejected(senderIp, username, 'simultaneous-use');
-      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey, denial);
+      this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey, denial, rejectExtra);
       return;
     }
     if (!accepted) this.publishRejected(senderIp, username, reason);
-    this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, user, dedupKey);
+    this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, finalUser, dedupKey, null, rejectExtra);
   }
 
   handleStatusUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, clients: RadiusClientTable): void {
@@ -1137,6 +1146,7 @@ export class RadiusServerAgent {
     inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
     accepted: boolean, user: RadiusUser | undefined, dedupKey: string,
     denial: { reply: RadiusAttribute[]; note: string } | null = null,
+    rejectExtra: readonly RadiusAttribute[] = [],
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
@@ -1147,6 +1157,7 @@ export class RadiusServerAgent {
     const rejectMessage = this.config.rejectReplyMessage === undefined ? 'Authentication failed' : this.config.rejectReplyMessage;
     if (denial !== null) replyAttrs.push(...denial.reply);
     else if (!accepted && rejectMessage !== null) replyAttrs.push(attr('reply-message', rejectMessage));
+    if (!accepted) replyAttrs.push(...rejectExtra);
     this.publishDecision(request, dstIp, accepted, denial?.note);
     let response: RadiusPacket = {
       type: 'radius',
