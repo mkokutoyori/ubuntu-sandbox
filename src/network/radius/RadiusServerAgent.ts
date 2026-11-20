@@ -194,6 +194,7 @@ export class RadiusServerAgent {
   private readonly realms = new Map<string, RealmRoute>();
   /** Forwarded Access-Requests awaiting the home server's Access-Accept/Reject, keyed by the identifier this proxy issued to the home server (its own space, distinct from the NAS's). */
   private readonly pendingProxy = new Map<number, PendingProxyContext>();
+  private readonly homeActivity = new Map<string, { lastReplyMs: number | null; timedOutAtMs: number | null }>();
   private nextProxyIdentifier = 1;
 
   constructor(
@@ -462,6 +463,20 @@ export class RadiusServerAgent {
   }
 
   removeRealm(realm: string): void { this.realms.delete(realm); }
+
+  homeServerState(address: string, port: number, timing: { pingIntervalMs: number; zombiePeriodMs: number; reviveIntervalMs: number }): { state: 'alive' | 'zombie' | 'dead' | 'unknown'; outstanding: number } {
+    const outstanding = Array.from(this.pendingProxy.values()).filter((ctx) => ctx.homeServerIp === address && ctx.homePort === port).length;
+    const activity = this.homeActivity.get(`${address}:${port}`);
+    const now = simulationNowMs();
+    if (activity?.timedOutAtMs !== null && activity?.timedOutAtMs !== undefined) {
+      const silent = now - activity.timedOutAtMs;
+      if (silent < timing.zombiePeriodMs) return { state: 'zombie', outstanding };
+      if (silent < timing.zombiePeriodMs + timing.reviveIntervalMs) return { state: 'dead', outstanding };
+      return { state: 'unknown', outstanding };
+    }
+    if (activity?.lastReplyMs !== null && activity?.lastReplyMs !== undefined && now - activity.lastReplyMs <= timing.pingIntervalMs) return { state: 'alive', outstanding };
+    return { state: 'unknown', outstanding };
+  }
   listRealms(): Array<{ realm: string } & RealmRoute> {
     return Array.from(this.realms.entries()).map(([realm, route]) => ({ realm, ...route }));
   }
@@ -1329,6 +1344,9 @@ export class RadiusServerAgent {
 
     const timer = this.getScheduler().setTimeout(() => {
       this.pendingProxy.delete(outIdentifier);
+      const activity = this.homeActivity.get(`${route.homeServerIp}:${route.homePort}`) ?? { lastReplyMs: null, timedOutAtMs: null };
+      if (activity.timedOutAtMs === null) activity.timedOutAtMs = simulationNowMs();
+      this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, activity);
       if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1), kind);
     }, route.timeoutMs);
 
@@ -1365,6 +1383,7 @@ export class RadiusServerAgent {
 
     this.pendingProxy.delete(payload.identifier);
     if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
+    this.homeActivity.set(`${ctx.homeServerIp}:${ctx.homePort}`, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
 
     const port = this.host.getPort(ctx.nasInPort);
     if (!port) return true;

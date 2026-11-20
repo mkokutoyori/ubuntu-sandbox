@@ -27,6 +27,11 @@ function commandOutput(ctx: LinuxCommandContext, command: string): { text: strin
     if (rest[0] !== 'verbose') return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };
     return { text: ctx.radiusd!.clientListing(true).join('\n'), failed: false };
   }
+  if (words[0] === 'show' && words[1] === 'home_server' && words[2] === 'list') {
+    const rest = words.slice(3);
+    if (rest.length > 1 || (rest.length === 1 && rest[0] !== 'all')) return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };
+    return { text: ctx.radiusd!.homeServerListing(rest.length === 1).join('\n'), failed: false };
+  }
   if (REAL_ROOT_WORDS.has(words[0])) return { text: `ERROR: The command '${command.trim()}' is not implemented in this simulator`, failed: true };
   return { text: `ERROR: Unknown command '${words[0]}'`, failed: true };
 }

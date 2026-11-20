@@ -9,6 +9,9 @@ export interface HomeServer {
   readonly acctPort: number | null;
   readonly secret: string;
   readonly responseWindowMs: number;
+  readonly pingIntervalMs: number;
+  readonly zombiePeriodMs: number;
+  readonly reviveIntervalMs: number;
 }
 
 export interface HomePool {
@@ -34,12 +37,13 @@ export interface RadiusFormat {
 
 export interface ProxyConfig {
   readonly realms: readonly RealmDefinition[];
+  readonly homeServers: readonly HomeServer[];
   readonly instances: ReadonlyMap<string, RadiusFormat>;
 }
 
-export const NO_PROXY: ProxyConfig = { realms: [], instances: new Map() };
+export const NO_PROXY: ProxyConfig = { realms: [], homeServers: [], instances: new Map() };
 
-const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto']);
+const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto', 'ping_interval', 'zombie_period', 'revive_interval']);
 const POOL_KEYS = new Set(['type', 'home_server']);
 const REALM_KEYS = new Set(['type', 'auth_pool', 'acct_pool', 'nostrip', 'authhost', 'accthost', 'secret']);
 const POOL_TYPES = new Set(['fail-over', 'load-balance', 'client-balance', 'client-port-balance', 'keyed-balance']);
@@ -87,7 +91,17 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     const port = Number(value(section, 'port') ?? (type === 'acct' ? 1813 : 1812));
     const acctPort = type === 'auth' ? null : type === 'acct' ? port : port + 1;
     const windowSeconds = Number(value(section, 'response_window') ?? 20);
-    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000 });
+    const bounded = (key: string, fallback: number, min: number, max: number): number | string => {
+      const text = value(section, key);
+      if (text === undefined) return fallback;
+      const number = Number(text);
+      return Number.isInteger(number) && number >= min && number <= max ? number : `${located(section)}: Invalid value "${text}" for variable ${key}`;
+    };
+    const ping = bounded('ping_interval', 30, 6, 120);
+    const zombie = bounded('zombie_period', 40, 1, 120);
+    const revive = bounded('revive_interval', 120, 60, 3600);
+    for (const checked of [ping, zombie, revive]) if (typeof checked === 'string') return { error: checked };
+    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000, pingIntervalMs: (ping as number) * 1000, zombiePeriodMs: (zombie as number) * 1000, reviveIntervalMs: (revive as number) * 1000 });
   }
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'home_server_pool')) {
     const refusal = refuseUnknown(section, POOL_KEYS, 'home_server_pool');
@@ -116,7 +130,7 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
       const [address, portText] = host.split(':');
       const secret = value(section, 'secret');
       if (IPAddress.tryParse(address) === null || secret === undefined) return `${located(section)}: Invalid ${hostKey} "${host}" or missing secret for realm ${name}`;
-      const server: HomeServer = { name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000 };
+      const server: HomeServer = { name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000, pingIntervalMs: 30000, zombiePeriodMs: 40000, reviveIntervalMs: 120000 };
       return { name: server.name, type: 'fail-over', servers: [server] };
     };
     const authPool = poolFor('auth_pool', 'authhost', 'auth', 1812);
@@ -131,7 +145,7 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     }
     realms.push({ name, pattern, strip: !section.pairs.some((pair) => pair.name === 'nostrip'), authPool, acctPool });
   }
-  return { realms, instances };
+  return { realms, homeServers: [...homeServers.values()], instances };
 }
 
 export function findRealm(config: ProxyConfig, name: string | null): RealmDefinition | null {

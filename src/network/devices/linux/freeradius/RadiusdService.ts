@@ -33,7 +33,7 @@ import type { RadiusUserResolverContext, AccountingRun } from '@/network/radius/
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
-import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool } from './ProxyConfig';
+import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
 import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
@@ -582,7 +582,7 @@ export class RadiusdService {
       return { result: 'ok', messages };
     }
     messages.push(`${instanceName}: Proxying request from user ${name} to realm ${realm.name}`);
-    const server = this.pickHomeServer(pool);
+    const server = this.pickHomeServer(pool, accounting);
     const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: accounting ? candidate.acctPort ?? candidate.port : candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs });
     const rest = pool.servers.filter((candidate) => candidate !== server);
     this.proxyDecision = {
@@ -592,11 +592,31 @@ export class RadiusdService {
     return { result: 'updated', messages };
   }
 
-  private pickHomeServer(pool: HomePool) {
-    if (pool.type === 'fail-over') return pool.servers[0];
+  private homeStateOf(server: HomeServer, accounting: boolean) {
+    return this.radiusServer.homeServerState(server.address, accounting ? server.acctPort ?? server.port : server.port, server);
+  }
+
+  private pickHomeServer(pool: HomePool, accounting: boolean): HomeServer {
+    const usable = pool.servers.filter((server) => this.homeStateOf(server, accounting).state !== 'dead');
+    const candidates = usable.length > 0 ? usable : pool.servers;
+    if (pool.type === 'fail-over') return candidates[0];
     const turn = this.proxyRotation.get(pool.name) ?? 0;
     this.proxyRotation.set(pool.name, turn + 1);
-    return pool.servers[turn % pool.servers.length];
+    return candidates[turn % candidates.length];
+  }
+
+  homeServerListing(all: boolean): string[] {
+    const lines: string[] = [];
+    for (const server of this.proxyConfig.homeServers) {
+      const entries: Array<{ port: number; type: string }> = server.type === 'auth+acct'
+        ? [{ port: server.port, type: 'auth+acct' }, { port: server.port + 1, type: 'acct' }]
+        : [{ port: server.port, type: server.type }];
+      for (const entry of entries) {
+        const { state, outstanding } = this.radiusServer.homeServerState(server.address, entry.port, server);
+        lines.push(`${server.address}\t${entry.port}\tudp\t${entry.type}\t${state}\t${outstanding}${all ? `\t(name=${server.name}, dynamic=no)` : ''}`);
+      }
+    }
+    return lines;
   }
 
   private confReader(): ConfFileReader {

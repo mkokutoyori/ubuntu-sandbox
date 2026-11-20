@@ -44,6 +44,7 @@ export interface RadiusdCommandPort {
   controlSocketPaths(): readonly string[];
   configuredControlSockets(): readonly string[];
   clientListing(verbose: boolean): string[];
+  homeServerListing(all: boolean): string[];
 }
 
 export interface LinuxCommandContext {
