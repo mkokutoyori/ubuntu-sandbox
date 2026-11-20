@@ -32,6 +32,7 @@ import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from '.
 import type { RadiusUserResolverContext, AccountingRun } from '@/network/radius/RadiusServerAgent';
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
+import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
@@ -350,11 +351,24 @@ export class RadiusdService {
         return { result: 'noop', messages: [] };
       },
     };
-    const lines: string[] = [];
-    const preacct = run(pipeline?.preacct ?? DEFAULT_PREACCT_PROGRAM, context, host, lines, 3);
-    if (preacct.result === 'reject' || preacct.result === 'fail') return false;
-    run(pipeline?.accounting ?? DEFAULT_ACCOUNTING_PROGRAM, context, host, lines, 3);
-    return true;
+    const server = this.portServers.get(info.destinationPort) ?? 'default';
+    const lines: string[] = [`Virtual server ${server} received request`, ...info.packet.attributes.map((attribute) => `  ${formatRadiusAttribute(attribute)}`), `server ${server} {`];
+    const place = (section: ProcessingSection): string => {
+      const location = pipeline?.locations.get(section);
+      return location === undefined ? '' : ` from file ${location.file} line ${location.line}`;
+    };
+    const runSection = (section: ProcessingSection, program: readonly Statement[]) => {
+      lines.push(`  # Executing section ${section}${place(section)}`, `    ${section} {`);
+      const outcome = run(program, context, host, lines, 3);
+      lines.push(`    } # ${section} = ${outcome.result}`);
+      return outcome;
+    };
+    const preacct = runSection('preacct', pipeline?.preacct ?? DEFAULT_PREACCT_PROGRAM);
+    const rejected = preacct.result === 'reject' || preacct.result === 'fail';
+    if (!rejected) runSection('accounting', pipeline?.accounting ?? DEFAULT_ACCOUNTING_PROGRAM);
+    lines.push(`} # server ${server}`, 'Virtual server sending reply');
+    this.radiusServer.emitDebugLines(lines);
+    return !rejected;
   }
 
   private boundPorts: number[] = [];

@@ -355,6 +355,8 @@ export class RadiusServerAgent {
 
   setDebugEmit(emit: ((number: number, lines: string[]) => void) | null): void { this.debugEmit = emit; }
 
+  emitDebugLines(lines: string[]): void { this.debugEmit?.(this.requestNumber, lines); }
+
   setDebugBuilder(builder: ((info: RequestDebugInfo) => string[]) | null): void { this.debugBuilder = builder; }
 
   loginTimeOutcome(user: RadiusUser | undefined): { result: 'noop' | 'ok' | 'updated' | 'userlock'; secondsLeft: number } {
