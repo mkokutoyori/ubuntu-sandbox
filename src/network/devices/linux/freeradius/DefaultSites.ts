@@ -145,3 +145,5 @@ export const STATUS_SITE = [
   "}",
   "",
 ].join('\n');
+
+export const CONTROL_SOCKET_SITE = ['listen {', '\ttype = control', '\tsocket = ${run_dir}/${name}.sock', '}', ''].join('\n');

@@ -28,7 +28,7 @@ import { formatRadiusAttribute } from '../radius/attributeText';
 import { RADIUS_PACKET_NAME } from '../radius/types';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
 import { DEFAULT_RADIUSD_CONF, DEFAULT_PROXY_CONF } from './linux/freeradius/DefaultRadiusdConf';
-import { DEFAULT_SITE, STATUS_SITE } from './linux/freeradius/DefaultSites';
+import { DEFAULT_SITE, STATUS_SITE, CONTROL_SOCKET_SITE } from './linux/freeradius/DefaultSites';
 import { DEFAULT_PREPROCESS_MODULE, DEFAULT_HINTS, DEFAULT_HUNTGROUPS } from './linux/freeradius/DefaultPreprocess';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
@@ -296,6 +296,7 @@ export class LinuxServer extends LinuxMachine {
     for (const folder of [available, enabled]) if (!this.executor.vfs.exists(folder)) this.executor.vfs.mkdirp(folder, 0o755, 0, 0);
     if (!this.executor.vfs.exists(`${available}/default`)) this.executor.vfs.writeFile(`${available}/default`, DEFAULT_SITE, 0, 0, 0o022);
     if (!this.executor.vfs.exists(`${available}/status`)) this.executor.vfs.writeFile(`${available}/status`, STATUS_SITE, 0, 0, 0o022);
+    if (!this.executor.vfs.exists(`${available}/control-socket`)) this.executor.vfs.writeFile(`${available}/control-socket`, CONTROL_SOCKET_SITE, 0, 0, 0o022);
     if (!this.executor.vfs.exists(`${enabled}/default`)) this.executor.vfs.createSymlink(`${enabled}/default`, '../sites-available/default', 0, 0);
     if (!this.executor.vfs.exists(RADIUSD_CONF_PATH)) {
       this.executor.vfs.writeFile(RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF, 0, 0, 0o022);

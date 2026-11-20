@@ -18,10 +18,11 @@ export interface ListenerSpec {
 export interface SiteConfig {
   readonly listeners: ListenerSpec[];
   readonly serverClients: ReadonlyMap<string, RadiusClientEntry[]>;
+  readonly controlSockets: readonly string[];
 }
 
 const SUPPORTED_TYPES = new Set<string>(['auth', 'acct', 'auth+acct', 'status']);
-const KNOWN_UNMODELLED_TYPES = new Set(['auth+coa', 'auth+acct+coa', 'detail', 'proxy', 'vmps', 'dhcp', 'control', 'coa']);
+const KNOWN_UNMODELLED_TYPES = new Set(['auth+coa', 'auth+acct+coa', 'detail', 'proxy', 'vmps', 'dhcp', 'coa']);
 const DEFAULT_PORT: Record<ListenerType, number> = { auth: UDP_PORT_RADIUS_AUTH, acct: UDP_PORT_RADIUS_ACCT, 'auth+acct': UDP_PORT_RADIUS_AUTH, status: UDP_PORT_RADIUS_AUTH };
 
 export function defaultListeners(): ListenerSpec[] {
@@ -33,9 +34,29 @@ function pairValue(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
 }
 
+const CONTROL_KEYS = new Set(['type', 'socket', 'mode']);
+
+function readControlSocket(section: ConfSection): string | { error: string } {
+  const where = `${section.file}[${section.line}]`;
+  for (const pair of section.pairs) {
+    if (!CONTROL_KEYS.has(pair.name)) return { error: `${pair.file}[${pair.line}]: The control listener setting "${pair.name}" is not implemented in this simulator` };
+  }
+  const mode = pairValue(section, 'mode');
+  if (mode !== undefined && mode !== 'rw' && mode !== 'ro') return { error: `${where}: Invalid value "${mode}" for variable mode` };
+  const path = pairValue(section, 'socket');
+  if (path === undefined || path === '') return { error: `${where}: No "socket" given in control listener` };
+  return path;
+}
+
 export function readSiteConfig(root: ConfSection): SiteConfig | { error: string } {
   const servers = root.sections.filter((section) => section.name1 === 'server');
-  if (servers.length === 0) return { listeners: defaultListeners(), serverClients: new Map() };
+  const controlSockets: string[] = [];
+  for (const section of root.sections.filter((candidate) => candidate.name1 === 'listen' && pairValue(candidate, 'type') === 'control')) {
+    const path = readControlSocket(section);
+    if (typeof path !== 'string') return path;
+    controlSockets.push(path);
+  }
+  if (servers.length === 0) return { listeners: defaultListeners(), serverClients: new Map(), controlSockets };
   const listeners: ListenerSpec[] = [];
   const serverClients = new Map<string, RadiusClientEntry[]>();
   for (const server of servers) {
@@ -44,6 +65,12 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
       if (section.name1 !== 'listen') continue;
       const where = `${section.file}[${section.line}]`;
       const type = pairValue(section, 'type');
+      if (type === 'control') {
+        const path = readControlSocket(section);
+        if (typeof path !== 'string') return path;
+        controlSockets.push(path);
+        continue;
+      }
       if (type === undefined) return { error: `${where}: No type specified in listen section` };
       if (!SUPPORTED_TYPES.has(type)) {
         return {
@@ -73,7 +100,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
     if (own.errors.length > 0) return { error: own.errors[0] };
     if (own.clients.length > 0) serverClients.set(serverName, own.clients);
   }
-  return { listeners: listeners.length === 0 ? defaultListeners() : listeners, serverClients };
+  return { listeners: listeners.length === 0 ? defaultListeners() : listeners, serverClients, controlSockets };
 }
 
 export function listenerAddressText(spec: ListenerSpec): string {

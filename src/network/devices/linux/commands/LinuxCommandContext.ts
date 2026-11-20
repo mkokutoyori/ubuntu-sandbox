@@ -41,6 +41,9 @@ export interface RadiusdCommandPort {
   appendLog(path: string, text: string): void;
   utmpEntries(): RadutmpEntry[];
   listeners(): readonly ListenerSpec[];
+  controlSocketPaths(): readonly string[];
+  configuredControlSockets(): readonly string[];
+  clientListing(verbose: boolean): string[];
 }
 
 export interface LinuxCommandContext {

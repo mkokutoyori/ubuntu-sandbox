@@ -1,0 +1,100 @@
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
+
+const DEFAULT_RADDB = '/etc/freeradius/3.0';
+const REAL_ROOT_WORDS = new Set(['add', 'debug', 'help', 'hup', 'inject', 'set', 'show', 'stats', 'terminate', 'remove', '?']);
+const NOT_MODELLED_OPTIONS = new Set(['D', 'E', 'i', 'n', 's', 'S']);
+const WITH_ARGUMENT = new Set(['d', 'D', 'e', 'f', 'i', 'n', 's']);
+
+const USAGE = [
+  'Usage: radmin [ args ]',
+  '  -d raddb_dir    Configuration files are in "raddbdir/*".',
+  '  -e command      Execute \'command\' and then exit.',
+  '  -f socket_file  Open socket_file directly, without reading radius.conf',
+  '  -h              Print usage help information.',
+  '  -q              Quiet mode.',
+  '  -v              Print version information.',
+].join('\n');
+
+function commandOutput(ctx: LinuxCommandContext, command: string): { text: string; failed: boolean } {
+  const words = command.trim().split(/\s+/).filter((word) => word !== '');
+  if (words.length === 0) return { text: '', failed: false };
+  if (words[0] === 'exit' || words[0] === 'quit') return { text: '', failed: false };
+  if (words[0] === 'show' && words[1] === 'client' && words[2] === 'list') {
+    const rest = words.slice(3);
+    if (rest.length === 0) return { text: ctx.radiusd!.clientListing(false).join('\n'), failed: false };
+    if (rest.length > 1) return { text: `ERROR: Unknown command ${rest[0]} ${rest[1]} ...`, failed: true };
+    if (rest[0] !== 'verbose') return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };
+    return { text: ctx.radiusd!.clientListing(true).join('\n'), failed: false };
+  }
+  if (REAL_ROOT_WORDS.has(words[0])) return { text: `ERROR: The command '${command.trim()}' is not implemented in this simulator`, failed: true };
+  return { text: `ERROR: Unknown command '${words[0]}'`, failed: true };
+}
+
+async function runRadmin(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+  if (!ctx.radiusd) return { output: 'radmin: command not found', exitCode: 127 };
+  const values = new Map<string, string>();
+  const flags = new Set<string>();
+  for (let index = 0; index < args.length; index++) {
+    const token = args[index];
+    if (!token.startsWith('-') || token === '-') return { output: USAGE, exitCode: 1 };
+    for (let position = 1; position < token.length; position++) {
+      const letter = token[position];
+      if (WITH_ARGUMENT.has(letter)) {
+        const rest = token.slice(position + 1);
+        const value = rest !== '' ? rest : args[++index];
+        if (value === undefined) return { output: USAGE, exitCode: 1 };
+        values.set(letter, value);
+        break;
+      }
+      if (letter !== 'h' && letter !== 'q' && letter !== 'v') return { output: USAGE, exitCode: 1 };
+      flags.add(letter);
+    }
+  }
+  if (flags.has('h')) return { output: USAGE, exitCode: 0 };
+  if (flags.has('v')) return { output: 'radmin version 3.2.11', exitCode: 0 };
+  for (const letter of NOT_MODELLED_OPTIONS) {
+    if (values.has(letter)) return { output: `radmin: -${letter} is not implemented in this simulator`, exitCode: 1 };
+  }
+  if (values.has('d') && values.has('f')) return { output: 'radmin: -d and -f cannot be used together.', exitCode: 1 };
+  let socket = values.get('f');
+  if (socket === undefined) {
+    const directory = values.get('d') ?? DEFAULT_RADDB;
+    if (directory !== DEFAULT_RADDB) return { output: `radmin: -d ${directory} is not implemented in this simulator: only ${DEFAULT_RADDB} is read`, exitCode: 1 };
+    const configured = ctx.radiusd.configuredControlSockets();
+    if (configured.length === 0) return { output: `radmin: Could not find control socket in ${DEFAULT_RADDB}/radiusd.conf`, exitCode: 1 };
+    socket = configured[0];
+  }
+  const command = values.get('e');
+  if (command === undefined) return { output: 'radmin: interactive mode is not implemented in this simulator; use -e command', exitCode: 1 };
+  if (!ctx.radiusd.controlSocketPaths().includes(socket)) {
+    return {
+      output: [`radmin: Failed connecting to ${socket}: No such file or directory`, 'Perhaps you need to run the commands:\tcd /etc/raddb', '\tln -s sites-available/control-socket sites-enabled/control-socket', 'and then re-start the server?', 'Failed to connect to server'].join('\n'),
+      exitCode: 1,
+    };
+  }
+  const result = commandOutput(ctx, command);
+  return { output: result.text, exitCode: result.failed ? 1 : 0 };
+}
+
+export const radminCommand: LinuxCommand = {
+  name: 'radmin',
+  package: 'freeradius',
+  needsNetworkContext: true,
+  manSection: 8,
+  usage: '[ args ]',
+  help: 'FreeRADIUS server administration tool, over the control socket.',
+  options: [
+    { flag: '-d', description: 'Configuration files are in "raddbdir/*".', takesArg: true, argName: 'raddb_dir' },
+    { flag: '-e', description: "Execute 'command' and then exit.", takesArg: true, argName: 'command' },
+    { flag: '-f', description: 'Open socket_file directly, without reading radius.conf', takesArg: true, argName: 'socket_file' },
+    { flag: '-q', description: 'Quiet mode.' },
+    { flag: '-v', description: 'Print version information.' },
+  ],
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    return (await runRadmin(ctx, args)).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return runRadmin(ctx, args);
+  },
+};

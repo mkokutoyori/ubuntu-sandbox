@@ -68,6 +68,7 @@ import { tcCommand } from './net/Tc';
 import { radtestCommand } from './net/Radtest';
 import { radclientCommand } from './net/Radclient';
 import { radwhoCommand } from './net/Radwho';
+import { radminCommand } from './net/Radmin';
 import { freeradiusCommand } from './net/Freeradius';
 import { tcpdumpCommand } from './net/Tcpdump';
 import { tcpreplayCommand } from './net/Tcpreplay';
@@ -234,6 +235,7 @@ export {
   radtestCommand,
   radclientCommand,
   radwhoCommand,
+  radminCommand,
   freeradiusCommand,
   tcpdumpCommand,
   tcpreplayCommand,
@@ -419,6 +421,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   radtestCommand,
   radclientCommand,
   radwhoCommand,
+  radminCommand,
   freeradiusCommand,
   tcpdumpCommand,
   tcpreplayCommand,

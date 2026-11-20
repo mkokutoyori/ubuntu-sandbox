@@ -73,6 +73,7 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
     result.clients.push({
       name: longname,
       shortname: pair(section, 'shortname') ?? name2,
+      section: name2,
       address: spec.address,
       prefix: spec.prefix,
       secret,

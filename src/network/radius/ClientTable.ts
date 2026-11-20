@@ -5,6 +5,7 @@ export type MessageAuthenticatorPolicy = 'yes' | 'no' | 'auto';
 export interface RadiusClientEntry {
   readonly name: string;
   readonly shortname: string;
+  readonly section?: string;
   readonly address: IPAddress;
   readonly prefix: number;
   readonly secret: string;

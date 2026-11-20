@@ -135,6 +135,25 @@ export class RadiusdService {
     return this.running;
   }
 
+  controlSocketPaths(): readonly string[] {
+    return this.running ? this.controlSockets : [];
+  }
+
+  configuredControlSockets(): readonly string[] {
+    const loaded = this.loadConfig();
+    return loaded.ok ? loaded.site.controlSockets : [];
+  }
+
+  clientListing(verbose: boolean): string[] {
+    const entries = this.radiusServer.clientTable.list();
+    const address = (entry: RadiusClientEntry) => entry.prefix === 32 ? entry.address.toString() : `${entry.address.toString()}/${entry.prefix}`;
+    if (!verbose) return entries.map(address);
+    return entries.flatMap((entry, index) => [
+      `client ${entry.section ?? entry.shortname} {`, `\tipaddr = ${address(entry)}`, '\tproto = *', `\tsecret = ${entry.secret}`, `\tlongname = ${entry.name}`,
+      `\tshortname = ${entry.shortname}`, ...(entry.nasType === '' ? [] : [`\tnas_type = ${entry.nasType}`]), `\tnumber = ${index}`, '\tglobal = yes', '}',
+    ]);
+  }
+
   checkConfig(): OperationResult {
     const loaded = this.loadConfig();
     return loaded.ok ? { ok: true } : loaded;
@@ -186,6 +205,7 @@ export class RadiusdService {
     if (this.running) return { ok: true };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
+    this.controlSockets = loaded.site.controlSockets;
     const specs: ListenerSpec[] = listen.authPort === undefined ? loaded.site.listeners : [
       { type: 'auth', address: listen.address ?? null, port: listen.authPort, server: 'default', file: '', line: 0 },
       { type: 'acct', address: listen.address ?? null, port: listen.authPort + 1, server: 'default', file: '', line: 0 },
@@ -273,6 +293,7 @@ export class RadiusdService {
 
   private pipelines = new Map<string, Pipeline>();
   private proxyConfig: ProxyConfig = NO_PROXY;
+  private controlSockets: readonly string[] = [];
   private proxyDecision: RadiusUser['proxy'] | null = null;
   private proxyRotation = new Map<string, number>();
   private portServers = new Map<number, string>();
