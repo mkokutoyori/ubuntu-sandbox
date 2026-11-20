@@ -36,4 +36,8 @@ export const DEFAULT_RADIUSD_CONF = [
   '',
   '$INCLUDE sites-enabled/',
   '',
+  '$INCLUDE proxy.conf',
+  '',
 ].join('\n');
+
+export const DEFAULT_PROXY_CONF = ['realm LOCAL {', '}', ''].join('\n');

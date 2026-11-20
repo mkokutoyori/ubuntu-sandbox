@@ -32,6 +32,7 @@ import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from '.
 import type { RadiusUserResolverContext, AccountingRun } from '@/network/radius/RadiusServerAgent';
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
+import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
 import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
@@ -95,7 +96,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; files: readonly string[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; files: readonly string[] }
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
@@ -271,6 +272,9 @@ export class RadiusdService {
   appendLog(path: string, text: string): void { this.files.append(path, text); }
 
   private pipelines = new Map<string, Pipeline>();
+  private proxyConfig: ProxyConfig = NO_PROXY;
+  private proxyDecision: RadiusUser['proxy'] | null = null;
+  private proxyRotation = new Map<string, number>();
   private portServers = new Map<number, string>();
 
   private sectionPresent(port: number, section: ProcessingSection, module: string): boolean {
@@ -411,6 +415,7 @@ export class RadiusdService {
     const program: readonly Statement[] = pipeline?.authorize ?? DEFAULT_AUTHORIZE_PROGRAM;
     const context = newContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' }, this.wallClock.nowMs());
     this.lastContext = context;
+    this.proxyDecision = null;
     const lines: string[] = [];
     const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
     const outcome = run(program, context, host, lines, 3);
@@ -418,6 +423,7 @@ export class RadiusdService {
     const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : null;
     this.lastResolution = { lines, result: outcome.result, authType: trace };
     if (outcome.result === 'reject' || authType === 'reject') return undefined;
+    if (this.proxyDecision !== null && this.proxyDecision !== undefined) return { username, password: '', proxy: this.proxyDecision };
     const known = knownGoodPassword(context.knownGood);
     const acceptAny = authType === 'accept';
     if (known === null && !acceptAny) return undefined;
@@ -469,6 +475,7 @@ export class RadiusdService {
       context.reply.push(...match.reply);
       return { result: 'ok', messages };
     }
+    if (name === 'suffix' || name === 'ntdomain') return this.runRealmModule(name, context);
     if (name === 'logintime') {
       const loginTime = context.control.get('login-time');
       if (loginTime === undefined) return { result: 'noop', messages };
@@ -496,6 +503,58 @@ export class RadiusdService {
     return { result: 'noop', messages };
   }
 
+  private runRealmModule(instanceName: string, context: UnlangContext): ModuleOutcome {
+    const messages: string[] = [];
+    const format: RadiusFormat = this.proxyConfig.instances.get(instanceName) ?? (instanceName === 'ntdomain' ? { format: 'prefix', delimiter: '\\', ignoreDefault: false, ignoreNull: false } : { format: 'suffix', delimiter: '@', ignoreDefault: false, ignoreNull: false });
+    if (context.overlay.has('realm')) {
+      messages.push(`${instanceName}: Request already has destination realm set.  Ignoring`);
+      return { result: 'noop', messages };
+    }
+    const name = context.username;
+    const position = format.format === 'suffix' ? name.lastIndexOf(format.delimiter) : name.indexOf(format.delimiter);
+    let realmName: string | null = null;
+    let local = name;
+    if (position >= 0) {
+      realmName = format.format === 'suffix' ? name.slice(position + 1) : name.slice(0, position);
+      local = format.format === 'suffix' ? name.slice(0, position) : name.slice(position + 1);
+      messages.push(`${instanceName}: Looking up realm "${realmName}" for User-Name = "${name}"`);
+    } else {
+      messages.push(`${instanceName}: No '${format.delimiter}' in User-Name = "${name}", looking up realm NULL`);
+    }
+    if (realmName === null && format.ignoreNull) return { result: 'noop', messages };
+    const realm = findRealm(this.proxyConfig, realmName);
+    if (realm === null) {
+      messages.push(`${instanceName}: No such realm "${realmName ?? 'NULL'}"`);
+      return { result: 'noop', messages };
+    }
+    messages.push(`${instanceName}: Found realm "${realm.name}"`);
+    if (realm.strip && position >= 0) {
+      context.strippedName = local;
+      context.overlay.set('stripped-user-name', local);
+      messages.push(`${instanceName}: Adding Stripped-User-Name = "${local}"`);
+    }
+    context.overlay.set('realm', realm.name);
+    messages.push(`${instanceName}: Adding Realm = "${realm.name}"`);
+    if (realm.authPool === null) {
+      messages.push(`${instanceName}: Authentication realm is LOCAL`);
+      return { result: 'ok', messages };
+    }
+    messages.push(`${instanceName}: Proxying request from user ${name} to realm ${realm.name}`);
+    const server = this.pickHomeServer(realm.authPool);
+    this.proxyDecision = {
+      realm: realm.name, forwardName: realm.strip && position >= 0 ? local : name,
+      homeServerIp: server.address, homePort: server.port, homeSecret: server.secret, timeoutMs: server.responseWindowMs,
+    };
+    return { result: 'updated', messages };
+  }
+
+  private pickHomeServer(pool: HomePool) {
+    if (pool.type === 'fail-over') return pool.servers[0];
+    const turn = this.proxyRotation.get(pool.name) ?? 0;
+    this.proxyRotation.set(pool.name, turn + 1);
+    return pool.servers[turn % pool.servers.length];
+  }
+
   private confReader(): ConfFileReader {
     const read = ((path: string) => this.files.read(path)) as ConfFileReader;
     read.list = (path) => this.files.list?.(path) ?? null;
@@ -520,6 +579,8 @@ export class RadiusdService {
     if ('error' in preprocess) return { ok: false, error: preprocess.error };
     const pipelines = readPipelines(main.root);
     if ('error' in pipelines) return { ok: false, error: pipelines.error };
+    const proxy = readProxyConfig(main.root);
+    if ('error' in proxy) return { ok: false, error: proxy.error };
     const clientsSource = this.files.read(clientsPath);
     if (clientsSource === null) return { ok: false, error: `open: ${clientsPath}: file not found` };
     const usersSource = this.files.read(usersPath);
@@ -528,13 +589,14 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, files: main.files };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, files: main.files };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline> }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig }): void {
     this.logConfig = loaded.log;
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
+    this.proxyConfig = loaded.proxy;
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
     this.radiusServer.setPostAuthHook((info) => this.runPostAuth(info.port, info.accepted, info.userReply));
     this.radiusServer.setDebugBuilder((info) => requestDebugLines({

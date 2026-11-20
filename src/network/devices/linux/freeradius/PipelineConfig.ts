@@ -19,9 +19,9 @@ export interface Pipeline {
 }
 
 const SECTION_NAMES: readonly ProcessingSection[] = ['authorize', 'authenticate', 'preacct', 'accounting', 'session', 'post-auth'];
-const IMPLEMENTED_MODULES = new Set(['preprocess', 'chap', 'mschap', 'eap', 'files', 'pap', 'logintime', 'detail', 'radutmp', 'acct_unique', 'ok', 'noop', 'reject']);
+const IMPLEMENTED_MODULES = new Set(['preprocess', 'chap', 'mschap', 'eap', 'files', 'pap', 'logintime', 'detail', 'radutmp', 'acct_unique', 'suffix', 'ntdomain', 'ok', 'noop', 'reject']);
 const REAL_MODULES_NOT_IMPLEMENTED = new Set([
-  'filter_username', 'digest', 'suffix', 'realm', 'ntlm_auth', 'sql', 'ldap', 'expiration', 'unix', 'exec', 'attr_filter', 'linelog',
+  'filter_username', 'digest', 'realm', 'ntlm_auth', 'sql', 'ldap', 'expiration', 'unix', 'exec', 'attr_filter', 'linelog',
   'always', 'cache', 'passwd', 'perl', 'python', 'rest', 'sqlippool', 'radrelay', 'dhcp', 'counter', 'sradutmp', 'replicate', 'wimax',
   'krb5', 'pam', 'opendirectory', 'smbpasswd', 'etc_group', 'soh', 'sqlcounter', 'utf8', 'expr', 'date', 'delay', 'dynamic_clients',
   'echo', 'mac2ip', 'mac2vlan', 'ippool', 'ntlm', 'otp', 'smsotp', 'yubikey', 'fail', 'handled', 'invalid', 'notfound', 'reject_if_eap',

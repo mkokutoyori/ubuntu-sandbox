@@ -218,6 +218,7 @@ export interface RadiusUser {
   replyAttributes?: RadiusAttribute[];
   /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
   challenge?: { prompt: string };
+  proxy?: { realm: string; forwardName: string; homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number };
 }
 
 export interface RadiusAttributePolicy {
