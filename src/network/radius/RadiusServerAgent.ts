@@ -684,8 +684,8 @@ export class RadiusServerAgent {
 
     const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes, listenPort: this.servedPort ?? this.config.port, packet: { sourceIp: senderIp, sourcePort: udp.sourcePort, destinationIp: srcIpOfPort(this.host.getPort(inPort)), destinationPort: udp.destinationPort, type: RADIUS_PACKET_NAME[payload.code], authenticator: payload.authenticator } });
     if (resolved?.proxy !== undefined) {
-      const { realm: proxiedRealm, forwardName, ...route } = resolved.proxy;
-      this.forwardToRealm(inPort, srcIp, udp.sourcePort, payload, forwardName, proxiedRealm, route, dedupKey);
+      const { realm: proxiedRealm, forwardName, fallbacks, ...route } = resolved.proxy;
+      this.forwardToRealm(inPort, srcIp, udp.sourcePort, payload, forwardName, proxiedRealm, route, dedupKey, fallbacks);
       return;
     }
     const loginTime = this.loginTimeVerdict(resolved);
@@ -1267,7 +1267,7 @@ export class RadiusServerAgent {
   /** RFC 2607 — forward this Access-Request to the realm's home server, tracking it under our own identifier space. */
   private forwardToRealm(
     inPort: string, nasIp: IPAddress, nasPort: number, request: RadiusPacket,
-    username: string, realm: string, route: RealmRoute, dedupKey: string,
+    username: string, realm: string, route: RealmRoute, dedupKey: string, fallbacks: readonly RealmRoute[] = [],
   ): void {
     const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
     if (!homeSrcIp) {
@@ -1307,6 +1307,7 @@ export class RadiusServerAgent {
 
     const timer = this.getScheduler().setTimeout(() => {
       this.pendingProxy.delete(outIdentifier);
+      if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1));
     }, route.timeoutMs);
 
     this.pendingProxy.set(outIdentifier, {

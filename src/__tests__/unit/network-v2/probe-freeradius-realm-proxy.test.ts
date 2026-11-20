@@ -114,4 +114,10 @@ describe('proxy.conf and the realm modules', () => {
     const { started } = await lab(HOME_POOL().replace('secret = homesecret', ''));
     expect(started).toContain('No shared secret defined for home server home1');
   });
+
+  it('fail-over: a home server that never answers is replaced by the next of the pool after response_window', async () => {
+    const dead = 'home_server dead {\n  ipaddr = 10.0.0.9\n  secret = x\n  response_window = 1\n}\n';
+    const { client } = await lab(dead + HOME_POOL().replace('home_server = home1', 'home_server = dead\n  home_server = home1'));
+    expect(await client.executeCommand(`printf 'User-Name = "alice@example.com"\\nUser-Password = "wonderland"\\n' | radclient -r 3 -t 2 10.0.0.2 auth shared`)).toContain('Access-Accept');
+  });
 });
