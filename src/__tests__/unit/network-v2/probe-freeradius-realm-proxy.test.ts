@@ -7,8 +7,8 @@
  * The Access-Request is relayed over a real UDP exchange to the home server, which authenticates with its own clients.conf secret.
  * Keys the simulator cannot honour (proto tcp, status_check, ...) are refused naming them, never ignored.
  *
- * Discriminated with git stash on src: all 10 cases fall before the fix, the witness included, because the lab's authorize names
- * the suffix module (refused as not implemented, so the daemon never starts) and proxy.conf is never read. The witness still proves
+ * Discriminated with git stash on src: the first 10 cases fall before the realm change, the witness included; the fail-over case and the default-site case each fall on the commit before theirs; because proxy.conf is never read
+ * and the shipped default site (which now calls suffix after mschap, as the 3.2 site does) refuses nothing but resolves no realm. The witness still proves
  * the lab is sound after the fix: a LOCAL realm authenticates on the edge and the home server is not asked.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -31,7 +31,7 @@ const PROXY = '/etc/freeradius/3.0/proxy.conf';
 
 const HOME_POOL = (extra = '') => `home_server home1 {\n  ipaddr = 10.0.0.3\n  port = 1812\n  secret = homesecret\n  ${extra}\n}\nhome_server_pool pool1 {\n  home_server = home1\n}\nrealm example.com {\n  auth_pool = pool1\n}\nrealm LOCAL {\n}\n`;
 
-async function lab(proxyConf: string, authorizeModule = 'suffix') {
+async function lab(proxyConf: string, authorizeModule = '') {
   const bus = new EventBus();
   const client = new LinuxServer('linux-server', 'CLIENT');
   const edge = new LinuxServer('linux-server', 'EDGE');
@@ -49,7 +49,7 @@ async function lab(proxyConf: string, authorizeModule = 'suffix') {
   write(home, CLIENTS_CONF_PATH, 'client edge {\n  ipaddr = 10.0.0.2\n  secret = homesecret\n}\n');
   write(home, USERS_FILE_PATH, 'alice Cleartext-Password := "wonderland"\nbob Cleartext-Password := "homebob"\n');
   write(edge, PROXY, proxyConf);
-  write(edge, SITE, (vfsOf(edge).readFile(SITE) ?? '').replace('\tauthorize {\n\t\tpreprocess\n', `\tauthorize {\n\t\tpreprocess\n\t\t${authorizeModule}\n`));
+  if (authorizeModule !== '') write(edge, SITE, (vfsOf(edge).readFile(SITE) ?? '').replace('\tauthorize {\n\t\tpreprocess\n', `\tauthorize {\n\t\tpreprocess\n\t\t${authorizeModule}\n`));
   await home.executeCommand('systemctl restart freeradius');
   const started = await edge.executeCommand('systemctl restart freeradius');
   return { client, edge, home, started };
@@ -59,6 +59,13 @@ const request = (user: string, password: string) =>
   `printf 'User-Name = "${user}"\\nUser-Password = "${password}"\\n' | radclient -r 1 10.0.0.2 auth shared`;
 
 describe('proxy.conf and the realm modules', () => {
+  it('the shipped default site calls suffix after mschap, so no edit of the site is needed to proxy', async () => {
+    const { edge } = await lab(HOME_POOL());
+    const text = await edge.executeCommand('cat /etc/freeradius/3.0/sites-available/default');
+    expect(text.indexOf('\t\tsuffix')).toBeGreaterThan(text.indexOf('\t\tmschap'));
+    expect(text.indexOf('\t\tsuffix')).toBeLessThan(text.indexOf('\t\teap'));
+  });
+
   it('witness: a name in the LOCAL realm is authenticated by the edge itself', async () => {
     const { client } = await lab(HOME_POOL());
     expect(await client.executeCommand(request('bob@local.test', 'local'))).toContain('Access-Reject');

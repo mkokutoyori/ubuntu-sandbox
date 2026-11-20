@@ -75,6 +75,7 @@ export const DEFAULT_SITE = [
   "\t\tpreprocess",
   "\t\tchap",
   "\t\tmschap",
+  "\t\tsuffix",
   "\t\teap",
   "\t\tfiles",
   "\t\tlogintime",
