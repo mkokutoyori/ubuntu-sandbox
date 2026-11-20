@@ -149,6 +149,7 @@ export interface RequestDebugInfo {
   receivedLines: string[];
   replyLines: string[];
   postAuthLines: string[];
+  eap?: { lines: string[]; result: 'ok' | 'handled' | 'reject' };
 }
 
 export interface AccountingRun {
@@ -375,13 +376,14 @@ export class RadiusServerAgent {
     return { result: verdict.secondsLeft > 0 ? 'updated' : 'ok', secondsLeft: verdict.secondsLeft };
   }
 
-  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[]): void {
+  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[], eap?: RequestDebugInfo['eap']): void {
     if (this.debugEmit === null || this.debugBuilder === null) return;
     const lineOf = (attribute: RadiusAttribute) => `  ${formatRadiusAttribute(attribute)}`;
     this.debugEmit(this.requestNumber, this.debugBuilder({
       port: this.servedPort ?? this.config.port, request, username, user, accepted,
       receivedLines: this.displayAttributes(request, srcIp, true).map(lineOf),
       replyLines: finalReply.map(lineOf), postAuthLines,
+      ...(eap === undefined ? {} : { eap }),
     }));
   }
 
@@ -914,6 +916,8 @@ export class RadiusServerAgent {
    * structurally CHAP (RFC 3748 §4.2) — the challenge/response math is
    * shared with `passwords.ts` via `eap.ts`'s wrappers.
    */
+  private eapTrace: RequestDebugInfo['eap'] | null = null;
+
   private handleEapRequest(
     inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
     username: string, user: RadiusUser | undefined, dedupKey: string,
@@ -947,6 +951,10 @@ export class RadiusServerAgent {
         type: 'eap', code: 'request', identifier: eapIdentifier,
         eapType: 'md5-challenge', md5Challenge: challengeHex,
       };
+      this.eapTrace = { result: 'handled', lines: [
+        'eap: Peer sent packet with method EAP Identity (1)', 'eap: Calling submodule eap_md5 to process data', 'eap_md5: Issuing MD5 Challenge',
+        `eap: Sending EAP Request (code 1) ID ${eapIdentifier} length 22`, `eap: EAP session adding &reply:State = 0x${state.slice(0, 16)}`,
+      ] };
       this.replyEapChallenge(inPort, dstIp, clientPort, request, eapRequest, state, dedupKey);
       return;
     }
@@ -959,6 +967,10 @@ export class RadiusServerAgent {
       const accepted = sessionOk && !!user && !!eap.md5Response
         && verifyEapMd5Response(eap.identifier, eap.md5Response, user.password, session!.challengeHex);
       if (!accepted) this.publishRejected(dstIp.toString(), username, !user ? 'unknown-user' : 'bad-password');
+      this.eapTrace = { result: accepted ? 'ok' : 'reject', lines: [
+        `eap: Previous EAP request found for state 0x${incomingState.slice(0, 16)}, released from the list`, 'eap: Peer sent packet with method EAP MD5 (4)',
+        'eap: Calling submodule eap_md5 to process data', `eap: Sending EAP ${accepted ? 'Success (code 3)' : 'Failure (code 4)'} ID ${eap.identifier} length 4`, 'eap: Freeing handler',
+      ] };
       this.replyEap(
         inPort, dstIp, clientPort, request,
         { type: 'eap', code: accepted ? 'success' : 'failure', identifier: eap.identifier },
@@ -1134,6 +1146,9 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: null,
       },
     });
+    const challengeTrace = this.eapTrace;
+    this.eapTrace = null;
+    this.emitRequestDebug(request, dstIp, String(getAttr(request, 'user-name')?.value ?? ''), undefined, false, [], response.attributes, challengeTrace ?? undefined);
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap', `${this.host.name}: ${dstIp} EAP-Request/MD5-Challenge issued`);
   }
@@ -1172,6 +1187,9 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user?.username ?? null,
       },
     });
+    const finalTrace = this.eapTrace;
+    this.eapTrace = null;
+    this.emitRequestDebug(request, dstIp, user?.username ?? String(getAttr(request, 'user-name')?.value ?? ''), user, accepted, [], response.attributes, finalTrace ?? undefined);
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap',
       `${this.host.name}: ${dstIp} ${response.code} (EAP-${eapResult.code}) for ${user?.username ?? '(unknown)'}`);

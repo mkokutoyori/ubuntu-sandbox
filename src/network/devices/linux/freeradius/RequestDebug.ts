@@ -7,7 +7,7 @@ export type { ModuleResult };
 export interface ResolutionTrace {
   lines: string[];
   result: ModuleResult;
-  authType: 'PAP' | 'CHAP' | 'MS-CHAP' | 'Accept' | null;
+  authType: 'PAP' | 'CHAP' | 'MS-CHAP' | 'EAP' | 'Accept' | null;
 }
 
 export interface DebugInput {
@@ -21,6 +21,7 @@ export interface DebugInput {
   receivedLines: string[];
   replyLines: string[];
   postAuthLines: string[];
+  eap?: { lines: string[]; result: ModuleResult };
 }
 
 const KNOWN_GOOD_NAMES: Record<string, string> = {
@@ -55,6 +56,17 @@ export function requestDebugLines(input: DebugInput): string[] {
     } else if (authType === null) {
       inner('ERROR: No Auth-Type found: rejecting the user via Post-Auth-Type = Reject', 1);
       inner('Failed to authenticate the user', 1);
+    } else if (authType === 'EAP') {
+      inner('Found Auth-Type = eap', 1);
+      if (input.eap !== undefined) {
+        const place = pipeline?.locations.get('authenticate');
+        inner(`# Executing group from file ${place?.file ?? ''} line ${place?.line ?? 0}`.replace(' from file  line 0', ''), 1);
+        inner('authenticate {', 2);
+        for (const text of input.eap.lines) inner(text, 3);
+        inner(`[eap] = ${input.eap.result}`, 3);
+        inner(`} # authenticate = ${input.eap.result}`, 2);
+        if (input.eap.result === 'reject') inner('Failed to authenticate the user', 1);
+      }
     } else {
       inner(`Found Auth-Type = ${authType}`, 1);
       const place = pipeline?.authTypes.get(authType);

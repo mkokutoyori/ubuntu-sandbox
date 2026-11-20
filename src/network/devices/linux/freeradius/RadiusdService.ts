@@ -458,7 +458,7 @@ export class RadiusdService {
     const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
     const outcome = run(program, context, host, lines, 3);
     const authType = context.control.get('auth-type')?.toLowerCase();
-    const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : authType === 'mschap' ? 'MS-CHAP' : null;
+    const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : authType === 'mschap' ? 'MS-CHAP' : authType === 'eap' ? 'EAP' : null;
     this.lastResolution = { lines, result: outcome.result, authType: trace };
     if (outcome.result === 'reject' || authType === 'reject') return undefined;
     if (this.proxyDecision !== null && this.proxyDecision !== undefined) return { username, password: '', proxy: this.proxyDecision };
@@ -496,6 +496,19 @@ export class RadiusdService {
       return { result: present ? 'ok' : 'noop', messages };
     }
     if (name === 'eap') {
+      const eapHex = String(context.request.find((attribute) => attribute.type === 'eap-message')?.value ?? '');
+      if (eapHex.length >= 10) {
+        const code = parseInt(eapHex.slice(0, 2), 16);
+        const codeName = ['', 'Request', 'Response', 'Success', 'Failure'][code];
+        if (codeName !== undefined && codeName !== '') messages.push(`eap: Peer sent EAP ${codeName} (code ${code}) ID ${parseInt(eapHex.slice(2, 4), 16)} length ${parseInt(eapHex.slice(4, 8), 16)}`);
+        if (!context.control.has('auth-type')) context.control.set('auth-type', 'eap');
+        if (code === 2 && eapHex.slice(8, 10) === '01' && !has('state')) {
+          messages.push("eap: EAP-Identity reply, returning 'ok' so we can short-circuit the rest of authorize");
+          return { result: 'ok', messages };
+        }
+        messages.push("eap: No EAP Start, assuming it's an on-going EAP conversation");
+        return { result: 'updated', messages };
+      }
       if (has('eap-message')) return { result: 'ok', messages };
       messages.push('eap: No EAP-Message, not doing EAP');
       return { result: 'noop', messages };
@@ -688,6 +701,7 @@ export class RadiusdService {
       server: this.portServers.get(info.port) ?? 'default', pipeline: this.pipelines.get(this.portServers.get(info.port) ?? 'default'),
       request: info.request, user: info.user, resolution: this.lastResolution, usersPath: this.usersFilePath, accepted: info.accepted,
       receivedLines: info.receivedLines, replyLines: info.replyLines, postAuthLines: info.postAuthLines,
+      ...(info.eap === undefined ? {} : { eap: info.eap }),
     }));
     this.radiusServer.setFeaturePolicy((feature, port) => {
       const both = (name: string) => this.sectionAllows(port, 'authorize', name) && this.sectionAllows(port, 'authenticate', name);

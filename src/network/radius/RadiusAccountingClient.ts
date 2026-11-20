@@ -50,7 +50,7 @@ export interface RawAcctExchange {
   localIp: string;
 }
 
-export type RawRequestCode = 'accounting-request' | 'status-server';
+export type RawRequestCode = 'accounting-request' | 'status-server' | 'access-request';
 
 interface PendingRaw {
   identifier: number;

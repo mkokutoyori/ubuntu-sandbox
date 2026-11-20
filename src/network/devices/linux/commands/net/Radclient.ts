@@ -324,6 +324,9 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   if (command === 'coa' || command === 'disconnect') {
     return runCoa(ctx, packets, command, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') });
   }
+  if (command === 'auth' && packets.every((packet) => packet.pairs.some((pair) => pair.name.toLowerCase() === 'eap-message') && !packet.pairs.some((pair) => /password$/i.test(pair.name)))) {
+    return runRaw(ctx, packets, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') }, 'access-request', null);
+  }
   if (command === 'acct' || command === 'status') {
     const run = { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') };
     return command === 'acct'
