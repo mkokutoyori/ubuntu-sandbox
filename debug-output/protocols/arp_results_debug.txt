@@ -1258,14 +1258,14 @@ Total steps: 339
 
 [232/339] lhq lhq$ arping -c 1 -D -I eth0 10.1.1.11
   ARPING 10.1.1.11 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  2.059ms
+  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  0.855ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [233/339] lhq lhq$ arping -c 2 -I eth0 10.1.1.1
   ARPING 10.1.1.1 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  1.304ms
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.927ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.560ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.405ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1279,14 +1279,14 @@ Total steps: 339
 
 [236/339] lbr lbr$ arping -c 1 -D -I eth0 10.2.2.10
   ARPING 10.2.2.10 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  1.860ms
+  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.541ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [237/339] lbr lbr$ arping -c 2 -I eth0 10.2.2.1
   ARPING 10.2.2.1 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  1.032ms
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.777ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.514ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  1.857ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1300,14 +1300,14 @@ Total steps: 339
 
 [240/339] ldc ldc$ arping -c 1 -D -I eth0 10.3.3.10
   ARPING 10.3.3.10 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.940ms
+  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.509ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [241/339] ldc ldc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.997ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.714ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.421ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.294ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1321,14 +1321,14 @@ Total steps: 339
 
 [244/339] srvdc srvdc$ arping -c 1 -D -I eth0 10.3.3.11
   ARPING 10.3.3.11 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.896ms
+  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.421ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [245/339] srvdc srvdc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.654ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.679ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.322ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.237ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1943,7 +1943,7 @@ Total steps: 339
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.1 0000.0000.0000 GigabitEthernet0/0
   *Jun  6 08:00:00.000: IP ARP: sent rep src 10.1.1.1 0200.0000.0001, dst 10.1.1.10 0200.0000.0047 GigabitEthernet0/0
-  *Jun  6 08:00:00.001: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.11 0000.0000.0000 GigabitEthernet0/0
+  *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.11 0000.0000.0000 GigabitEthernet0/0
 
 [339/339] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled

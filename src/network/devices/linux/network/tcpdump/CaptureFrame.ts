@@ -66,6 +66,8 @@ import { unframeDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
 import { decodeBootp, type BootpInfo } from './TcpdumpBootp';
+import { encodeRadiusPacket } from '@/network/radius/codec';
+import type { RadiusPacket } from '@/network/radius/types';
 import { icmpWireBytes, icmpv6WireBytes, tcpWireBytes, transportChecksum, udpWireBytes, u16, u32, WIRE_PROTOCOLS } from './CaptureWire';
 
 export type CaptureDirection = 'in' | 'out';
@@ -285,6 +287,7 @@ function ripWireBytes(rip: RIPPacket): number[] {
 function appPayloadBytes(payload: unknown): number[] | undefined {
   if ((payload as { type?: string } | null)?.type === 'rip') return ripWireBytes(payload as RIPPacket);
   if ((payload as { type?: string } | null)?.type === 'hsrp' && hsrpIsEncodable(payload as HsrpPacket)) return hsrpPayloadBytes(payload as HsrpPacket);
+  if ((payload as { type?: string } | null)?.type === 'radius') return Array.from(encodeRadiusPacket(payload as RadiusPacket));
   if (payload instanceof DHCPPacket) return Array.from(payload.serialize());
   if (typeof payload === 'string') return Array.from(new TextEncoder().encode(payload));
   if (payload instanceof Uint8Array) return Array.from(payload);
@@ -347,10 +350,13 @@ function synthTcpBytes(seg: TcpSegment, sourceIp: string, destinationIp: string,
 }
 
 function synthUdpBytes(udp: UDPPacket, sourceIp: string, destinationIp: string): number[] {
-  const payload = padTo(appPayloadBytes(udp.payload) ?? [], Math.max(0, udp.length - 8));
+  const application = appPayloadBytes(udp.payload);
+  const radius = (udp.payload as { type?: string } | null)?.type === 'radius' && application !== undefined;
+  const payload = padTo(application ?? [], Math.max(0, udp.length - 8));
+  const length = radius ? payload.length + 8 : udp.length;
   const present = udp.checksum !== 0 || sourceIp.includes(':');
   const corrupt = udp.checksum !== 0 && computeUdpChecksum(udp, sourceIp, destinationIp) !== udp.checksum;
-  return udpWireBytes(udp.sourcePort, udp.destinationPort, udp.length, payload, sourceIp, destinationIp, present, corrupt);
+  return udpWireBytes(udp.sourcePort, udp.destinationPort, length, payload, sourceIp, destinationIp, present, corrupt);
 }
 
 function synthUdpLiteBytes(udp: UDPLitePacket): number[] {
