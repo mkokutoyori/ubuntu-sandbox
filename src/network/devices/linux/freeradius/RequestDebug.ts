@@ -41,7 +41,8 @@ const KNOWN_GOOD_NAMES: Record<string, string> = {
   'crypt-password': 'Crypt-Password', 'password-with-header': 'Password-With-Header',
 };
 
-export function credentialMessages(authType: 'PAP' | 'CHAP', accepted: boolean, userName: string, knownGoodName: string | undefined): string[] {
+export function credentialMessages(authType: 'PAP' | 'CHAP' | 'MS-CHAP', accepted: boolean, userName: string, knownGoodName: string | undefined): string[] {
+  if (authType === 'MS-CHAP') return ['mschap: Creating challenge hash with username: ' + userName, 'mschap: Client is using MS-CHAPv2', accepted ? 'mschap: Adding MS-CHAPv2 MPPE keys' : 'mschap: ERROR: MS-CHAP2-Response is incorrect'];
   if (authType === 'PAP') {
     const name = knownGoodName ?? 'Cleartext-Password';
     const lines = ['pap: Login attempt with password', name === 'Cleartext-Password' ? 'pap: Comparing with "known good" Cleartext-Password' : `pap: Comparing with "known-good" ${name}`];

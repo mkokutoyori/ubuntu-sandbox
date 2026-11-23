@@ -7,7 +7,11 @@
  * attribute) runs in the group, `update control { Auth-Type := Name }` selects a group of the operator's own, `ok` and `reject` are
  * modules, and the trace prints the group with its module lines and its result. A statement directly in authenticate is refused.
  *
- * Discriminated with git stash on src: 6 of 9 fall before the fix; three pass either way and are named: the witness (the default site
+ * Auth-Type MS-CHAP is a program too (four cases) and a group, not the list of module names, decides whether the password is checked
+ * (one case): 2 of those 5 fall on the commit before them (the update reply and the reject of the MS-CHAP group); three pass either way and are
+ * named: the witness, the wrong password (its trace was already printed) and the PAP group with ok (the PAP hook already overrode the list).
+ *
+ * Discriminated with git stash on src: 6 of 9 of the first cases fall before the fix; three pass either way and are named: the witness (the default site
  * accepts and rejects as before), the group file and line of the trace (printed before) and the refusal of an unknown module in a group
  * (the same message on the base).
  */
@@ -70,7 +74,7 @@ const indexOfTrimmed = (lines: string[], text: string) => trim(lines).indexOf(te
 
 const SITE_FILE = '/etc/freeradius/3.0/sites-available/default';
 
-async function withAuthenticate(authorizeExtra: string, authenticate: string, password = 'wonderland') {
+async function withAuthenticate(authorizeExtra: string, authenticate: string, password = 'wonderland', command: string | null = null) {
   const made = await lab();
   const text = vfsOf(made.target).readFile(SITE_FILE) ?? '';
   const edited = text
@@ -80,7 +84,7 @@ async function withAuthenticate(authorizeExtra: string, authenticate: string, pa
   const restarted = await made.target.executeCommand('systemctl restart freeradius');
   const lines: string[] = [];
   made.target.followRadiusDebug((line) => lines.push(line.replace(/^\(\d+\) /, '').trim()));
-  const output = await made.client.executeCommand(`printf 'User-Name = "alice"\\nUser-Password = "${password}"\\n' | radclient -x -r 1 10.0.0.2 auth shared`);
+  const output = await made.client.executeCommand(command ?? `printf 'User-Name = "alice"\\nUser-Password = "${password}"\\n' | radclient -x -r 1 10.0.0.2 auth shared`);
   return { ...made, lines, output, restarted };
 }
 const group = (name: string, body: string) => `\t\tAuth-Type ${name} {\n${body}\t\t}\n`;
@@ -144,3 +148,43 @@ describe('unlang in the authenticate section', () => {
     expect(restarted).toContain('Failed to find module "frobnicate"');
   });
 });
+
+describe('Auth-Type MS-CHAP as a program', () => {
+  const mschap = (password: string) => `radtest -t mschap alice ${password} 10.0.0.2 10 shared`;
+  const msGroup = (body: string) => group('PAP', '\t\t\tpap\n') + group('MS-CHAP', body);
+
+  it('witness: the default MS-CHAP group still accepts the right password, with the module lines of before', async () => {
+    const { output, lines } = await withAuthenticate('', msGroup('\t\t\tmschap\n'), 'x', mschap('wonderland'));
+    expect(output).toContain('Received Access-Accept');
+    expect(lines).toContain('mschap: Adding MS-CHAPv2 MPPE keys');
+    expect(lines).toContain('} # Auth-Type MS-CHAP = ok');
+  });
+
+  it('an update reply written after mschap in the group is sent with the accept', async () => {
+    const { lines } = await withAuthenticate('', msGroup('\t\t\tmschap\n\t\t\tupdate reply {\n\t\t\t\tReply-Message := "from the group"\n\t\t\t}\n'), 'x', mschap('wonderland'));
+    const sentAt = lines.map((line) => line.startsWith('Sent Access-')).lastIndexOf(true);
+    expect(lines.slice(sentAt).map((line) => line.trim())).toContain('Reply-Message = "from the group"');
+  });
+
+  it('a reject in the group refuses the right password and prints the failure line', async () => {
+    const { output, lines } = await withAuthenticate('', msGroup('\t\t\treject\n'), 'x', mschap('wonderland'));
+    expect(output).toContain('Received Access-Reject');
+    expect(lines).toContain('[reject] = reject');
+    expect(lines).toContain('Failed to authenticate the user');
+  });
+
+  it('the wrong password still ends in the module error, a reject result and the group closing line', async () => {
+    const { output, lines } = await withAuthenticate('', msGroup('\t\t\tmschap\n'), 'x', mschap('wrong'));
+    expect(output).toContain('Received Access-Reject');
+    expect(lines).toContain('mschap: ERROR: MS-CHAP2-Response is incorrect');
+    expect(lines).toContain('} # Auth-Type MS-CHAP = reject');
+  });
+});
+
+describe('a group decides, not the list of modules', () => {
+  it('a PAP group that never calls pap does not check the password: ok accepts a wrong one', async () => {
+    const { output } = await withAuthenticate('', group('PAP', '\t\t\tok\n'), 'not-the-password');
+    expect(output).toContain('Received Access-Accept');
+  });
+});
+

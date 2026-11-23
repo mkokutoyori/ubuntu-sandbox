@@ -395,16 +395,16 @@ export class RadiusdService {
     const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
     const raw = this.lastResolution?.authTypeName ?? null;
     if (pipeline === undefined || raw === null) return null;
-    const group = pipeline.authGroups.get(raw.toLowerCase());
-    if (group === undefined) return null;
     const builtin = raw.toLowerCase();
+    const group = pipeline.authGroups.get(builtin === 'mschap' ? 'ms-chap' : builtin);
+    if (group === undefined) return null;
     const userName = String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
     const context = newContext(userName, info.request, null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
       runModule: (name): ModuleOutcome => {
-        if ((name === 'pap' && builtin === 'pap') || (name === 'chap' && builtin === 'chap')) {
-          return { result: info.accepted ? 'ok' : 'reject', messages: credentialMessages(builtin === 'pap' ? 'PAP' : 'CHAP', info.accepted, userName, info.user?.knownGoodName) };
+        if ((name === 'pap' && builtin === 'pap') || (name === 'chap' && builtin === 'chap') || (name === 'mschap' && builtin === 'mschap')) {
+          return { result: info.accepted ? 'ok' : 'reject', messages: credentialMessages(builtin === 'pap' ? 'PAP' : builtin === 'chap' ? 'CHAP' : 'MS-CHAP', info.accepted, userName, info.user?.knownGoodName) };
         }
         if (name === 'ok') return { result: 'ok', messages: [] };
         if (name === 'reject') return { result: 'reject', messages: [] };
