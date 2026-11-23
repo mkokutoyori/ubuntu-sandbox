@@ -7,7 +7,7 @@ import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
 import { runTlsHandshakeOverSocket } from '@/network/http/https/TlsRecordWire';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TlsRecord } from '@/network/tls/recordLayer';
-import { IPAddress } from '@/network/core/types';
+import { peerOf, type PeerAddress } from './sourceAddress';
 import { decodeRadiusPacket, encodeRadiusPacket, isRadiusDecodeError } from './codec';
 import type { RadiusPacket } from './types';
 
@@ -16,7 +16,7 @@ export const RADSEC_SECRET = 'radsec';
 
 export interface RadSecEngine {
   handleStreamRequest(
-    srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    srcIp: PeerAddress, srcPort: number, localIp: PeerAddress, localPort: number,
     request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string, encrypted?: boolean,
   ): void;
 }
@@ -24,6 +24,7 @@ export interface RadSecEngine {
 export interface RadSecServerSettings {
   readonly tlsConfig: (clientIp: string) => TlsServerConfig | null;
   readonly checkPeer?: (clientIp: string, certificate: X509Certificate | null) => string | null;
+  readonly localIp?: string;
   readonly onConnection: (clientIp: string, accepted: boolean, reason?: string) => void;
 }
 
@@ -41,12 +42,12 @@ export class RadSecServer {
   ) {}
 
   start(identity?: ListenerIdentity): void {
-    this.listener = this.tcp.listen(this.port, { onAccept: (socket) => this.accept(socket), identity });
+    this.listener = this.tcp.listen(this.port, { onAccept: (socket) => this.accept(socket), identity }, this.settings.localIp);
   }
 
   stop(): void {
     if (this.listener === null) return;
-    this.tcp.closeListener(this.port);
+    this.tcp.closeListener(this.port, this.settings.localIp);
     this.listener = null;
   }
 
@@ -80,7 +81,7 @@ export class RadSecServer {
           buffer = buffer.slice(length);
           if (isRadiusDecodeError(packet)) { channel.close(); return; }
           this.engine.handleStreamRequest(
-            new IPAddress(socket.remoteIp), socket.remotePort, new IPAddress(socket.localIp), socket.localPort, packet,
+            peerOf(socket.remoteIp), socket.remotePort, peerOf(socket.localIp), socket.localPort, packet,
             (response) => channel.write(encodeRadiusPacket(response)), RADSEC_SECRET, true,
           );
         }

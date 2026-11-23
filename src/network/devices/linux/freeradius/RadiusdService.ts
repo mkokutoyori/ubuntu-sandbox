@@ -44,6 +44,7 @@ import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } 
 import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTransport';
 import { OcspClient, DEFAULT_OCSP_POLICY } from '@/network/http/ocsp/OcspHttpClient';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { peerOf } from '@/network/radius/sourceAddress';
 import { certificateRejection, cipherOptions, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -354,7 +355,7 @@ export class RadiusdService {
     for (const spec of specs.filter((candidate) => candidate.tls !== undefined)) {
       const config = this.radSecTlsConfig(spec.tls as RadSecTls);
       if (typeof config === 'string') return { ok: false, error: config };
-      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)) ?? this.ocspRejection(certificate, this.radSecClientTls(clientIp) ?? (spec.tls as RadSecTls)), onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
+      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)) ?? this.ocspRejection(certificate, this.radSecClientTls(clientIp) ?? (spec.tls as RadSecTls)), localIp: spec.ipv6 === true ? '::' : '0.0.0.0', onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
       server.start({ processName: PROCESS_NAME });
       radSecServers.push(server);
     }
@@ -687,7 +688,7 @@ export class RadiusdService {
   }
 
   private radSecClientTls(clientIp: string): RadSecTls | undefined {
-    return this.radiusServer.clientTable.find(new IPAddress(clientIp), 'tls')?.tls;
+    return this.radiusServer.clientTable.find(peerOf(clientIp), 'tls')?.tls;
   }
 
   private radSecConfigFor(clientIp: string, listener: RadSecTls, listenerConfig: TlsServerConfig): TlsServerConfig | null {

@@ -11,6 +11,7 @@
  * `TacacsClientAgent`/`TacacsServerAgent` already use the same `TcpStack`
  * for a TCP-native AAA protocol. RadSec (RFC 6614) lives in RadSecTransport.
  */
+import { peerOf, type PeerAddress } from './sourceAddress';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -144,7 +145,7 @@ export class RadiusTcpClient {
 
 export interface RadiusStreamEngine {
   handleStreamRequest(
-    srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    srcIp: PeerAddress, srcPort: number, localIp: PeerAddress, localPort: number,
     request: RadiusPacket, reply: (response: RadiusPacket) => void,
   ): void;
   addUser(username: string, password: string): void;
@@ -222,7 +223,7 @@ export class RadiusTcpServer {
           }
           const username = String(getAttr(request, 'user-name')?.value ?? '');
           this.engine.handleStreamRequest(
-            new IPAddress(socket.remoteIp), socket.remotePort, new IPAddress(socket.localIp), socket.localPort, request,
+            peerOf(socket.remoteIp), socket.remotePort, peerOf(socket.localIp), socket.localPort, request,
             (response) => {
               const result = response.code === 'access-accept' || response.code === 'accounting-response' ? 'accept' : 'reject';
               this.getBus().publish({

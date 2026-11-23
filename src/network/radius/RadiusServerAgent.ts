@@ -616,10 +616,12 @@ export class RadiusServerAgent {
 
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleStreamRequest(
-    srcIp: PeerAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    srcIp: PeerAddress, srcPort: number, localIp: PeerAddress, localPort: number,
     request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string, encrypted = false,
   ): void {
-    const inPort = this.host.getPorts().find((candidate) => candidate.getIPAddress()?.toString() === localIp.toString());
+    const inPort = this.host.getPorts().find((candidate) => localIp instanceof IPv6Address
+      ? candidate.getIPv6Addresses().some((entry) => entry.address.toString() === localIp.toString())
+      : candidate.getIPAddress()?.toString() === localIp.toString());
     if (!inPort) return;
     const udp = { type: 'udp', sourcePort: srcPort, destinationPort: localPort, length: 0, checksum: 0, payload: request } as UDPPacket;
     const previousSink = this.streamSink;
