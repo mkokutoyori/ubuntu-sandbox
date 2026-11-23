@@ -5,6 +5,7 @@ import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
 import { runTlsHandshakeOverSocket } from '@/network/http/https/TlsRecordWire';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import { IPAddress } from '@/network/core/types';
 import { decodeRadiusPacket, encodeRadiusPacket, isRadiusDecodeError } from './codec';
@@ -22,7 +23,8 @@ export interface RadSecEngine {
 
 export interface RadSecServerSettings {
   readonly tlsConfig: () => TlsServerConfig;
-  readonly onConnection: (clientIp: string, accepted: boolean) => void;
+  readonly checkPeer?: (certificate: X509Certificate | null) => string | null;
+  readonly onConnection: (clientIp: string, accepted: boolean, reason?: string) => void;
 }
 
 function radiusFrameLength(buffer: Uint8Array): number | null {
@@ -54,7 +56,11 @@ export class RadSecServer {
     const tls = new TlsServerSession(this.settings.tlsConfig());
     let buffer = new Uint8Array(0);
     const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
-      onHandshakeComplete: () => this.settings.onConnection(socket.remoteIp, true),
+      onHandshakeComplete: () => {
+        const reason = this.settings.checkPeer?.(tls.peerCertificate) ?? null;
+        this.settings.onConnection(socket.remoteIp, reason === null, reason ?? undefined);
+        if (reason !== null) channel.close();
+      },
       onHandshakeRejected: () => { this.settings.onConnection(socket.remoteIp, false); channel.close(); },
       onData: (plaintext) => {
         const joined = new Uint8Array(buffer.length + plaintext.length);
@@ -87,7 +93,7 @@ export interface RadSecClientOutcome {
   readonly reason?: string;
 }
 
-export function radSecExchange(tcp: TcpStack, address: string, port: number, request: RadiusPacket, tlsConfig: TlsClientConfig): RadSecClientOutcome {
+export function radSecExchange(tcp: TcpStack, address: string, port: number, request: RadiusPacket, tlsConfig: TlsClientConfig, checkPeer?: (certificate: X509Certificate | null) => string | null): RadSecClientOutcome {
   const socket = tcp.connect(address, port);
   if (!socket || socket.state !== 'established') return { ok: false, reason: 'connection failed' };
   const tls = new TlsClientSession(tlsConfig);
@@ -96,6 +102,11 @@ export function radSecExchange(tcp: TcpStack, address: string, port: number, req
   if (tls.result !== 'success') {
     socket.close();
     return { ok: false, reason: 'TLS handshake failed' };
+  }
+  const rejection = checkPeer?.(tls.peerCertificate) ?? null;
+  if (rejection !== null) {
+    socket.close();
+    return { ok: false, reason: rejection };
   }
   const channel = new TlsClientChannel(socket, tls);
   let answer: Uint8Array;

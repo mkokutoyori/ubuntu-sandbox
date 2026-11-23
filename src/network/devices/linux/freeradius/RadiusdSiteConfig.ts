@@ -1,5 +1,6 @@
 import { IPAddress } from '@/network/core/types';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
+import { readTlsLimits, tlsLimitsError, TLS_LIMIT_KEYS, type RadSecTlsLimits } from '@/network/radius/RadSecTlsPolicy';
 import { UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_AUTH } from '@/network/radius/types';
 import { readClientSections, type ParsedClients } from './ClientsConfParser';
 import type { ConfSection } from './FreeradiusConf';
@@ -12,6 +13,7 @@ export interface RadSecTls {
   readonly privateKeyPassword: string | null;
   readonly caFile: string | null;
   readonly requireClientCert: boolean;
+  readonly limits: RadSecTlsLimits;
 }
 
 export interface ListenerSpec {
@@ -48,7 +50,7 @@ function pairValue(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
 }
 
-const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert']);
+const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert', ...TLS_LIMIT_KEYS]);
 export const RADSEC_DEFAULT_PORT = 2083;
 
 function readTlsSection(listen: ConfSection): RadSecTls | undefined | { error: string } {
@@ -65,8 +67,11 @@ function readTlsSection(listen: ConfSection): RadSecTls | undefined | { error: s
   if (privateKeyFile === undefined) return { error: `${where}: Failed to find "private_key_file" in the tls section` };
   const require = pairValue(section, 'require_client_cert') ?? 'yes';
   if (!/^(yes|no|true|false|on|off)$/i.test(require)) return { error: `${where}: Invalid value "${require}" for variable require_client_cert` };
+  const limits = readTlsLimits((name) => pairValue(section, name));
+  const limitsError = tlsLimitsError(limits);
+  if (limitsError !== null) return { error: `${where}: ${limitsError}` };
   return {
-    certificateFile, privateKeyFile, privateKeyPassword: pairValue(section, 'private_key_password') ?? null,
+    limits, certificateFile, privateKeyFile, privateKeyPassword: pairValue(section, 'private_key_password') ?? null,
     caFile: pairValue(section, 'ca_file') ?? null, requireClientCert: /^(yes|true|on)$/i.test(require),
   };
 }

@@ -88,7 +88,7 @@ function tlsConfig(pki: ReturnType<typeof certificates>, mutual: 'client' | 'str
   const leaf = mutual === 'client' ? pki.client : mutual === 'stranger' ? pki.stranger : null;
   return {
     verifier: new CertificateVerifier({ trustAnchors: [pki.authority.rootCertificate], clock: () => NOW }),
-    serverName: 'radius.lab', verifyHostname: true, versions: ['1.3' as const],
+    serverName: 'radius.lab', verifyHostname: true, versions: ['1.2' as const],
     ...(leaf === null ? {} : { clientCert: leaf.cert, clientPrivateKey: leaf.privateKey }),
   };
 }
@@ -144,8 +144,8 @@ describe('RadSec (RADIUS over TLS)', () => {
   });
 
   it('refuses a tls key it cannot honour, naming it', async () => {
-    const made = await lab({ block: TLS_BLOCK('\t\t\tcheck_cert_cn = %{User-Name}\n') });
-    expect(made.started).toContain('The tls setting "check_cert_cn" is not implemented in this simulator');
+    const made = await lab({ block: TLS_BLOCK('\t\t\tcheck_crl = yes\n') });
+    expect(made.started).toContain('The tls setting "check_crl" is not implemented in this simulator');
   });
 
   it('refuses a tls section without proto = tcp, and a missing certificate file', async () => {

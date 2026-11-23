@@ -1,4 +1,5 @@
 import { IPAddress } from '@/network/core/types';
+import { readTlsLimits, tlsLimitsError, TLS_LIMIT_KEYS, type RadSecTlsLimits } from '@/network/radius/RadSecTlsPolicy';
 import type { ConfSection } from './FreeradiusConf';
 
 export interface RadSecHomeTls {
@@ -6,6 +7,7 @@ export interface RadSecHomeTls {
   readonly privateKeyFile: string;
   readonly privateKeyPassword: string | null;
   readonly caFile: string;
+  readonly limits: RadSecTlsLimits;
 }
 
 export interface HomeServer {
@@ -55,7 +57,7 @@ export const NO_PROXY: ProxyConfig = { realms: [], homeServers: [], instances: n
 
 const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto', 'ping_interval', 'zombie_period', 'revive_interval', 'status_check', 'check_interval', 'check_timeout', 'num_answers_to_alive']);
 const REALM_MODULE_KEYS = new Set(['format', 'delimiter', 'ignore_default', 'ignore_null', 'return_notfound']);
-const HOME_TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file']);
+const HOME_TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', ...TLS_LIMIT_KEYS]);
 const POOL_KEYS = new Set(['type', 'home_server']);
 const REALM_KEYS = new Set(['type', 'auth_pool', 'acct_pool', 'nostrip', 'authhost', 'accthost', 'secret']);
 const POOL_TYPES = new Set(['fail-over', 'load-balance', 'client-balance', 'client-port-balance', 'keyed-balance']);
@@ -113,7 +115,10 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
       if (certificateFile === undefined || privateKeyFile === undefined || caFile === undefined) {
         return { error: `${located(tlsSection)}: A tls section of a home server needs certificate_file, private_key_file and ca_file` };
       }
-      radSec = { certificateFile, privateKeyFile, privateKeyPassword: value(tlsSection, 'private_key_password') ?? null, caFile };
+      const limits = readTlsLimits((name) => value(tlsSection, name));
+      const limitsError = tlsLimitsError(limits);
+      if (limitsError !== null) return { error: `${located(tlsSection)}: ${limitsError}` };
+      radSec = { certificateFile, privateKeyFile, privateKeyPassword: value(tlsSection, 'private_key_password') ?? null, caFile, limits };
       if (value(section, 'status_check') !== undefined && value(section, 'status_check') !== 'none') {
         return { error: `${located(section)}: status_check over RadSec is not implemented in this simulator` };
       }

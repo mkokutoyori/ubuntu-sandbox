@@ -37,6 +37,7 @@ import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusForm
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
 import { RadSecServer, radSecExchange } from '@/network/radius/RadSecTransport';
+import { certificateRejection, tlsProtocolsOf } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { pemToCertChain, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
@@ -267,7 +268,7 @@ export class RadiusdService {
     for (const spec of specs.filter((candidate) => candidate.tls !== undefined)) {
       const config = this.radSecTlsConfig(spec.tls as RadSecTls);
       if (typeof config === 'string') return { ok: false, error: config };
-      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: () => config, onConnection: () => undefined });
+      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: () => config, checkPeer: (certificate) => certificateRejection(certificate, spec.tls!.limits), onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
       server.start({ processName: PROCESS_NAME });
       radSecServers.push(server);
     }
@@ -525,7 +526,7 @@ export class RadiusdService {
     if (home === undefined || home.radSec === null) return null;
     const config = this.radSecClientConfig(home.radSec);
     if (typeof config === 'string') return null;
-    const outcome = radSecExchange(this.host.getTcpStack(), address, port, request, config);
+    const outcome = radSecExchange(this.host.getTcpStack(), address, port, request, config, (certificate) => certificateRejection(certificate, home.radSec!.limits));
     return outcome.ok && outcome.reply !== undefined ? outcome.reply : null;
   }
 
@@ -542,7 +543,7 @@ export class RadiusdService {
     if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
     return {
       verifier: new CertificateVerifier({ trustAnchors: pemToCertChain(caText), clock: () => this.wallClock.nowMs() }),
-      clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: ['1.3'],
+      clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: tlsProtocolsOf(tls.limits),
     };
   }
 
@@ -565,7 +566,7 @@ export class RadiusdService {
       serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
       requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
       verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => this.wallClock.nowMs() }),
-      protocols: ['1.3'],
+      protocols: tlsProtocolsOf(tls.limits),
     };
   }
   private activeListeners: ListenerSpec[] = [];
