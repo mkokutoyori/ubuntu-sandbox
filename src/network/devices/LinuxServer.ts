@@ -134,7 +134,7 @@ export class LinuxServer extends LinuxMachine {
       if (dgram.sourceIP instanceof IPAddress) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
     this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
     // A standalone client agent has no destination port of its own to be
     // dispatched to on this host's socket-table-based UDP model (unlike a
@@ -143,7 +143,7 @@ export class LinuxServer extends LinuxMachine {
     // identifier-derived ephemeral port `transmit()` otherwise picks.
     this.radtestClient.setFixedSourcePort(RADTEST_SOURCE_PORT);
     this.udpBind(RADTEST_SOURCE_PORT, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.radtestClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.radtestClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
 
     const smtpSubject = `CN=${this.getHostname()}`;

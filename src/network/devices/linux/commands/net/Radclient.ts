@@ -4,7 +4,7 @@ import { attr, splitEapMessages, RADIUS_PACKET_NAME, type RadiusAttribute, type 
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import type { RadiusExchange } from '@/network/radius/RadiusClientAgent';
 import type { RawRequestCode } from '@/network/radius/RadiusAccountingClient';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { parsePairList, usersPairToAttribute, type UsersPair } from '../../freeradius/UsersFileParser';
 
 const VERSION = '3.2.11';
@@ -120,7 +120,7 @@ function nameOf(pair: UsersPair): string {
 
 function describe(exchange: RadiusExchange, shown: string[], debug: boolean): string[] {
   return [
-    `Sent Access-Request Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`,
+    `Sent Access-Request Id ${exchange.request.identifier} from ${exchange.serverIp.includes(':') ? '::' : '0.0.0.0'}:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`,
     ...(debug ? ['\tMessage-Authenticator = 0x', ...shown.map((line) => `\t${line}`)] : []),
   ];
 }
@@ -180,7 +180,7 @@ async function runCoa(
         if (exchange === null) { lost++; continue; }
         if (!run.quiet) {
           for (let attempt = 0; attempt < Math.max(1, exchange.transmissions); attempt++) {
-            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from ${exchange.serverIp.includes(':') ? '::' : '0.0.0.0'}:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
             if (run.debug) lines.push(...attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
           }
         }
@@ -234,7 +234,7 @@ async function runRaw(
         const autoMessageAuthenticator = code === 'status-server' && !attributes.some((attribute) => attribute.type === 'message-authenticator');
         if (!run.quiet) {
           for (let attempt = 0; attempt < Math.max(1, exchange.transmissions); attempt++) {
-            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from ${exchange.serverIp.includes(':') ? '::' : '0.0.0.0'}:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
             if (run.debug && autoMessageAuthenticator) lines.push('\tMessage-Authenticator = 0x');
             if (run.debug) lines.push(...attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
           }
@@ -300,10 +300,12 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
     secret = content.split('\n')[0].trim();
   }
 
-  const [serverName, portText] = serverArg.split(':');
+  const bracket = /^\[([^\]]+)\](?::(\d+))?$/.exec(serverArg);
+  const bareV6 = !bracket && serverArg.split(':').length > 2;
+  const [serverName, portText] = bracket ? [bracket[1], bracket[2]] : bareV6 ? [serverArg, undefined] : serverArg.split(':');
   const port = portText === undefined ? (command === 'acct' ? 1813 : command === 'auth' || command === 'status' ? 1812 : 3799) : Number(portText);
   if (!serverName || !Number.isInteger(port) || port <= 0 || port > 65535) return { output: RADCLIENT_USAGE, exitCode: 1 };
-  const server = IPAddress.tryParse(serverName) ?? (await ctx.net.resolveHostname(serverName));
+  const server = IPv6Address.tryParse(serverName) ?? IPAddress.tryParse(serverName) ?? (await ctx.net.resolveHostname(serverName));
   if (server === null) return { output: `radclient: Failed to find IP address for host ${serverName}: Name or service not known`, exitCode: 1 };
 
   let input = stdin ?? '';

@@ -80,11 +80,8 @@ export interface UtmpFields {
   startedAtMs: number;
 }
 
-export type PeerAddress = IPAddress | IPv6Address;
-
-export function peerOf(text: string): PeerAddress {
-  return text.includes(':') ? new IPv6Address(text) : new IPAddress(text);
-}
+import { peerOf, type PeerAddress } from './sourceAddress';
+export { peerOf, type PeerAddress };
 
 export interface RadiusServerHost {
   readonly id: string;

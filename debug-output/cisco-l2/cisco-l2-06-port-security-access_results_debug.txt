@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-11-23T09:42:48.844Z
+Generated: 2026-11-23T18:19:56.820Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -772,10 +772,9 @@ Total steps: 421
      1    0200.0000.004f    SecureSticky        Fa0/1    5m
      1    0000.1111.2222    SecureConfigured    Fa0/2    5m
      1    0000.1111.3333    SecureConfigured    Fa0/2    5m
-     1    0200.0000.0053    SecureSticky        Fa0/2    5m
      1    0200.0000.0057    SecureSticky        Fa0/3    5m
   
-  Total Addresses: 5
+  Total Addresses: 4
 
 [214/421] sw1 SW1# show mac address-table secure
   Mac Address Table
@@ -1525,10 +1524,10 @@ Total steps: 421
   Aging Type                 : Inactivity
   SecureStatic Address Aging : Disabled
   Maximum MAC Addresses      : 3
-  Total MAC Addresses        : 3
+  Total MAC Addresses        : 2
   Configured MAC Addresses   : 2
-  Sticky MAC Addresses       : 1
-  Last Source Address:Vlan   : 0200.0000.0053:1
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.1111.3333:1
   Security Violation Count   : 0
 
 [388/421] sw1 SW1# show port-security interface FastEthernet0/3

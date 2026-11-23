@@ -6,11 +6,12 @@
  * longest prefix within its family), src/main/command.c (show client list prints an IPv6 client without a /128). The server now binds IPv6
  * listeners through the host's dual-stack UDP socket table, keys its client table by family, and answers an IPv6 client over IPv6 with the
  * ordinary Response Authenticator. The packets cross a real switch as IPv6 frames (neighbour discovery included). The RADIUS client agents
- * (radclient, radtest, the NAS side) and the home_server / proxy path stay IPv4: `ipv6addr` in a home_server is still refused (TODO.md).
+ * (radclient, radtest, the NAS side) now send over IPv6 too (see the second group below); the home_server / proxy path has its own probe.
  *
- * Discriminated with git stash on src: 7 of 8 fall before the fix; the one passing either way is named: an IPv4 listener (ipaddr = *) does not take IPv6
- * traffic (on the base the agent dropped every IPv6 source; with the fix the service checks the datagram's family against the listener's: the host's UDP
- * dispatch is keyed by port only, so the family is decided where the listener is declared).
+ * Discriminated with git stash on src, in two steps. The server commit: 7 of the first 8 cases fall before it; the family case passes either way (named: on the
+ * base the agent dropped every IPv6 source; with the fix the service decides the family where the listener is declared). The client commit that
+ * follows (radclient and the client agents sending over IPv6, `[address]:port` and bare IPv6 server arguments, the status listener on IPv6): the 5 cases of
+ * the last two groups fall before it, since radclient refused an IPv6 server name.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -31,7 +32,7 @@ const vfsOf = (server: LinuxServer) => (server as unknown as { executor: { vfs: 
 const write = (server: LinuxServer, path: string, content: string) => { vfsOf(server).writeFile(path, content, 0, 0, 0o022); };
 const SITE = '/etc/freeradius/3.0/sites-available/default';
 
-async function lab(clients: string, listener = 'type = auth\n\t\tipv6addr = ::\n') {
+async function lab(clients: string, listener = 'type = auth\n\t\tipv6addr = ::\n', extra = '') {
   const bus = new EventBus();
   const client = new LinuxServer('linux-server', 'NAS');
   const target = new LinuxServer('linux-server', 'RADIUS');
@@ -45,7 +46,7 @@ async function lab(clients: string, listener = 'type = auth\n\t\tipv6addr = ::\n
   target.configureIPv6Interface('eth0', new IPv6Address('fd00::2'), 64);
   write(target, CLIENTS_CONF_PATH, clients);
   write(target, USERS_FILE_PATH, 'alice Cleartext-Password := "wonderland"\n');
-  write(target, SITE, (vfsOf(target).readFile(SITE) ?? '').replace('type = auth\n', listener));
+  write(target, SITE, (vfsOf(target).readFile(SITE) ?? '').replace('type = auth\n', listener).replace('server default {\n', `server default {\n${extra}`));
   const started = await target.executeCommand('systemctl restart freeradius');
   return { client, target, started };
 }
@@ -121,3 +122,44 @@ describe('RADIUS over IPv6', () => {
     expect((await lab('client bad {\n  ipv4addr = fd00::1\n  secret = shared\n}\n')).started).toContain('Failed parsing client address "fd00::1"');
   });
 });
+
+const ACCT_V6 = '\tlisten {\n\t\ttype = acct\n\t\tipv6addr = ::\n\t\tport = 1813\n\t}\n';
+const alice = (extra = '') => `printf 'User-Name = "alice"\\nUser-Password = "wonderland"\\n${extra}' | radclient`;
+
+describe('radclient over IPv6', () => {
+  it('sends an Accounting-Request to an IPv6 server and prints the Accounting-Response', async () => {
+    const made = await lab(V6_CLIENT, 'type = auth\n\t\tipv6addr = ::\n', ACCT_V6);
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    const out = await made.client.executeCommand(`printf 'User-Name = "alice"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "s6"\\nNAS-IP-Address = 10.0.0.1\\n' | radclient -r 1 -t 2 fd00::2 acct shared`);
+    expect(out).toContain('to fd00::2:1813');
+    expect(out).toContain('Received Accounting-Response');
+  });
+
+  it('authenticates a PAP user over IPv6, the server written [address]:port', async () => {
+    const made = await lab(V6_CLIENT);
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    const out = await made.client.executeCommand(`${alice()} -r 1 -t 2 '[fd00::2]:1812' auth shared`);
+    expect(out).toContain('Received Access-Accept');
+  });
+
+  it('answers a Status-Server sent over IPv6', async () => {
+    const made = await lab(V6_CLIENT);
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    const out = await made.client.executeCommand("printf 'Message-Authenticator = 0x00\\n' | radclient -r 1 -t 2 fd00::2 status shared");
+    expect(out).toContain('Received Access-Accept');
+  });
+
+  it('gets no answer from an IPv6 server that does not know the client, as over IPv4', async () => {
+    const made = await lab('client nas4 {\n  ipaddr = 10.0.0.1\n  secret = shared\n}\n');
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    expect(await made.client.executeCommand(`${alice()} -r 1 -t 1 fd00::2 auth shared`)).toContain('No reply from server');
+  });
+
+  it('a type = status listener on IPv6 serves Status-Server on its own port', async () => {
+    const made = await lab(V6_CLIENT, 'type = auth\n\t\tipv6addr = ::\n', '\tlisten {\n\t\ttype = status\n\t\tipv6addr = ::\n\t\tport = 18121\n\t}\n');
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    const out = await made.client.executeCommand("printf 'Message-Authenticator = 0x00\\n' | radclient -r 1 -t 2 '[fd00::2]:18121' status shared");
+    expect(out).toContain('Received Access-Accept');
+  });
+});
+
