@@ -42,7 +42,7 @@ import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusForm
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
 import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTransport';
-import { certificateRejection, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
+import { certificateRejection, cipherOptions, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { pemToCertChain, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
@@ -653,7 +653,7 @@ export class RadiusdService {
     if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
     return {
       verifier: new CertificateVerifier(verifierOptions(caText, tls.limits, () => this.wallClock.nowMs())),
-      clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: tlsProtocolsOf(tls.limits),
+      clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: tlsProtocolsOf(tls.limits), ...cipherOptions(tls.limits),
     };
   }
 
@@ -694,7 +694,7 @@ export class RadiusdService {
       serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
       requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
       verifier: new CertificateVerifier(verifierOptions(caText, tls.limits, () => this.wallClock.nowMs())),
-      protocols: tlsProtocolsOf(tls.limits),
+      protocols: tlsProtocolsOf(tls.limits), ...cipherOptions(tls.limits),
     };
   }
   private activeListeners: ListenerSpec[] = [];
