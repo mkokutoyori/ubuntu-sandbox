@@ -14,6 +14,7 @@ export interface ListenerSpec {
   readonly type: ListenerType;
   readonly address: string | null;
   readonly ipv6?: boolean;
+  readonly stream?: boolean;
   readonly port: number;
   readonly server: string;
   readonly file: string;
@@ -101,6 +102,8 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
             : `${where}: Invalid type "${type}" in listen section.`,
         };
       }
+      const protoText = pairValue(section, 'proto');
+      if (protoText !== undefined && protoText !== 'udp' && protoText !== 'tcp') return { error: `${where}: Unknown protocol "${protoText}"` };
       const tlsRead = readTlsSection(section);
       if (tlsRead !== undefined && 'error' in tlsRead) return tlsRead;
       const tls = tlsRead as RadSecTls | undefined;
@@ -122,6 +125,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
         type: type as ListenerType, address, ...(v6Text === undefined ? {} : { ipv6: true }), port: port === 0 ? (tls === undefined ? DEFAULT_PORT[type as ListenerType] : RADSEC_DEFAULT_PORT) : port,
         server: pairValue(section, 'virtual_server') ?? serverName, file: section.file, line: section.line,
         ...(tls === undefined ? {} : { tls }),
+        ...(tls === undefined && protoText === 'tcp' ? { stream: true } : {}),
       });
     }
     const own: ParsedClients = { clients: [], errors: [], warnings: [] };

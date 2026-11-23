@@ -385,7 +385,7 @@ export class RadiusdService {
     const familyOf = (spec: ListenerSpec): 'ipv4' | 'ipv6' => (spec.ipv6 === true ? 'ipv6' : 'ipv4');
     const familyOfAddress = (address: unknown): 'ipv4' | 'ipv6' => (address instanceof IPv6Address ? 'ipv6' : 'ipv4');
     const sockets: Array<{ port: number; group: ListenerSpec[] }> = [];
-    for (const spec of specs.filter((candidate) => candidate.tls === undefined)) {
+    for (const spec of specs.filter((candidate) => candidate.tls === undefined && candidate.stream !== true)) {
       const shared = sockets.find((entry) => entry.port === spec.port && !entry.group.some((other) => familyOf(other) === familyOf(spec)));
       if (shared === undefined) sockets.push({ port: spec.port, group: [spec] });
       else shared.group.push(spec);
@@ -435,7 +435,7 @@ export class RadiusdService {
     this.applyConfig(loaded);
     this.radiusServer.setPorts(authPort, acctPort);
     this.radiusServer.start();
-    this.radiusTcpServer.start();
+    this.radiusTcpServer.start(specs.filter((spec) => spec.stream === true).map((spec) => ({ port: spec.port, localIp: spec.ipv6 === true ? '::' : spec.address ?? '0.0.0.0' })));
     this.radiusServer.setDecisionListener((payload) => this.writeAuthLog(payload));
     this.radiusServer.setAccountingListener((record) => this.writeDetail(record));
     this.radiusServer.setWarningListener((message) => this.writeLogLine('Warning', message));

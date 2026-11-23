@@ -46,7 +46,9 @@ async function lab(users: string, clients = 'client lab {\n  ipaddr = 10.0.0.0/2
   target.configureInterface('eth0', new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
   write(target, CLIENTS_CONF_PATH, clients);
   write(target, USERS_FILE_PATH, users);
-  await target.executeCommand('systemctl reload freeradius');
+  const SITE = '/etc/freeradius/3.0/sites-available/default';
+  write(target, SITE, (vfsOf(target).readFile(SITE) ?? '').replace('server default {\n', 'server default {\n\tlisten {\n\t\ttype = auth+acct\n\t\tproto = tcp\n\t\tport = 1812\n\t}\n'));
+  await target.executeCommand('systemctl restart freeradius');
   nas.getRadiusTcpClient().addServer('10.0.0.2', 'shared', { timeoutMs: 200 });
   return { nas, sender, target };
 }
