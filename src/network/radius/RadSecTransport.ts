@@ -22,8 +22,8 @@ export interface RadSecEngine {
 }
 
 export interface RadSecServerSettings {
-  readonly tlsConfig: () => TlsServerConfig;
-  readonly checkPeer?: (certificate: X509Certificate | null) => string | null;
+  readonly tlsConfig: (clientIp: string) => TlsServerConfig | null;
+  readonly checkPeer?: (clientIp: string, certificate: X509Certificate | null) => string | null;
   readonly onConnection: (clientIp: string, accepted: boolean, reason?: string) => void;
 }
 
@@ -53,11 +53,13 @@ export class RadSecServer {
   isRunning(): boolean { return this.listener !== null; }
 
   private accept(socket: TcpSocket): void {
-    const tls = new TlsServerSession(this.settings.tlsConfig());
+    const config = this.settings.tlsConfig(socket.remoteIp);
+    if (config === null) { socket.close(); return; }
+    const tls = new TlsServerSession(config);
     let buffer = new Uint8Array(0);
     const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
       onHandshakeComplete: () => {
-        const reason = this.settings.checkPeer?.(tls.peerCertificate) ?? null;
+        const reason = this.settings.checkPeer?.(socket.remoteIp, tls.peerCertificate) ?? null;
         this.settings.onConnection(socket.remoteIp, reason === null, reason ?? undefined);
         if (reason !== null) channel.close();
       },

@@ -1,4 +1,6 @@
 import { IPAddress } from '@/network/core/types';
+import type { RadSecTls } from '@/network/radius/RadSecTlsPolicy';
+import { readTlsBody } from './RadSecTlsSection';
 import type { ClientProtocol, MessageAuthenticatorPolicy, RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseFreeradiusConf, type ConfFileReader, type ConfSection } from './FreeradiusConf';
 
@@ -78,6 +80,13 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
       continue;
     }
     const kind = protoText === undefined ? protoKinds.udp : protoKinds[protoText];
+    const tlsSection = section.sections.find((candidate) => candidate.name1 === 'tls');
+    const tlsRead = tlsSection === undefined ? null : readTlsBody(tlsSection);
+    if (tlsRead !== null && 'error' in tlsRead) {
+      result.errors.push(tlsRead.error);
+      continue;
+    }
+    const tls: RadSecTls | undefined = tlsRead !== null && !('error' in tlsRead) ? tlsRead : undefined;
     const secret = pair(section, 'secret') ?? (kind.tls ? 'radsec' : '');
     if (secret === '') {
       result.errors.push(`${where}: secret must be at least 1 character long`);
@@ -104,6 +113,7 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
       limitProxyState: policyOf(pair(section, 'limit_proxy_state')),
       protocol: kind.protocol,
       tlsRequired: kind.tls,
+      ...(tls === undefined ? {} : { tls }),
     });
   }
 }

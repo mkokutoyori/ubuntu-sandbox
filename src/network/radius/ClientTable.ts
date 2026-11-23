@@ -1,3 +1,4 @@
+import type { RadSecTls } from './RadSecTlsPolicy';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 
 export type MessageAuthenticatorPolicy = 'yes' | 'no' | 'auto';
@@ -15,6 +16,7 @@ export interface RadiusClientEntry {
   readonly limitProxyState: MessageAuthenticatorPolicy;
   readonly protocol?: ClientProtocol;
   readonly tlsRequired?: boolean;
+  readonly tls?: RadSecTls;
 }
 
 export type ClientProtocol = 'udp' | 'tcp' | '*';

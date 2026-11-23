@@ -1,20 +1,14 @@
 import { IPAddress } from '@/network/core/types';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
-import { readTlsLimits, tlsLimitsError, TLS_LIMIT_KEYS, type RadSecTlsLimits } from '@/network/radius/RadSecTlsPolicy';
+import type { RadSecTls } from '@/network/radius/RadSecTlsPolicy';
+import { readTlsBody } from './RadSecTlsSection';
 import { UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_AUTH } from '@/network/radius/types';
 import { readClientSections, type ParsedClients } from './ClientsConfParser';
 import type { ConfSection } from './FreeradiusConf';
 
 export type ListenerType = 'auth' | 'acct' | 'auth+acct' | 'status';
 
-export interface RadSecTls {
-  readonly certificateFile: string;
-  readonly privateKeyFile: string;
-  readonly privateKeyPassword: string | null;
-  readonly caFile: string | null;
-  readonly requireClientCert: boolean;
-  readonly limits: RadSecTlsLimits;
-}
+export type { RadSecTls };
 
 export interface ListenerSpec {
   readonly type: ListenerType;
@@ -50,30 +44,13 @@ function pairValue(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
 }
 
-const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert', ...TLS_LIMIT_KEYS]);
 export const RADSEC_DEFAULT_PORT = 2083;
 
 function readTlsSection(listen: ConfSection): RadSecTls | undefined | { error: string } {
   const section = listen.sections.find((candidate) => candidate.name1 === 'tls');
   if (section === undefined) return undefined;
-  const where = `${section.file}[${section.line}]`;
-  if (pairValue(listen, 'proto') !== 'tcp') return { error: `${where}: A tls section needs proto = tcp in the listen section` };
-  for (const pair of section.pairs) {
-    if (!TLS_KEYS.has(pair.name)) return { error: `${pair.file}[${pair.line}]: The tls setting "${pair.name}" is not implemented in this simulator` };
-  }
-  const certificateFile = pairValue(section, 'certificate_file');
-  const privateKeyFile = pairValue(section, 'private_key_file');
-  if (certificateFile === undefined) return { error: `${where}: Failed to find "certificate_file" in the tls section` };
-  if (privateKeyFile === undefined) return { error: `${where}: Failed to find "private_key_file" in the tls section` };
-  const require = pairValue(section, 'require_client_cert') ?? 'yes';
-  if (!/^(yes|no|true|false|on|off)$/i.test(require)) return { error: `${where}: Invalid value "${require}" for variable require_client_cert` };
-  const limits = readTlsLimits((name) => pairValue(section, name));
-  const limitsError = tlsLimitsError(limits);
-  if (limitsError !== null) return { error: `${where}: ${limitsError}` };
-  return {
-    limits, certificateFile, privateKeyFile, privateKeyPassword: pairValue(section, 'private_key_password') ?? null,
-    caFile: pairValue(section, 'ca_file') ?? null, requireClientCert: /^(yes|true|on)$/i.test(require),
-  };
+  if (pairValue(listen, 'proto') !== 'tcp') return { error: `${section.file}[${section.line}]: A tls section needs proto = tcp in the listen section` };
+  return readTlsBody(section);
 }
 
 const CONTROL_KEYS = new Set(['type', 'socket', 'mode']);

@@ -9,6 +9,15 @@ export interface RadSecTlsLimits {
   readonly checkCertCn: string | null;
 }
 
+export interface RadSecTls {
+  readonly certificateFile: string;
+  readonly privateKeyFile: string;
+  readonly privateKeyPassword: string | null;
+  readonly caFile: string | null;
+  readonly requireClientCert: boolean;
+  readonly limits: RadSecTlsLimits;
+}
+
 export const NO_TLS_LIMITS: RadSecTlsLimits = { minVersion: null, maxVersion: null, checkCertIssuer: null, checkCertCn: null };
 
 export const TLS_LIMIT_KEYS: readonly string[] = ['tls_min_version', 'tls_max_version', 'check_cert_issuer', 'check_cert_cn'];

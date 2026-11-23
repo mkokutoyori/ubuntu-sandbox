@@ -288,7 +288,7 @@ export class RadiusdService {
     for (const spec of specs.filter((candidate) => candidate.tls !== undefined)) {
       const config = this.radSecTlsConfig(spec.tls as RadSecTls);
       if (typeof config === 'string') return { ok: false, error: config };
-      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: () => config, checkPeer: (certificate) => certificateRejection(certificate, spec.tls!.limits), onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
+      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)), onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
       server.start({ processName: PROCESS_NAME });
       radSecServers.push(server);
     }
@@ -592,6 +592,25 @@ export class RadiusdService {
       verifier: new CertificateVerifier({ trustAnchors: pemToCertChain(caText), clock: () => this.wallClock.nowMs() }),
       clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: tlsProtocolsOf(tls.limits),
     };
+  }
+
+  private radSecClientTls(clientIp: string): RadSecTls | undefined {
+    return this.radiusServer.clientTable.find(new IPAddress(clientIp), 'tls')?.tls;
+  }
+
+  private radSecConfigFor(clientIp: string, listener: RadSecTls, listenerConfig: TlsServerConfig): TlsServerConfig | null {
+    const own = this.radSecClientTls(clientIp);
+    if (own === undefined || own === listener) return listenerConfig;
+    const config = this.radSecTlsConfig(own);
+    if (typeof config === 'string') {
+      this.writeLogLine('Error', `tls: ${config}`);
+      return null;
+    }
+    return config;
+  }
+
+  private radSecLimitsFor(clientIp: string, listener: RadSecTls): RadSecTls['limits'] {
+    return (this.radSecClientTls(clientIp) ?? listener).limits;
   }
 
   private radSecTlsConfig(tls: RadSecTls): TlsServerConfig | string {
