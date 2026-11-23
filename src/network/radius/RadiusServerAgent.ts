@@ -1509,7 +1509,7 @@ export class RadiusServerAgent {
       const activity = this.homeActivity.get(`${route.homeServerIp}:${route.homePort}`) ?? { lastReplyMs: null, timedOutAtMs: null };
       if (activity.timedOutAtMs === null) activity.timedOutAtMs = simulationNowMs();
       this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, activity);
-      if (route.radSec !== true) this.startProbing(route, kind === 'acct');
+      this.startProbing(route, kind === 'acct');
       if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1), kind);
     };
     const context = (timer: TimerHandle | null): PendingProxyContext => ({
@@ -1568,6 +1568,17 @@ export class RadiusServerAgent {
     this.probeLoops.set(key, loop);
     const tick = (): void => {
       const check = route.statusCheck!;
+      if (route.radSec === true) {
+        const authenticator = randomRequestAuthenticator();
+        const probe = withMessageAuthenticator(
+          { type: 'radius', code: 'status-server', identifier: this.freeProxyIdentifier(), authenticator, attributes: [] }, authenticator, route.homeSecret,
+        );
+        const answer = this.radSecClient?.(route.homeServerIp, route.homePort, probe) ?? null;
+        if (answer !== null && verifyResponseAuthenticator(answer, authenticator, route.homeSecret)) this.acknowledgeProbe(key);
+        else loop.answers = 0;
+        if (this.probeLoops.has(key)) loop.timer = this.getScheduler().setTimeout(tick, check.intervalMs);
+        return;
+      }
       const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
       if (homeSrcIp) {
         const identifier = this.freeProxyIdentifier();
@@ -1597,15 +1608,19 @@ export class RadiusServerAgent {
     if (!verifyResponseAuthenticator(payload, probe.authenticator, probe.secret)) return false;
     this.pendingProbes.delete(payload.identifier);
     if (probe.timer !== null) this.getScheduler().clear(probe.timer);
-    const loop = this.probeLoops.get(probe.key);
-    if (loop === undefined) return true;
+    this.acknowledgeProbe(probe.key);
+    return true;
+  }
+
+  private acknowledgeProbe(key: string): void {
+    const loop = this.probeLoops.get(key);
+    if (loop === undefined) return;
     loop.answers++;
     if (loop.answers >= (loop.route.statusCheck?.answers ?? 1)) {
       if (loop.timer !== null) this.getScheduler().clear(loop.timer);
-      this.probeLoops.delete(probe.key);
-      this.homeActivity.set(probe.key, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
+      this.probeLoops.delete(key);
+      this.homeActivity.set(key, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
     }
-    return true;
   }
 
   /** The home server's Access-Accept/Reject for a request we forwarded — translate it back to the original NAS. Returns false when the reply doesn't match any pending proxied request (so the caller can fall through to normal handling). */

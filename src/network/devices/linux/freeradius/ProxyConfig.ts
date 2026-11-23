@@ -119,9 +119,6 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
       const limitsError = tlsLimitsError(limits);
       if (limitsError !== null) return { error: `${located(tlsSection)}: ${limitsError}` };
       radSec = { certificateFile, privateKeyFile, privateKeyPassword: value(tlsSection, 'private_key_password') ?? null, caFile, limits };
-      if (value(section, 'status_check') !== undefined && value(section, 'status_check') !== 'none') {
-        return { error: `${located(section)}: status_check over RadSec is not implemented in this simulator` };
-      }
     }
     const address = value(section, 'ipaddr') ?? value(section, 'ipv4addr');
     if (address === undefined || IPAddress.tryParse(address) === null) return { error: `${located(section)}: No valid ipaddr found for home server ${name}` };
