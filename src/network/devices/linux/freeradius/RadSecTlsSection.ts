@@ -1,7 +1,7 @@
 import { readTlsLimits, tlsLimitsError, TLS_LIMIT_KEYS, type RadSecOcsp, type RadSecTls } from '@/network/radius/RadSecTlsPolicy';
 import type { ConfSection } from './FreeradiusConf';
 
-const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert', 'ca_path', ...TLS_LIMIT_KEYS]);
+const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert', 'ca_path', 'dh_file', ...TLS_LIMIT_KEYS]);
 
 const OCSP_KEYS = new Set(['enable', 'url', 'override_cert_url', 'use_nonce', 'timeout', 'softfail']);
 const BOOLEAN_WORD = /^(yes|no|true|false|on|off)$/i;
@@ -43,6 +43,7 @@ export function readTlsBody(section: ConfSection): RadSecTls | { error: string }
     ...(ocsp === undefined ? {} : { ocsp }),
     limits, certificateFile, privateKeyFile, privateKeyPassword: pairValue(section, 'private_key_password') ?? null,
     ...(pairValue(section, 'ca_path') === undefined ? {} : { caPath: pairValue(section, 'ca_path') }),
+    ...(pairValue(section, 'dh_file') === undefined ? {} : { dhFile: pairValue(section, 'dh_file') }),
     caFile: pairValue(section, 'ca_file') ?? null, requireClientCert: /^(yes|true|on)$/i.test(require),
   };
 }

@@ -47,7 +47,7 @@ import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { certificateRejection, cipherOptions, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
-import { pemToCertChain, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
+import { pemToCertChain, pemToDhParameters, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
 import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { type ControlSocket, type RadSecTls, readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
 import { RadiusClientTable } from '@/network/radius/ClientTable';
@@ -726,7 +726,15 @@ export class RadiusdService {
     if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
     const caText = this.caMaterial(tls);
     if (typeof caText === 'object' && caText !== null) return caText.error;
+    let dhParameters: ReturnType<typeof pemToDhParameters> = null;
+    if (tls.dhFile !== undefined) {
+      const dhText = this.files.read(tls.dhFile);
+      if (dhText === null) return `Failed reading dh_file "${tls.dhFile}": No such file or directory`;
+      dhParameters = pemToDhParameters(dhText);
+      if (dhParameters === null) return 'Unable to set DH parameters';
+    }
     return {
+      ...(dhParameters === null ? {} : { dhParameters }),
       serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
       requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
       verifier: new CertificateVerifier(verifierOptions(caText as string | null, tls.limits, () => this.wallClock.nowMs())),
