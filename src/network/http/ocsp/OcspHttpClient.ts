@@ -118,7 +118,7 @@ export const DEFAULT_OCSP_POLICY: OcspPolicy = {
 
 export type OcspLookup =
   | { readonly ok: true; readonly single: OcspSingle; readonly response: OcspResponseMessage }
-  | { readonly ok: false; readonly reason: string };
+  | { readonly ok: false; readonly reason: string; readonly kind: 'unreachable' | 'rejected' };
 
 function randomNonce(): string {
   return Array.from({ length: 16 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('');
@@ -177,27 +177,27 @@ export class OcspClient {
   }
 
   lookup(cert: X509Certificate, issuer: X509Certificate | undefined): OcspLookup {
-    if (issuer === undefined) return { ok: false, reason: 'issuer certificate not available' };
+    if (issuer === undefined) return { ok: false, reason: 'issuer certificate not available', kind: 'unreachable' };
     const now = this.deps.now();
     const key = `${cert.issuer}#${cert.serialNumber}`;
     const cached = this.cache.get(key);
     if (cached && cached.until > now) return { ok: true, single: cached.single, response: cached.response };
     const url = this.responderFor(cert);
-    if (url === null) return { ok: false, reason: 'no OCSP responder URL' };
+    if (url === null) return { ok: false, reason: 'no OCSP responder URL', kind: 'unreachable' };
     const nonce = this.policy.useNonce ? randomNonce() : undefined;
     const request: OcspRequestMessage = { ids: [ocspCertIdFor(cert, issuer)], ...(nonce !== undefined ? { nonce } : {}) };
     const outcome = queryOcspResponder(this.deps, url, request, { timeoutMs: this.policy.timeoutMs, proxyUrl: this.policy.proxyUrl });
-    if (outcome.ok === false) return outcome;
+    if (outcome.ok === false) return { ...outcome, kind: 'unreachable' };
     const response = outcome.response;
-    if (response.status !== 'successful') return { ok: false, reason: `responder error ${response.status}` };
+    if (response.status !== 'successful') return { ok: false, reason: `responder error ${response.status}`, kind: 'rejected' };
     if (this.policy.verifySignature) {
       const verdict = verifyOcspResponse(response, request, this.policy.trusted, now, true);
-      if (verdict.ok === false) return { ok: false, reason: `OCSP response verification failed: ${verdict.reason}` };
+      if (verdict.ok === false) return { ok: false, reason: `OCSP response verification failed: ${verdict.reason}`, kind: 'rejected' };
     }
     const single = findSingle(response, cert, issuer);
-    if (!single) return { ok: false, reason: 'no status in the response for the certificate' };
+    if (!single) return { ok: false, reason: 'no status in the response for the certificate', kind: 'rejected' };
     if (!ocspTimeIsValid(single, now, this.policy.skewMs, this.policy.maxAgeMs)) {
-      return { ok: false, reason: 'OCSP response status times invalid' };
+      return { ok: false, reason: 'OCSP response status times invalid', kind: 'rejected' };
     }
     const bound = this.policy.cacheMs;
     const until = bound <= 0 ? 0

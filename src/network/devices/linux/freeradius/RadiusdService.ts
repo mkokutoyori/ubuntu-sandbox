@@ -42,6 +42,8 @@ import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusForm
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
 import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTransport';
+import { OcspClient, DEFAULT_OCSP_POLICY } from '@/network/http/ocsp/OcspHttpClient';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { certificateRejection, cipherOptions, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -351,7 +353,7 @@ export class RadiusdService {
     for (const spec of specs.filter((candidate) => candidate.tls !== undefined)) {
       const config = this.radSecTlsConfig(spec.tls as RadSecTls);
       if (typeof config === 'string') return { ok: false, error: config };
-      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)), onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
+      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)) ?? this.ocspRejection(certificate, this.radSecClientTls(clientIp) ?? (spec.tls as RadSecTls)), onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
       server.start({ processName: PROCESS_NAME });
       radSecServers.push(server);
     }
@@ -670,6 +672,28 @@ export class RadiusdService {
       return null;
     }
     return config;
+  }
+
+  private ocspRejection(certificate: X509Certificate | null, tls: RadSecTls): string | null {
+    const ocsp = tls.ocsp;
+    if (ocsp === undefined || certificate === null) return null;
+    const anchors = pemToCertChain(tls.caFile === null ? '' : this.files.read(tls.caFile) ?? '');
+    const client = new OcspClient({ tcpStack: () => this.host.getTcpStack(), now: () => this.wallClock.nowMs() }, {
+      ...DEFAULT_OCSP_POLICY, responderUrl: ocsp.url, overrideResponder: ocsp.overrideCertUrl, trusted: anchors, useNonce: ocsp.useNonce,
+      cacheMs: 0, timeoutMs: ocsp.timeoutSeconds === 0 ? null : ocsp.timeoutSeconds * 1000,
+    });
+    const lookup = client.lookup(certificate, anchors.find((anchor) => anchor.subject === certificate.issuer));
+    if (lookup.ok === false) {
+      this.writeLogLine('Error', `tls: ocsp: ${lookup.reason}`);
+      if (lookup.kind === 'unreachable' && ocsp.softfail) {
+        this.writeLogLine('Warning', 'tls: (TLS) ocsp: Unable to check certificate, assuming it\'s valid');
+        return null;
+      }
+      return lookup.kind === 'unreachable' ? '(TLS) ocsp: Unable to check certificate, failing' : '(TLS) ocsp: Certificate has been expired/revoked';
+    }
+    if (lookup.single.status === 'good') return null;
+    this.writeLogLine('Error', `tls: ocsp: Cert status: ${lookup.single.status}`);
+    return '(TLS) ocsp: Certificate has been expired/revoked';
   }
 
   private radSecLimitsFor(clientIp: string, listener: RadSecTls): RadSecTls['limits'] {

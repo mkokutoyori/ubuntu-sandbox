@@ -18,6 +18,14 @@ export interface RadSecTlsLimits {
   readonly invalidBoolean?: { readonly name: string; readonly value: string };
 }
 
+export interface RadSecOcsp {
+  readonly url: string | null;
+  readonly overrideCertUrl: boolean;
+  readonly useNonce: boolean;
+  readonly timeoutSeconds: number;
+  readonly softfail: boolean;
+}
+
 export interface RadSecTls {
   readonly certificateFile: string;
   readonly privateKeyFile: string;
@@ -25,6 +33,7 @@ export interface RadSecTls {
   readonly caFile: string | null;
   readonly requireClientCert: boolean;
   readonly limits: RadSecTlsLimits;
+  readonly ocsp?: RadSecOcsp;
 }
 
 export const NO_TLS_LIMITS: RadSecTlsLimits = { minVersion: null, maxVersion: null, checkCertIssuer: null, checkCertCn: null, checkCrl: false, allowExpiredCrl: false, cipherList: null, cipherSuites: null };
