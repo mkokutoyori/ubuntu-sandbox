@@ -635,10 +635,18 @@ export class RadiusServerAgent {
           Object.assign(record, { status: 'stop', updatedAt: at, terminateCause: 'nas-reboot' });
         }
       }
-      this.accountingListener?.({
-        sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
-        packet: payload, atMs: at,
-      });
+      if (this.accountingRunner !== null) {
+        const answered = this.accountingRunner({
+          packet: payload, sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort,
+          destinationPort: udp.destinationPort, atMs: at, recordUtmp: () => undefined,
+        });
+        if (answered === false) return;
+      } else {
+        this.accountingListener?.({
+          sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
+          packet: payload, atMs: at,
+        });
+      }
       this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
       return;
     }
