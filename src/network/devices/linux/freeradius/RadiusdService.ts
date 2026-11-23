@@ -45,7 +45,7 @@ import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTra
 import { OcspClient, DEFAULT_OCSP_POLICY } from '@/network/http/ocsp/OcspHttpClient';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { peerOf } from '@/network/radius/sourceAddress';
-import { SessionTicketStore } from '@/network/tls/sessionTickets';
+import { SessionTicketStore, type SessionTicket } from '@/network/tls/sessionTickets';
 import { certificateRejection, cipherOptions, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -384,7 +384,7 @@ export class RadiusdService {
       const config = this.radSecTlsConfig(spec.tls as RadSecTls);
       if (typeof config === 'string') return { ok: false, error: config };
       this.radSecBuilt.set(spec.tls as RadSecTls, { config, atMs: this.wallClock.nowMs() });
-      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)) ?? this.ocspRejection(certificate, this.radSecClientTls(clientIp) ?? (spec.tls as RadSecTls)), localIp: spec.ipv6 === true ? '::' : '0.0.0.0', onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
+      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)) ?? this.ocspRejection(certificate, this.radSecClientTls(clientIp) ?? (spec.tls as RadSecTls)), localIp: spec.ipv6 === true ? '::' : '0.0.0.0', onConnection: (_ip, accepted, reason, resumed) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); if (accepted && resumed === true) this.resumedRadSecConnections++; } });
       server.start({ processName: PROCESS_NAME });
       radSecServers.push(server);
     }
@@ -680,12 +680,16 @@ export class RadiusdService {
       if (connection === undefined) {
         const config = this.radSecClientConfig(home.radSec);
         if (typeof config === 'string') return null;
-        const opened = RadSecClientConnection.open(this.host.getTcpStack(), address, port, config, (certificate) => certificateRejection(certificate, home.radSec!.limits));
+        const ticket = this.radSecTickets.get(key);
+        const opened = RadSecClientConnection.open(this.host.getTcpStack(), address, port, ticket === undefined ? config : { ...config, resumptionTicket: ticket }, (certificate) => certificateRejection(certificate, home.radSec!.limits));
         if (!(opened instanceof RadSecClientConnection)) return null;
+        this.radSecTickets.delete(key);
         connection = opened;
         this.radSecConnections.set(key, connection);
       }
       const outcome = connection.exchange(request);
+      const issued = connection.ticket;
+      if (issued !== null) this.radSecTickets.set(key, issued);
       if (outcome.ok && outcome.reply !== undefined) return outcome.reply;
       connection.close();
       this.radSecConnections.delete(key);
@@ -719,6 +723,12 @@ export class RadiusdService {
   private radSecClientTls(clientIp: string): RadSecTls | undefined {
     return this.radiusServer.clientTable.find(peerOf(clientIp), 'tls')?.tls;
   }
+
+  private resumedRadSecConnections = 0;
+
+  radSecResumedConnections(): number { return this.resumedRadSecConnections; }
+
+  private readonly radSecTickets = new Map<string, SessionTicket>();
 
   private readonly ticketStores = new Map<RadSecTls, SessionTicketStore>();
 

@@ -26,7 +26,7 @@ export interface RadSecServerSettings {
   readonly tlsConfig: (clientIp: string) => TlsServerConfig | null;
   readonly checkPeer?: (clientIp: string, certificate: X509Certificate | null) => string | null;
   readonly localIp?: string;
-  readonly onConnection: (clientIp: string, accepted: boolean, reason?: string) => void;
+  readonly onConnection: (clientIp: string, accepted: boolean, reason?: string, resumed?: boolean) => void;
 }
 
 function radiusFrameLength(buffer: Uint8Array): number | null {
@@ -62,7 +62,7 @@ export class RadSecServer {
     const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
       onHandshakeComplete: () => {
         const reason = this.settings.checkPeer?.(socket.remoteIp, tls.peerCertificate) ?? null;
-        this.settings.onConnection(socket.remoteIp, reason === null, reason ?? undefined);
+        this.settings.onConnection(socket.remoteIp, reason === null, reason ?? undefined, tls.sessionReused);
         if (reason !== null) channel.close();
       },
       onHandshakeRejected: () => { this.settings.onConnection(socket.remoteIp, false); channel.close(); },
