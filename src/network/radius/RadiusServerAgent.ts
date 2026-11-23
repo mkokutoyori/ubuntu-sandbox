@@ -483,7 +483,7 @@ export class RadiusServerAgent {
     const payload: RadiusAuthDecidedPayload = {
       deviceId: this.host.id, hostname: this.host.getHostname(),
       number: this.requestNumber, accepted, clientIp: clientIp.toString(),
-      clientShortname: this.clientTable.find(clientIp)?.shortname ?? clientIp.toString(),
+      clientShortname: this.clientTable.find(clientIp, this.transport())?.shortname ?? clientIp.toString(),
       username: getAttr(request, 'user-name')?.value ?? null,
       password, nasPort: Number(getAttr(request, 'nas-port')?.value ?? 0),
       callingStationId: getAttr(request, 'calling-station-id')?.value ?? null,
@@ -494,7 +494,7 @@ export class RadiusServerAgent {
   }
 
   private clientRefused(senderIp: string): boolean {
-    if (this.clientTable.size > 0 && this.clientTable.find(new IPAddress(senderIp)) !== null) return false;
+    if (this.clientTable.size > 0 && this.clientTable.find(new IPAddress(senderIp), this.transport()) !== null) return false;
     const restricted = this.config.requireAuthorizedClient === true || this.config.clients.size > 0 || this.clientTable.size > 0;
     return restricted && !this.config.clients.has(senderIp);
   }
@@ -502,7 +502,7 @@ export class RadiusServerAgent {
   private secretFor(ip: IPAddress | string): string {
     if (this.secretOverride !== null) return this.secretOverride;
     if (this.clientTable.size === 0) return this.config.sharedSecret;
-    const entry = this.clientTable.find(typeof ip === 'string' ? new IPAddress(ip) : ip);
+    const entry = this.clientTable.find(typeof ip === 'string' ? new IPAddress(ip) : ip, this.transport());
     return entry === null ? this.config.sharedSecret : entry.secret;
   }
 
@@ -569,7 +569,7 @@ export class RadiusServerAgent {
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleStreamRequest(
     srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
-    request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string,
+    request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string, encrypted = false,
   ): void {
     const inPort = this.host.getPorts().find((candidate) => candidate.getIPAddress()?.toString() === localIp.toString());
     if (!inPort) return;
@@ -577,6 +577,8 @@ export class RadiusServerAgent {
     const previousSink = this.streamSink;
     const previousPort = this.servedPort;
     const previousSecret = this.secretOverride;
+    const previousEncrypted = this.streamEncrypted;
+    this.streamEncrypted = encrypted;
     this.secretOverride = secret ?? null;
     this.streamSink = reply;
     this.servedPort = localPort;
@@ -587,8 +589,13 @@ export class RadiusServerAgent {
       this.streamSink = previousSink;
       this.servedPort = previousPort;
       this.secretOverride = previousSecret;
+      this.streamEncrypted = previousEncrypted;
     }
   }
+
+  private streamEncrypted = false;
+
+  private transport(): 'udp' | 'tcp' | 'tls' { return this.streamSink === null ? 'udp' : this.streamEncrypted ? 'tls' : 'tcp'; }
 
   private secretOverride: string | null = null;
   private streamSink: ((response: RadiusPacket) => void) | null = null;
@@ -759,7 +766,7 @@ export class RadiusServerAgent {
     }
 
     const senderIp = srcIp.toString();
-    if (this.clientTable.find(srcIp)?.requireMessageAuthenticator === 'yes' && !getAttr(payload, 'message-authenticator')) {
+    if (this.clientTable.find(srcIp, this.transport())?.requireMessageAuthenticator === 'yes' && !getAttr(payload, 'message-authenticator')) {
       Logger.warn(this.host.id, 'radius:insecure-packet',
         `${this.host.name}: Insecure packet from host ${senderIp}:  Packet does not contain required Message-Authenticator attribute.  You may need to set 'require_message_authenticator = no' in the configuration`);
       return;
@@ -914,7 +921,7 @@ export class RadiusServerAgent {
     clients: RadiusClientTable | null = null,
   ): void {
     const senderIp = srcIp.toString();
-    const refused = clients === null ? this.clientRefused(senderIp) : clients.find(srcIp) === null;
+    const refused = clients === null ? this.clientRefused(senderIp) : clients.find(srcIp, this.transport()) === null;
     if (refused) {
       this.reportUnknownClient(replyCode === 'access-accept' ? 'auth' : 'acct', senderIp, udp.sourcePort, udp.destinationPort);
       return;
@@ -930,7 +937,7 @@ export class RadiusServerAgent {
         `${this.host.name}: Insecure packet from host ${senderIp}:  Packet does not contain required Message-Authenticator attribute.  You may need to set 'require_message_authenticator = no' in the configuration`);
       return;
     }
-    const secret = clients === null ? this.secretFor(srcIp) : clients.find(srcIp)!.secret;
+    const secret = clients === null ? this.secretFor(srcIp) : clients.find(srcIp, this.transport())!.secret;
     if (!verifyMessageAuthenticator(request, request.authenticator, secret)) {
       Logger.warn(this.host.id, 'radius:bad-message-authenticator',
         `${this.host.name}: Received packet from ${senderIp} with invalid Message-Authenticator!  (Shared secret is incorrect.)`);

@@ -31,7 +31,7 @@ beforeEach(() => { resetCounters(); resetDeviceCounters(); MACAddress.resetCount
 const vfsOf = (server: LinuxServer) => (server as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
 const write = (server: LinuxServer, path: string, content: string) => { vfsOf(server).writeFile(path, content, 0, 0, 0o022); };
 
-async function lab(users: string, clients = 'client lab {\n  ipaddr = 10.0.0.0/24\n  secret = shared\n}\n') {
+async function lab(users: string, clients = 'client lab {\n  ipaddr = 10.0.0.0/24\n  proto = *\n  secret = shared\n}\n') {
   const bus = new EventBus();
   const nas = new CiscoRouter('NAS');
   const sender = new LinuxServer('linux-server', 'SENDER');

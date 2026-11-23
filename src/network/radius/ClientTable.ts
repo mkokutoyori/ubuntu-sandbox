@@ -13,7 +13,15 @@ export interface RadiusClientEntry {
   readonly nasType: string;
   readonly requireMessageAuthenticator: MessageAuthenticatorPolicy;
   readonly limitProxyState: MessageAuthenticatorPolicy;
+  readonly protocol?: ClientProtocol;
+  readonly tlsRequired?: boolean;
 }
+
+export type ClientProtocol = 'udp' | 'tcp' | '*';
+
+export type ClientTransport = 'udp' | 'tcp' | 'tls';
+
+export const protocolOf = (entry: RadiusClientEntry): ClientProtocol => entry.protocol ?? 'udp';
 
 export class RadiusClientTable {
   private entries: RadiusClientEntry[] = [];
@@ -28,7 +36,7 @@ export class RadiusClientTable {
 
   add(entry: RadiusClientEntry): boolean {
     const duplicate = this.entries.some(
-      (known) => known.prefix === entry.prefix && known.address.toString() === entry.address.toString(),
+      (known) => known.prefix === entry.prefix && known.address.toString() === entry.address.toString() && protocolOf(known) === protocolOf(entry),
     );
     if (duplicate) return false;
     this.entries.push(entry);
@@ -36,8 +44,11 @@ export class RadiusClientTable {
     return true;
   }
 
-  find(ip: IPAddress): RadiusClientEntry | null {
+  find(ip: IPAddress, transport: ClientTransport = 'udp'): RadiusClientEntry | null {
     for (const entry of this.entries) {
+      const carried = transport === 'udp' ? 'udp' : 'tcp';
+      if (protocolOf(entry) !== '*' && protocolOf(entry) !== carried) continue;
+      if (entry.tlsRequired === true && transport !== 'tls') continue;
       if (entry.prefix === 0) return entry;
       const mask = SubnetMask.fromCIDR(entry.prefix);
       if (ip.isInSameSubnet(entry.address, mask)) return entry;

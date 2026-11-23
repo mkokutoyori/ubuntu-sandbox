@@ -63,7 +63,7 @@ async function lab(options: { block?: string; skipFiles?: boolean } = {}) {
   new Cable('b').connect(target.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
   client.configureInterface('eth0', new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
   target.configureInterface('eth0', new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
-  write(target, CLIENTS_CONF_PATH, 'client nas {\n  ipaddr = 10.0.0.1\n  secret = shared\n}\n');
+  write(target, CLIENTS_CONF_PATH, 'client nas {\n  ipaddr = 10.0.0.1\n  proto = *\n  secret = shared\n}\n');
   write(target, USERS_FILE_PATH, 'alice Cleartext-Password := "wonderland"\n');
   const pki = certificates();
   if (options.skipFiles !== true) {

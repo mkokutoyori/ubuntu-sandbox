@@ -1,5 +1,5 @@
 import { IPAddress } from '@/network/core/types';
-import type { MessageAuthenticatorPolicy, RadiusClientEntry } from '@/network/radius/ClientTable';
+import type { ClientProtocol, MessageAuthenticatorPolicy, RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseFreeradiusConf, type ConfFileReader, type ConfSection } from './FreeradiusConf';
 
 export interface ParsedClients {
@@ -68,7 +68,17 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
         continue;
       }
     }
-    const secret = pair(section, 'secret') ?? '';
+    const protoText = pair(section, 'proto');
+    const protoKinds: Record<string, { protocol: ClientProtocol; tls: boolean }> = {
+      udp: { protocol: 'udp', tls: false }, tcp: { protocol: 'tcp', tls: false }, tls: { protocol: 'tcp', tls: true },
+      radsec: { protocol: 'tcp', tls: true }, '*': { protocol: '*', tls: false },
+    };
+    if (protoText !== undefined && protoKinds[protoText] === undefined) {
+      result.errors.push(`${where}: Unknown proto "${protoText}".`);
+      continue;
+    }
+    const kind = protoText === undefined ? protoKinds.udp : protoKinds[protoText];
+    const secret = pair(section, 'secret') ?? (kind.tls ? 'radsec' : '');
     if (secret === '') {
       result.errors.push(`${where}: secret must be at least 1 character long`);
       continue;
@@ -92,6 +102,8 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
       nasType: pair(section, 'nas_type') ?? 'other',
       requireMessageAuthenticator: policyOf(requireMa),
       limitProxyState: policyOf(pair(section, 'limit_proxy_state')),
+      protocol: kind.protocol,
+      tlsRequired: kind.tls,
     });
   }
 }

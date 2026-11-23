@@ -17,7 +17,7 @@ export const RADSEC_SECRET = 'radsec';
 export interface RadSecEngine {
   handleStreamRequest(
     srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
-    request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string,
+    request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string, encrypted?: boolean,
   ): void;
 }
 
@@ -79,7 +79,7 @@ export class RadSecServer {
           if (isRadiusDecodeError(packet)) { channel.close(); return; }
           this.engine.handleStreamRequest(
             new IPAddress(socket.remoteIp), socket.remotePort, new IPAddress(socket.localIp), socket.localPort, packet,
-            (response) => channel.write(encodeRadiusPacket(response)), RADSEC_SECRET,
+            (response) => channel.write(encodeRadiusPacket(response)), RADSEC_SECRET, true,
           );
         }
       },
