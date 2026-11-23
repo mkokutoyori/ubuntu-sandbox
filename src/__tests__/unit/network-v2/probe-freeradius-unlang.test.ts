@@ -168,9 +168,9 @@ describe('unlang: update and if', () => {
     expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The attribute list "session-state" in update is not implemented in this simulator$/);
   });
 
-  it('foreach is still refused naming it', async () => {
+  it('map is still refused naming it', async () => {
     const { target } = await lab();
-    write(target, SITES, inAuthorize(['\t\tforeach &Reply-Message {', '\t\t}'])(site(target)));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "foreach" is not implemented in this simulator$/);
+    write(target, SITES, inAuthorize(['\t\tmap &Reply-Message {', '\t\t}'])(site(target)));
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "map" is not implemented in this simulator$/);
   });
 });

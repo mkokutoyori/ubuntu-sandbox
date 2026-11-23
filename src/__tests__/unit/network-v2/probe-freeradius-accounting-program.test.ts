@@ -142,7 +142,7 @@ describe('the accounting programs', () => {
 
   it('an unlang construct the simulator lacks is still refused naming it, in session as in authenticate', async () => {
     const { target } = await lab();
-    write(target, SITES, site(target).replace('\tsession {\n', '\tsession {\n\t\tforeach &Reply-Message {\n\t\t}\n'));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "foreach" is not implemented in this simulator$/);
+    write(target, SITES, site(target).replace('\tsession {\n', '\tsession {\n\t\tmap &Reply-Message {\n\t\t}\n'));
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "map" is not implemented in this simulator$/);
   });
 });

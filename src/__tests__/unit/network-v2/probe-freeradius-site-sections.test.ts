@@ -153,9 +153,9 @@ describe('the processing sections of a site', () => {
 
   it('an unlang construct is refused naming it, with its file and line', async () => {
     const { target } = await lab();
-    write(target, SITES, site(target).replace('\tauthorize {\n', '\tauthorize {\n\t\tforeach &Reply-Message {\n\t\t}\n'));
+    write(target, SITES, site(target).replace('\tauthorize {\n', '\tauthorize {\n\t\tmap &Reply-Message {\n\t\t}\n'));
     const error = (target.getRadiusd().checkConfig() as { error: string }).error;
-    expect(error).toMatch(/^\/etc\/freeradius\/3\.0\/sites-enabled\/default\[\d+\]: The unlang construct "foreach" is not implemented in this simulator$/);
+    expect(error).toMatch(/^\/etc\/freeradius\/3\.0\/sites-enabled\/default\[\d+\]: The unlang construct "map" is not implemented in this simulator$/);
   });
 
   it('a module the real server has and this one has not is refused naming it; an optional one (-ldap) is skipped', async () => {

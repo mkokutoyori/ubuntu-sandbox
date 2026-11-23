@@ -18,14 +18,20 @@ export interface UnlangContext extends ViewContext {
   proxyRequest: RadiusAttribute[];
   proxyReply: RadiusAttribute[];
   lastResult: ModuleResult | null;
+  foreachValues: Array<string | number>;
+  breaking: boolean;
 }
 
 export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null, nowMs = 0): UnlangContext {
-  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [], lastResult: null };
+  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [], lastResult: null, foreachValues: [], breaking: false };
 }
+
+const FOREACH_VARIABLE = /^foreach-variable-([0-7])$/;
 
 export function lookup(context: UnlangContext, list: AttributeList, name: string): string | number | undefined {
   const key = name.toLowerCase();
+  const variable = FOREACH_VARIABLE.exec(key);
+  if (variable !== null) return context.foreachValues[Number(variable[1])];
   if (list === 'request') return requestViewOf(context, () => [])(key);
   if (list === 'control') return context.control.get(key);
   if (list === 'proxy-request') return context.proxyRequest.find((attribute) => attribute.type === key)?.value;
@@ -49,6 +55,8 @@ export interface Assignment { list: AttributeList; name: string; op: string; val
 export type Statement =
   | { kind: 'module'; name: string; file: string; line: number; actions?: ReadonlyMap<ModuleResult, 'return' | 'continue' | 'reject'> }
   | { kind: 'leave' }
+  | { kind: 'break' }
+  | { kind: 'foreach'; text: string; operand: Operand; body: Statement[] }
   | { kind: 'group'; keyword: 'group' | 'redundant' | 'load-balance' | 'redundant-load-balance'; body: Statement[] }
   | { kind: 'switch'; text: string; expression: Term; cases: Array<{ value: string | null; body: Statement[] }> }
   | { kind: 'return'; result: ModuleResult }
@@ -60,7 +68,8 @@ export class UnlangError extends Error {}
 
 const RESULT_KEYWORDS = new Set<string>(['ok', 'reject', 'noop', 'fail', 'handled', 'invalid', 'userlock', 'notfound', 'updated']);
 const STOPPING = new Set<ModuleResult>(['reject', 'fail', 'userlock', 'invalid', 'handled']);
-const UNSUPPORTED = new Set(['case', 'foreach', 'break', 'map']);
+const UNSUPPORTED = new Set(['case', 'map']);
+const FOREACH_DEPTH = 8;
 const GROUPS = new Set(['group', 'redundant', 'load-balance', 'redundant-load-balance']);
 const ACTIONS = new Set(['return', 'continue', 'reject']);
 const LIST_ALIASES: Record<string, AttributeList> = { request: 'request', control: 'control', config: 'control', reply: 'reply', 'proxy-request': 'proxy-request', 'proxy-reply': 'proxy-reply' };
@@ -246,7 +255,7 @@ function assignmentOf(pair: ConfPair, defaultList: AttributeList): Assignment {
   return { list: target.list, name: target.name, op: pair.op, value, file: pair.file, line: pair.line };
 }
 
-export function parseStatements(section: ConfSection, knownModule: (name: string, file: string, line: number) => string | null): Statement[] {
+export function parseStatements(section: ConfSection, knownModule: (name: string, file: string, line: number) => string | null, inForeach = false): Statement[] {
   const statements: Statement[] = [];
   let pending: Extract<Statement, { kind: 'if' }> | null = null;
   for (const item of section.items) {
@@ -254,17 +263,22 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       pending = null;
       if (item.op !== '=' || item.value !== '') fail(item.file, item.line, `The unlang statement "${item.name} ${item.op} ${item.value}" is not implemented in this simulator`);
       if (item.name === 'return') { statements.push({ kind: 'leave' }); continue; }
+      if (item.name === 'break') {
+        if (!inForeach) fail(item.file, item.line, "'break' can only be used in a 'foreach' section");
+        statements.push({ kind: 'break' });
+        continue;
+      }
       if (RESULT_KEYWORDS.has(item.name)) { statements.push({ kind: 'return', result: item.name as ModuleResult }); continue; }
       const resolved = knownModule(item.name, item.file, item.line);
       if (resolved !== null) statements.push({ kind: 'module', name: resolved, file: item.file, line: item.line });
       continue;
     }
     if (item.name1 === 'if') {
-      pending = { kind: 'if', branches: [{ keyword: 'if', text: item.name2 ?? '', condition: parseCondition(item.name2 ?? '', item.file, item.line), body: parseStatements(item, knownModule) }] };
+      pending = { kind: 'if', branches: [{ keyword: 'if', text: item.name2 ?? '', condition: parseCondition(item.name2 ?? '', item.file, item.line), body: parseStatements(item, knownModule, inForeach) }] };
       statements.push(pending);
     } else if (item.name1 === 'elsif' || item.name1 === 'else') {
       if (pending === null) fail(item.file, item.line, `"${item.name1}" without a preceding "if"`);
-      pending.branches.push({ keyword: item.name1, text: item.name2 ?? '', condition: item.name1 === 'else' ? null : parseCondition(item.name2 ?? '', item.file, item.line), body: parseStatements(item, knownModule) });
+      pending.branches.push({ keyword: item.name1, text: item.name2 ?? '', condition: item.name1 === 'else' ? null : parseCondition(item.name2 ?? '', item.file, item.line), body: parseStatements(item, knownModule, inForeach) });
       if (item.name1 === 'else') pending = null;
     } else if (item.name1 === 'update') {
       pending = null;
@@ -273,7 +287,7 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       statements.push({ kind: 'update', list, assignments: item.pairs.map((pair) => assignmentOf(pair, list)) });
     } else if (GROUPS.has(item.name1)) {
       pending = null;
-      statements.push({ kind: 'group', keyword: item.name1 as 'group', body: parseStatements(item, knownModule) });
+      statements.push({ kind: 'group', keyword: item.name1 as 'group', body: parseStatements(item, knownModule, inForeach) });
     } else if (item.name1 === 'switch') {
       pending = null;
       const text = item.name2 ?? '';
@@ -282,14 +296,21 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       const cases: Array<{ value: string | null; body: Statement[] }> = [];
       for (const child of item.sections) {
         if (child.name1 !== 'case') fail(child.file, child.line, `Unknown section "${child.name1}" in switch`);
-        cases.push({ value: child.name2 === null ? null : child.name2.replace(/^["']|["']$/g, ''), body: parseStatements(child, knownModule) });
+        cases.push({ value: child.name2 === null ? null : child.name2.replace(/^["']|["']$/g, ''), body: parseStatements(child, knownModule, inForeach) });
       }
       statements.push({ kind: 'switch', text, expression, cases });
+    } else if (item.name1 === 'foreach') {
+      pending = null;
+      const text = item.name2 ?? '';
+      if (text === '') fail(item.file, item.line, "You must specify an attribute to loop over in 'foreach'");
+      if (item.items.length === 0) fail(item.file, item.line, "'foreach' blocks cannot be empty");
+      if (!text.startsWith('&')) fail(item.file, item.line, "MUST use attribute or list reference in 'foreach'");
+      statements.push({ kind: 'foreach', text, operand: parseReference(text, 'request', item.file, item.line), body: parseStatements(item, knownModule, true) });
     } else if (UNSUPPORTED.has(item.name1)) {
       fail(item.file, item.line, `The unlang construct "${item.name1}" is not implemented in this simulator`);
     } else if (item.name1.endsWith('-Type')) {
       pending = null;
-      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule), file: item.file, line: item.line });
+      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule, inForeach), file: item.file, line: item.line });
     } else {
       pending = null;
       const resolved = knownModule(item.name1, item.file, item.line);
@@ -313,7 +334,7 @@ export function moduleNames(statements: readonly Statement[], into: Set<string>)
     if (statement.kind === 'module') into.add(statement.name);
     else if (statement.kind === 'if') for (const branch of statement.branches) moduleNames(branch.body, into);
     else if (statement.kind === 'typed') moduleNames(statement.body, into);
-    else if (statement.kind === 'group') moduleNames(statement.body, into);
+    else if (statement.kind === 'group' || statement.kind === 'foreach') moduleNames(statement.body, into);
     else if (statement.kind === 'switch') for (const branch of statement.cases) moduleNames(branch.body, into);
   }
 }
@@ -370,6 +391,37 @@ export function run(statements: readonly Statement[], context: UnlangContext, ho
       if (STOPPING.has(statement.result)) return { result: priorityResult(results), stopped: true };
     } else if (statement.kind === 'leave') {
       return { result: priorityResult(results), stopped: true };
+    } else if (statement.kind === 'break') {
+      indent('break');
+      context.breaking = true;
+      return { result: priorityResult(results), stopped: true };
+    } else if (statement.kind === 'foreach') {
+      const key = statement.operand.name.toLowerCase();
+      const store = statement.operand.list === 'reply' ? context.reply : statement.operand.list === 'proxy-request' ? context.proxyRequest : statement.operand.list === 'proxy-reply' ? context.proxyReply : statement.operand.list === 'request' ? context.request : null;
+      const values = store === null ? [context.control.get(key)].filter((value): value is string => value !== undefined) : store.filter((attribute) => attribute.type === key).map((attribute) => attribute.value);
+      if (context.foreachValues.length >= FOREACH_DEPTH) throw new UnlangError('foreach Nesting too deep!');
+      if (values.length === 0) {
+        indent(`foreach ${statement.text} {`);
+        indent(`} # foreach ${statement.text} = noop`);
+        results.push('noop');
+        continue;
+      }
+      indent(`foreach ${statement.text} `);
+      const depthIndex = context.foreachValues.length;
+      let loopResult: ModuleResult = 'noop';
+      let unwinding = false;
+      for (const value of values) {
+        indent(`# Foreach-Variable-${depthIndex} = ${typeof value === 'number' ? value : `"${value}"`}`, 1);
+        context.foreachValues.push(value);
+        let inner: { result: ModuleResult; stopped: boolean };
+        try { inner = run(statement.body, context, host, lines, depth + 1); } finally { context.foreachValues.pop(); }
+        loopResult = inner.result;
+        if (context.breaking) { context.breaking = false; break; }
+        if (inner.stopped) { unwinding = true; break; }
+      }
+      indent(`} # foreach ${statement.text} = ${loopResult}`);
+      results.push(loopResult);
+      if (unwinding) return { result: priorityResult(results), stopped: true };
     } else if (statement.kind === 'module') {
       const outcome = host.runModule(statement.name, context);
       for (const message of outcome.messages) indent(message, 1);
