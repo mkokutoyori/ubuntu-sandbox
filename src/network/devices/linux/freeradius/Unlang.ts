@@ -17,10 +17,11 @@ export interface UnlangContext extends ViewContext {
   reply: RadiusAttribute[];
   proxyRequest: RadiusAttribute[];
   proxyReply: RadiusAttribute[];
+  lastResult: ModuleResult | null;
 }
 
 export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null, nowMs = 0): UnlangContext {
-  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [] };
+  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [], lastResult: null };
 }
 
 export function lookup(context: UnlangContext, list: AttributeList, name: string): string | number | undefined {
@@ -40,7 +41,8 @@ export type Condition =
   | { kind: 'or' | 'and'; left: Condition; right: Condition }
   | { kind: 'not'; inner: Condition }
   | { kind: 'compare'; left: Term; op: string; right: Term }
-  | { kind: 'exists'; term: Term };
+  | { kind: 'exists'; term: Term }
+  | { kind: 'rcode'; result: ModuleResult };
 
 export interface Assignment { list: AttributeList; name: string; op: string; value: Term; file: string; line: number }
 
@@ -139,6 +141,12 @@ function parseCondition(text: string, file: string, line: number): Condition {
       if (tokens[position++] !== ')') fail(file, line, 'Syntax error in condition: missing )');
       return inner;
     }
+    const word = peek();
+    const following = tokens[position + 1];
+    if (word !== undefined && RESULT_KEYWORDS.has(word) && !(word in RADIUS_ATTR) && (following === undefined || !['==', '!=', '<', '>', '<=', '>=', '=~', '!~'].includes(following))) {
+      position++;
+      return { kind: 'rcode', result: word as ModuleResult };
+    }
     const left = term();
     const op = peek();
     if (op !== undefined && ['==', '!=', '<', '>', '<=', '>=', '=~', '!~'].includes(op)) {
@@ -197,6 +205,7 @@ export function evaluate(condition: Condition, context: UnlangContext): boolean 
     return condition.kind === 'or' ? evaluate(pair.left, context) || evaluate(pair.right, context) : evaluate(pair.left, context) && evaluate(pair.right, context);
   }
   if (condition.kind === 'not') return !evaluate((condition as Extract<Condition, { kind: 'not' }>).inner, context);
+  if (condition.kind === 'rcode') return context.lastResult === (condition as Extract<Condition, { kind: 'rcode' }>).result;
   if (condition.kind === 'exists') {
     const term = (condition as Extract<Condition, { kind: 'exists' }>).term;
     if (term.kind === 'attribute') return valueOf(context, term) !== undefined;
@@ -319,12 +328,14 @@ export function run(statements: readonly Statement[], context: UnlangContext, ho
   for (const statement of statements) {
     if (statement.kind === 'return') {
       indent(`[${statement.result}] = ${statement.result}`);
+      context.lastResult = statement.result;
       results.push(statement.result);
       if (STOPPING.has(statement.result)) return { result: priorityResult(results), stopped: true };
     } else if (statement.kind === 'module') {
       const outcome = host.runModule(statement.name, context);
       for (const message of outcome.messages) indent(message, 1);
       indent(`[${statement.name}] = ${outcome.result}`);
+      context.lastResult = outcome.result;
       results.push(outcome.result);
       if (STOPPING.has(outcome.result)) return { result: priorityResult(results), stopped: true };
     } else if (statement.kind === 'update') {
