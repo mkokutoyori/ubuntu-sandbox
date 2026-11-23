@@ -20,7 +20,7 @@ import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
 import { parseClientsConf } from './ClientsConfParser';
-import type { RadiusClientEntry } from '@/network/radius/ClientTable';
+import { protocolOf, type RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
 import type { RadiusUser, RadiusAttribute, RadiusPacket, ProxyRoute } from '@/network/radius/types';
 import { detailPath, detailEntry, acctUniqueFor, type DetailRecord } from './DetailModule';
@@ -192,7 +192,7 @@ export class RadiusdService {
     const address = (entry: RadiusClientEntry) => entry.prefix === 32 ? entry.address.toString() : `${entry.address.toString()}/${entry.prefix}`;
     if (!verbose) return entries.map(address);
     return entries.flatMap((entry, index) => [
-      `client ${entry.section ?? entry.shortname} {`, `\tipaddr = ${address(entry)}`, '\tproto = *', `\tsecret = ${entry.secret}`, `\tlongname = ${entry.name}`,
+      `client ${entry.section ?? entry.shortname} {`, `\tipaddr = ${address(entry)}`, `\tproto = ${protocolOf(entry) === 'udp' ? 'udp' : protocolOf(entry) === 'tcp' ? 'tcp' : '*'}`, `\tsecret = ${entry.secret}`, `\tlongname = ${entry.name}`,
       `\tshortname = ${entry.shortname}`, ...(entry.nasType === '' ? [] : [`\tnas_type = ${entry.nasType}`]), `\tnumber = ${index}`, '\tglobal = yes', '}',
     ]);
   }

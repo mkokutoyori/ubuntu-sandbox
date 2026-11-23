@@ -8,6 +8,8 @@ import { IPAddress } from '@/network/core/types';
 const NAME = 'freeradius';
 const VERSION = '3.2.11';
 const HOST_INFO = 'x86_64-pc-linux-gnu';
+
+export const RADIUSD_VERSION_LINE = `FreeRADIUS Version ${VERSION}, for host ${HOST_INFO}`;
 const DEFAULT_RADDB = '/etc/freeradius/3.0';
 const DEFAULT_NAME = 'radiusd';
 
@@ -134,7 +136,7 @@ function run(ctx: LinuxCommandContext, args: string[]): { output: string; exitCo
   }
   if (parsed.flags.has('h')) return { output: USAGE_LINES.join('\n'), exitCode: 0 };
   if (parsed.flags.has('v')) {
-    return { output: [`${NAME}: FreeRADIUS Version ${VERSION}, for host ${HOST_INFO}`, ...BANNER_LINES].join('\n'), exitCode: 0 };
+    return { output: [`${NAME}: ${RADIUSD_VERSION_LINE}`, ...BANNER_LINES].join('\n'), exitCode: 0 };
   }
   for (const [flag, reason] of Object.entries(REFUSED_VALUES)) {
     if (parsed.values.has(flag)) return { output: `${NAME}: -${flag} is not implemented in this simulator: ${reason}.`, exitCode: 1 };

@@ -1,5 +1,6 @@
 import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
+import { RADIUSD_VERSION_LINE } from './Freeradius';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 const DEFAULT_RADDB = '/etc/freeradius/3.0';
@@ -42,6 +43,12 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
   if (words[0] === 'show' && words[1] === 'module' && words[2] === 'list') {
     if (words.length > 3) return { text: `ERROR: Unknown command ${words[3]}`, failed: true };
     return { text: ctx.radiusd!.moduleListing().join('\n'), failed: false };
+  }
+  if (words[0] === 'show' && words[1] === 'version') return { text: RADIUSD_VERSION_LINE, failed: false };
+  if (words[0] === 'show' && words[1] === 'module' && words[2] === 'status') {
+    if (words.length !== 4) return { text: 'ERROR: No module name was given', failed: true };
+    if (!ctx.radiusd!.moduleListing().some((entry) => entry.split(' ')[0] === words[3])) return { text: `ERROR: No such module '${words[3]}'`, failed: true };
+    return { text: 'alive', failed: false };
   }
   if (words[0] === 'show' && words[1] === 'client' && words[2] === 'config') {
     const rest = words.slice(3);
