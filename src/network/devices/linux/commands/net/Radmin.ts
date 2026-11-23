@@ -71,7 +71,6 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     if (words[2] === 'config') {
       const listing = ctx.radiusd!.moduleConfigListing(words[3]);
       if (listing === null) return { text: `ERROR: No such module '${words[3]}'`, failed: true };
-      if (listing === 'unsupported') return { text: `ERROR: The configuration of module '${words[3]}' cannot be shown: its parse table is not implemented in this simulator`, failed: true };
       return { text: listing.join('\n'), failed: false };
     }
     const lines = words[2] === 'methods' ? ctx.radiusd!.moduleMethods(words[3]) : ctx.radiusd!.moduleFlags(words[3]);

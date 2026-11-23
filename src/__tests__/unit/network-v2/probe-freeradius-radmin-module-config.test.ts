@@ -7,9 +7,9 @@
  * prints the value of the pair a dotted path names and fails silently on an unknown path, "No path was given"), and the module_t tables of
  * rlm_detail / rlm_preprocess / rlm_realm / rlm_eap (methods and HUP_SAFE) read in the source tree. The configuration listing is
  * implemented for detail (its parse table is the one rlm_detail declares, the values come from the settings the simulator evaluates);
- * the other modules answer that their parse table is not implemented (preprocess followed: its table is the one rlm_preprocess declares).
+ * every module the simulator loads has its table now (detail, then preprocess, realm and eap).
  *
- * Discriminated with git stash on src: 7 of 8 fall before the fix; the witness (the module list still answers) passes either way. The preprocess table and the realm table, added later, are a ninth and a tenth case that fall before it; the refusal case now names the eap module.
+ * Discriminated with git stash on src: 7 of 8 fall before the fix; the witness (the module list still answers) passes either way. The preprocess table and the realm table, added later, are a ninth and a tenth case that fall before it; the eap table, added last, is the eleventh; the case that checked the refusal for a module without a table is gone with the last such module.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -104,11 +104,17 @@ describe('radmin: module methods, flags, config and show config', () => {
     expect(custom).toContain('\tascend_channels_per_line = 30');
   });
 
-  it('show module config answers for a module whose parse table is not implemented, naming the limit', async () => {
+  it('show module config eap prints the rlm_eap table of the section as loaded', async () => {
     const { target } = await lab(true);
     write(target, '/etc/freeradius/3.0/mods-enabled/eap', 'eap {\n  default_eap_type = md5\n}\n');
     await target.executeCommand('systemctl restart freeradius');
-    expect((await ask(target, 'show module config eap')).output).toContain("cannot be shown: its parse table is not implemented in this simulator");
+    const text = (await ask(target, 'show module config eap')).output.split('\n');
+    expect(text[0]).toBe('eap {');
+    expect(text).toContain("\tdefault_eap_type = 'md5'");
+    expect(text).toContain('\ttimer_expire = 60');
+    expect(text).toContain('\tmax_sessions = 2048');
+    expect(text).toContain("\tdedup_key = ''");
+    expect(text[text.length - 1]).toBe('}');
   });
 
   it('refuses a missing or unknown module name in the words of the source', async () => {

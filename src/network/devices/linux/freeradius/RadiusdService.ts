@@ -233,12 +233,18 @@ export class RadiusdService {
     return type === null ? null : [...MODULE_FLAGS[type]];
   }
 
-  moduleConfigListing(name: string): string[] | 'unsupported' | null {
+  moduleConfigListing(name: string): string[] | null {
     const type = this.moduleType(name);
     if (type === null) return null;
-    if (type !== 'detail' && type !== 'preprocess' && type !== 'realm') return 'unsupported';
     const loaded = this.loadConfig();
     if (!loaded.ok) return null;
+    if (type === 'eap') {
+      const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'eap');
+      return [
+        'eap {', `\tdefault_eap_type = '${section?.pairs.find((pair) => pair.name === 'default_eap_type')?.value ?? 'md5'}'`, '\ttimer_expire = 60', '\tmax_eap_type = 52',
+        '\tignore_unknown_eap_types = no', '\tcisco_accounting_username_bug = no', '\tallow_empty_identities = no', '\tmax_sessions = 2048', "\tdedup_key = ''", '}',
+      ];
+    }
     if (type === 'realm') {
       const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'realm' && candidate.name2 === name);
       const text = (key: string): string | undefined => section?.pairs.find((pair) => pair.name === key)?.value;
