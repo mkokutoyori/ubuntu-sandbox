@@ -7,7 +7,8 @@
  * (The older over-tcp probe now declares its TCP listener the way a real configuration must.)
  *
  * Discriminated with git stash on src: 5 of 6 fall before the fix (the witness too: the base read the section as a second UDP listener on 1812 and refused to start);
- * the one case passing either way is named: stopping the daemon closes the TCP listener, in both states.
+ * the one case passing either way is named: stopping the daemon closes the TCP listener, in both states. A seventh case, added once the claim had to be
+ * proved, drives a request over a TCP connection to an ipv6addr listener (and shows the IPv4 address refused); it falls before the commit too.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -15,9 +16,11 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
-import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
+import { MACAddress, IPAddress, IPv6Address, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { attr, encryptUserPassword } from '@/network/radius/types';
+import { randomRequestAuthenticator, verifyResponseAuthenticator } from '@/network/radius/authenticators';
 import { md5 } from '@/crypto/hash';
 import { bytesToHex, utf8ToBytes } from '@/crypto/encoding';
 import { withMessageAuthenticator } from '@/network/radius/authenticators';
@@ -97,4 +100,29 @@ describe('listen { proto = tcp }', () => {
     const { started } = await lab(ALICE, TCP().replace('proto = tcp', 'proto = sctp'));
     expect(started).toContain('Unknown protocol "sctp"');
   });
+
+  it('an ipv6addr listener serves a request over a TCP connection opened to its IPv6 address, and not to the IPv4 one', async () => {
+    const { sender, target } = await lab(ALICE, TCP('\t\tipv6addr = ::\n\t\tport = 1812\n'), 'client lab6 {\n  ipv6addr = fd00::/64\n  proto = *\n  secret = shared\n}\nclient lab {\n  ipaddr = 10.0.0.0/24\n  proto = *\n  secret = shared\n}\n');
+    sender.configureIPv6Interface('eth0', new IPv6Address('fd00::1'), 64);
+    target.configureIPv6Interface('eth0', new IPv6Address('fd00::2'), 64);
+    await sender.executeCommand('ping -6 -c 1 fd00::2');
+    const authenticator = randomRequestAuthenticator();
+    const request: RadiusPacket = withMessageAuthenticator({
+      type: 'radius', code: 'access-request', identifier: 3, authenticator,
+      attributes: [attr('user-name', 'alice'), attr('user-password', encryptUserPassword('wonderland', 'shared', authenticator))],
+    }, authenticator, 'shared');
+    const over = (address: string): RadiusPacket | null => {
+      const socket = sender.getTcpStack().connect(address, 1812);
+      if (!socket || socket.state !== 'established') return null;
+      let reply: RadiusPacket | null = null;
+      socket.onData((data) => { reply = data as RadiusPacket; });
+      socket.send(request);
+      return reply;
+    };
+    const six = over('fd00::2');
+    expect(six?.code).toBe('access-accept');
+    expect(verifyResponseAuthenticator(six!, authenticator, 'shared')).toBe(true);
+    expect(over('10.0.0.2')).toBeNull();
+  });
 });
+
