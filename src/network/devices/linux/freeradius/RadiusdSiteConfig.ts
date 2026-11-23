@@ -124,7 +124,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
       const portText = pairValue(section, 'port');
       const port = portText === undefined ? 0 : Number(portText);
       if (!Number.isInteger(port) || port < 0 || port > 65535) return { error: `${where}: Invalid value "${portText}" for variable port` };
-      if (pairValue(section, 'ipv6addr') !== undefined) continue;
+      if (pairValue(section, 'ipv6addr') !== undefined) return { error: `${where}: The listen setting "ipv6addr" is not implemented in this simulator: the RADIUS agents handle IPv4 only` };
       const addressText = pairValue(section, 'ipaddr') ?? pairValue(section, 'ipv4addr') ?? '*';
       let address: string | null = null;
       if (addressText !== '*') {
