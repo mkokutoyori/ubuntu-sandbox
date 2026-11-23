@@ -36,7 +36,7 @@ import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer, type RadSecHomeTls } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
-import { RadSecServer, radSecExchange } from '@/network/radius/RadSecTransport';
+import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTransport';
 import { certificateRejection, tlsProtocolsOf } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -328,6 +328,7 @@ export class RadiusdService {
     this.radiusServer.stop();
     this.radiusTcpServer.stop();
     for (const server of this.radSecServers) server.stop();
+    this.closeRadSecConnections();
     this.radSecServers = [];
     this.running = false;
   }
@@ -521,13 +522,39 @@ export class RadiusdService {
   private boundPorts: number[] = [];
   private radSecServers: RadSecServer[] = [];
 
+  private radSecConnections = new Map<string, RadSecClientConnection>();
+
   private radSecRequest(address: string, port: number, request: RadiusPacket): RadiusPacket | null {
     const home = this.proxyConfig.homeServers.find((server) => server.address === address && server.radSec !== null && (server.port === port || server.acctPort === port));
     if (home === undefined || home.radSec === null) return null;
-    const config = this.radSecClientConfig(home.radSec);
-    if (typeof config === 'string') return null;
-    const outcome = radSecExchange(this.host.getTcpStack(), address, port, request, config, (certificate) => certificateRejection(certificate, home.radSec!.limits));
-    return outcome.ok && outcome.reply !== undefined ? outcome.reply : null;
+    const key = `${address}:${port}`;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let connection = this.radSecConnections.get(key);
+      if (connection !== undefined && !connection.isOpen()) {
+        this.radSecConnections.delete(key);
+        connection = undefined;
+      }
+      const reused = connection !== undefined;
+      if (connection === undefined) {
+        const config = this.radSecClientConfig(home.radSec);
+        if (typeof config === 'string') return null;
+        const opened = RadSecClientConnection.open(this.host.getTcpStack(), address, port, config, (certificate) => certificateRejection(certificate, home.radSec!.limits));
+        if (!(opened instanceof RadSecClientConnection)) return null;
+        connection = opened;
+        this.radSecConnections.set(key, connection);
+      }
+      const outcome = connection.exchange(request);
+      if (outcome.ok && outcome.reply !== undefined) return outcome.reply;
+      connection.close();
+      this.radSecConnections.delete(key);
+      if (!reused) return null;
+    }
+    return null;
+  }
+
+  private closeRadSecConnections(): void {
+    for (const connection of this.radSecConnections.values()) connection.close();
+    this.radSecConnections.clear();
   }
 
   private radSecClientConfig(tls: RadSecHomeTls): TlsClientConfig | string {
