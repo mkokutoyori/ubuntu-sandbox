@@ -102,8 +102,7 @@ describe('post-auth after every authentication method', () => {
   });
 
   it('an EAP-MD5 accept carries it', async () => {
-    const { lines, output, second } = await exchange('wonderland');
-    void output;
+    const { lines, second } = await exchange('wonderland');
     expect(second).toContain('Received Access-Accept');
     expect(sent(lines)).toContain('Reply-Message = "via post-auth"');
   });
