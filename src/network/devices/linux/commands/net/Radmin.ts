@@ -80,6 +80,17 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     const value = ctx.radiusd!.configValue(words[2]);
     return value === null ? { text: '', failed: true } : { text: value, failed: false };
   }
+  if (words[0] === 'stats' && words[1] === 'queue') return { text: ctx.radiusd!.queueStatisticsListing().join('\n'), failed: false };
+  if (words[0] === 'stats' && words[1] === 'socket') {
+    const rest = words.slice(2);
+    if (rest.length < 2) return { text: 'ERROR: Must specify <ipaddr> <port> [udp|tcp]', failed: true };
+    const address = IPAddress.tryParse(rest[0]);
+    if (address === null) return { text: 'ERROR: Failed parsing IP address', failed: true };
+    if (!/^\d+$/.test(rest[1])) return { text: 'ERROR: No such listen section', failed: true };
+    if (rest.slice(2).some((option) => option !== 'udp')) return { text: 'ERROR: No such listen section', failed: true };
+    const listing = ctx.radiusd!.socketStatisticsListing(address.toString(), Number(rest[1]));
+    return listing === null ? { text: 'ERROR: No such listen section', failed: true } : { text: listing.join('\n'), failed: false };
+  }
   if (words[0] === 'show' && words[1] === 'version') return { text: RADIUSD_VERSION_LINE, failed: false };
   if (words[0] === 'show' && words[1] === 'module' && words[2] === 'status') {
     if (words.length !== 4) return { text: 'ERROR: No module name was given', failed: true };

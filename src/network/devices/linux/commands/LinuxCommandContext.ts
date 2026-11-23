@@ -47,6 +47,8 @@ export interface RadiusdCommandPort {
   homeServerStatisticsListing(kind: 'auth' | 'acct', address: string | null, port: number | null): string[] | null;
   clientConfig(address: string): string[] | null;
   moduleListing(): string[];
+  socketStatisticsListing(address: string, port: number): string[] | null;
+  queueStatisticsListing(): string[];
   moduleMethods(name: string): string[] | null;
   moduleFlags(name: string): string[] | null;
   moduleConfigListing(name: string): string[] | 'unsupported' | null;

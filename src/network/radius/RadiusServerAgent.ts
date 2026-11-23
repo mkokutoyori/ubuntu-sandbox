@@ -317,9 +317,15 @@ export class RadiusServerAgent {
   }
 
   private countGlobal(kind: 'auth' | 'acct', change: (stats: RadiusStats) => void): void {
-    let stats = this.statistics.get(`${kind}:*`);
-    if (stats === undefined) { stats = emptyStats(); this.statistics.set(`${kind}:*`, stats); }
-    change(stats);
+    for (const key of [`${kind}:*`, `${kind}@${this.servedPort ?? this.config.port}`]) {
+      let stats = this.statistics.get(key);
+      if (stats === undefined) { stats = emptyStats(); this.statistics.set(key, stats); }
+      change(stats);
+    }
+  }
+
+  listenerStatistics(kind: 'auth' | 'acct', port: number): RadiusStats {
+    return this.statistics.get(`${kind}@${port}`) ?? emptyStats();
   }
 
   private reportUnknownClient(kind: 'auth' | 'acct', senderIp: string, clientPort: number, listenPort: number): void {
@@ -409,7 +415,7 @@ export class RadiusServerAgent {
   private readonly statistics = new Map<string, RadiusStats>();
 
   private count(kind: 'auth' | 'acct', clientIp: string, change: (stats: RadiusStats) => void): void {
-    for (const key of [`${kind}:*`, `${kind}:${clientIp}`]) {
+    for (const key of [`${kind}:*`, `${kind}:${clientIp}`, `${kind}@${this.servedPort ?? this.config.port}`]) {
       let stats = this.statistics.get(key);
       if (stats === undefined) { stats = emptyStats(); this.statistics.set(key, stats); }
       change(stats);

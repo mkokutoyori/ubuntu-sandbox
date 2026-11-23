@@ -99,7 +99,7 @@ describe('radmin and the control listener', () => {
   it('an unknown word gets the source wording, a real command the simulator lacks is refused naming the limit', async () => {
     const { target } = await lab(true);
     expect((await radmin(target, '-f ' + SOCKET + ' -e "frobnicate"')).output).toBe("ERROR: Unknown command 'frobnicate'");
-    expect((await radmin(target, '-f ' + SOCKET + ' -e "stats queue"')).output).toContain('not implemented in this simulator');
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "stats threads"')).output).toContain('not implemented in this simulator');
   });
 
   it('refuses a control listener key the simulator cannot honour, naming it', async () => {
