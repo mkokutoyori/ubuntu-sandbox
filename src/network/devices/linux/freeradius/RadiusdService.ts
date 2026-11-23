@@ -20,6 +20,10 @@ import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
 import { parseClientsConf } from './ClientsConfParser';
+import { readEapModule, type EapModuleConfig } from './EapModuleConfig';
+import type { EapTlsConfig } from '@/network/radius/eaptls/EapTlsConfig';
+import { PeapMd5InnerAuthServer } from '@/network/radius/eaptls/PeapInnerAuth';
+import { TtlsPapInnerAuthServer } from '@/network/radius/eaptls/TtlsInnerAuth';
 import { protocolOf, type RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
 import type { RadiusUser, RadiusAttribute, RadiusPacket, ProxyRoute } from '@/network/radius/types';
@@ -103,7 +107,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null }
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
@@ -941,11 +945,43 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files };
+    const eapModule = readEapModule(main.root.sections.find((section) => section.name1 === 'modules'));
+    if (eapModule !== null && 'error' in eapModule) return { ok: false, error: eapModule.error };
+    const eapTls = eapModule === null ? null : this.eapTlsConfig(eapModule as EapModuleConfig, users.entries);
+    if (typeof eapTls === 'string') return { ok: false, error: eapTls };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig }): void {
+  private eapTlsConfig(module: EapModuleConfig, entries: UsersEntry[]): EapTlsConfig | string | null {
+    const tls = module.tls;
+    if (tls === null) return null;
+    const certificateText = this.files.read(tls.certificateFile);
+    if (certificateText === null) return `Failed reading certificate_file "${tls.certificateFile}": No such file or directory`;
+    const chain = pemToCertChain(certificateText);
+    if (chain.length === 0) return `Failed parsing certificate_file "${tls.certificateFile}": no certificate found`;
+    const keyText = this.files.read(tls.privateKeyFile);
+    if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
+    const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
+    if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
+    let anchors: ReturnType<typeof pemToCertChain> = [];
+    if (tls.caFile !== null) {
+      const caText = this.files.read(tls.caFile);
+      if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
+      anchors = pemToCertChain(caText);
+    }
+    const lookup = (username: string): RadiusUser | undefined => this.resolveUser(entries, username, []);
+    return {
+      serverCert: chain[0], serverPrivateKey: key,
+      verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => this.wallClock.nowMs() }),
+      requireClientCert: module.defaultType === 'tls', eapType: module.defaultType as 'tls' | 'peap' | 'ttls',
+      ...(tls.fragmentSize === null ? {} : { mtu: tls.fragmentSize }),
+      ...(module.defaultType === 'peap' ? { innerAuth: new PeapMd5InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
+    };
+  }
+
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
     this.logConfig = loaded.log;
+    this.radiusServer.setEapTlsConfig(loaded.eapTls);
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
     this.proxyConfig = loaded.proxy;

@@ -25,7 +25,7 @@ import { formatRadiusAttribute } from './attributeText';
 import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
-import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, verifyEapMd5Response } from './eap';
+import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, encodeEapPacket, verifyEapMd5Response } from './eap';
 import { MICROSOFT_VENDOR_ID } from './dictionary';
 import {
   ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
@@ -96,6 +96,9 @@ export interface RadiusServerHost {
 /** How long a served response is kept for retransmission dedup (RFC 2865 §2). */
 const DEDUP_TTL_MS = 30_000;
 /** How long an issued Access-Challenge's State stays redeemable (RFC 2865 §4.4). */
+const EAP_SUBMODULE: Readonly<Record<'tls' | 'peap' | 'ttls', string>> = { tls: 'eap_tls', peap: 'eap_peap', ttls: 'eap_ttls' };
+const EAP_METHOD_NAME: Readonly<Record<'tls' | 'peap' | 'ttls', string>> = { tls: 'EAP TLS (13)', peap: 'PEAP (25)', ttls: 'TTLS (21)' };
+
 const CHALLENGE_TTL_MS = 60_000;
 
 type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized' | 'outside-login-time' | 'simultaneous-use';
@@ -215,7 +218,7 @@ export class RadiusServerAgent {
   /** EAP-MD5 relay sessions (RFC 3579), keyed by the opaque State handed out with the Access-Challenge carrying the MD5 challenge. */
   private readonly eapSessions = new Map<string, { username: string; challengeHex: string; expiresAt: number }>();
   /** RFC 5216 EAP-TLS sessions, keyed by the (single, reused-for-the-whole-conversation) opaque State. Only one EAP method is offered per server — no NAK negotiation — selected by whether `eapTlsConfig` is set. */
-  private readonly eapTlsSessions = new Map<string, { session: EapTlsServerSession; username: string; expiresAt: number }>();
+  private readonly eapTlsSessions = new Map<string, { session: EapTlsServerSession; username: string; expiresAt: number; previousMore: boolean; received: number }>();
   private eapTlsConfig: EapTlsConfig | null = null;
   /** RFC 2607 §2 — realm → home-server route, keyed by the realm suffix in `user@realm`. */
   private readonly realms = new Map<string, RealmRoute>();
@@ -1078,8 +1081,13 @@ export class RadiusServerAgent {
         const session = new EapTlsServerSession(this.eapTlsConfig);
         const state = randomOpaqueToken(16);
         const eapIdentifier = (eap.identifier + 1) & 0xff;
-        this.eapTlsSessions.set(state, { session, username, expiresAt: simulationNowMs() + CHALLENGE_TTL_MS });
-        this.replyEapChallenge(inPort, dstIp, clientPort, request, session.start(eapIdentifier), state, dedupKey);
+        this.eapTlsSessions.set(state, { session, username, expiresAt: simulationNowMs() + CHALLENGE_TTL_MS, previousMore: false, received: 0 });
+        const first = session.start(eapIdentifier);
+        this.eapTrace = { result: 'handled', lines: [
+          'eap: Peer sent packet with method EAP Identity (1)', `eap: Calling submodule ${EAP_SUBMODULE[this.eapTlsConfig.eapType ?? 'tls']} to process data`,
+          `eap: Sending EAP Request (code 1) ID ${eapIdentifier} length ${encodeEapPacket(first).length}`, `eap: EAP session adding &reply:State = 0x${state.slice(0, 16)}`,
+        ] };
+        this.replyEapChallenge(inPort, dstIp, clientPort, request, first, state, dedupKey);
         return;
       }
       if (!user) {
@@ -1135,6 +1143,35 @@ export class RadiusServerAgent {
     this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, user, dedupKey);
   }
 
+  private tlsFragmentLines(ctx: { previousMore: boolean; received: number }, eap: EapPacket): string[] {
+    const flags = eap.tlsFlags ?? { length: false, more: false, start: false };
+    const fragment = (eap.tlsData ?? '').length / 2;
+    if (fragment === 0 && !flags.length && !flags.more) return [];
+    const lines: string[] = [];
+    if (flags.length) {
+      const total = eap.tlsMessageLength ?? fragment;
+      lines.push(`(TLS) EAP Peer says that the final record size will be ${total} bytes`);
+      if (flags.more) {
+        lines.push(`(TLS) EAP Expecting ${Math.floor(((total - fragment) + ((fragment + 4) - 1)) / (fragment + 4)) + 1} fragments`);
+        lines.push(ctx.previousMore
+          ? `(TLS) EAP Got additional fragment with length (${fragment} bytes).  Peer says more fragments will follow`
+          : `(TLS) EAP Got first TLS fragment (${fragment} bytes).  Peer says more fragments will follow`);
+        ctx.received = ctx.previousMore ? ctx.received + fragment : fragment;
+      } else {
+        lines.push(`(TLS) EAP Got all data (${fragment} bytes)`);
+        ctx.received = fragment;
+      }
+    } else if (ctx.previousMore && !flags.more) {
+      ctx.received += fragment;
+      lines.push(`(TLS) EAP Got final fragment (${fragment} bytes) total ${ctx.received}`);
+    } else if (flags.more) {
+      ctx.received += fragment;
+      lines.push(`(TLS) EAP Got additional fragment (${fragment} bytes).  Peer says more fragments will follow`);
+    }
+    ctx.previousMore = flags.more;
+    return lines;
+  }
+
   private pruneEapTlsSessions(): void {
     const now = simulationNowMs();
     for (const [key, entry] of this.eapTlsSessions) {
@@ -1154,13 +1191,23 @@ export class RadiusServerAgent {
       return;
     }
     ctx.expiresAt = simulationNowMs() + CHALLENGE_TTL_MS;
+    const method = this.eapTlsConfig?.eapType ?? 'tls';
+    const lines = [
+      `eap: Previous EAP request found for state 0x${state.slice(0, 16)}, released from the list`,
+      `eap: Peer sent packet with method ${EAP_METHOD_NAME[method]}`, `eap: Calling submodule ${EAP_SUBMODULE[method]} to process data`,
+      ...this.tlsFragmentLines(ctx, eap),
+    ];
     const nextRequest = ctx.session.handle(eap);
     if (ctx.session.result === null) {
+      lines.push(`eap: Sending EAP Request (code 1) ID ${nextRequest.identifier} length ${encodeEapPacket(nextRequest).length}`, `eap: EAP session adding &reply:State = 0x${state.slice(0, 16)}`);
+      this.eapTrace = { result: 'handled', lines };
       this.replyEapChallenge(inPort, dstIp, clientPort, request, nextRequest, state, dedupKey);
       return;
     }
     this.eapTlsSessions.delete(state);
     const accepted = ctx.session.result === 'accept';
+    lines.push(`eap: Sending EAP ${accepted ? 'Success (code 3)' : 'Failure (code 4)'} ID ${nextRequest.identifier} length ${encodeEapPacket(nextRequest).length}`, 'eap: Freeing handler');
+    this.eapTrace = { result: accepted ? 'ok' : 'reject', lines };
     const eapUser = this.config.users.get(ctx.username) ?? this.userResolver?.(ctx.username, { nasIp: dstIp.toString(), attributes: request.attributes });
     if (!accepted) this.publishRejected(dstIp.toString(), ctx.username, 'bad-password');
     this.replyEap(inPort, dstIp, clientPort, request, nextRequest, accepted, eapUser, dedupKey);
