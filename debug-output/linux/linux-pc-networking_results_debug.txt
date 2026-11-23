@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-11-20T05:05:15.707Z
+Generated: 2026-11-23T09:38:40.104Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -764,7 +764,7 @@ $ [120/302]> tracepath 127.0.0.1
        Resume: pmtu 65535 hops 1 back 1 
 
 $ [121/302]> mtr -r -c 1 127.0.0.1
-  Start: 2026-11-20T05:05:18.817Z
+  Start: 2026-11-23T09:38:43.195Z
   L-PC-NET-DBG (127.0.0.1)
                                          Packets               Pings
    Host                                Loss%   Snt   Last   Avg  Best  Wrst StDev
@@ -1036,7 +1036,7 @@ $ [162/302]> ss -tln sport = :22
 
 --- [163] § HTTP — curl / wget ---
 $ [163/302]> curl http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 2 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [164/302]> curl -I http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
@@ -1046,33 +1046,33 @@ $ [165/302]> curl -s http://192.168.10.1
 
 $ [166/302]> curl -v http://192.168.10.1
   *   Trying 192.168.10.1:80...
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
 
 $ [168/302]> curl -L http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
 
 $ [169/302]> curl --max-time 2 http://192.168.10.99
-  curl: (7) Failed to connect to 192.168.10.99 port 80 after 1 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.99 port 80 after 0 ms: Couldn't connect to server
 
 $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-11-20 05:05:18--  http://192.168.10.1
+  --2026-11-23 09:38:43--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-11-20 05:05:18--  http://192.168.10.1
+  --2026-11-23 09:38:43--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-11-20 05:05:18--  http://192.168.10.99
+  --2026-11-23 09:38:43--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1227,51 +1227,51 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:s2g3ChkytG4cF/YWOBSCuOQ6aIFyWG0H9HiwUQ7nvsw user@L-PC-NET-DBG
+  SHA256:7oAe52dWXGzojtcz/sQnIIG8wSAa4HQ4VymJEqoepfw user@L-PC-NET-DBG
   The key's randomart image is:
   +---[RSA 2048]----+
-  |...oO+o          |
-  |o..oo%.          |
-  |++..B.*          |
-  |=+.o * .         |
-  |+.* o + S        |
-  |++ = * o o       |
-  |..+ o E +        |
-  | .   o o .       |
-  |      .          |
+  |o++.+.o          |
+  |=+.* o + .       |
+  |o.+..   = .o     |
+  |o o      o..+    |
+  |.+      So.o.    |
+  |. o  . .  +. o   |
+  | . Eo o .+ .  + .|
+  |   . + o= o +. o |
+  |    . .+.. ..+.  |
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 1823 Nov 20 05:05 /tmp/id_rsa
-  -rw-r--r-- 1 user user  399 Nov 20 05:05 /tmp/id_rsa.pub
+  -rw------- 1 user user 1823 Nov 23 09:38 /tmp/id_rsa
+  -rw-r--r-- 1 user user  399 Nov 23 09:38 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDdS5d75Cgk64ANVdwppY6tFbG1dVDCnSrA/uRnlqJ9LixzAHF9jQU//TElF9C14sYZ1dXc/b8qX6D0qVSuWuWltcY8woo89vSd711Et3bHLbNWgzOn4rZF77G/MxMPHOI07psdj8e+LwNBK1w38p+2QnEI6AJ8LZXwJHvpUcBS9I7GBXNiW0JC7NZNnX5yhnT0PhZwxKaFPXxt6GEp6VGTkNW3YT+sLhGm94s4HzRiWQnQWaTR51WQDVRVdi1rrtjyOXjYDl2v4e1fSNRbjPl2Ee/xFI+dtfZDjiUzeIKgBcwchO+nAD5pqJFzJrhM7ZzUWt6nrEVBD88j+mlPS83F user@L-PC-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDgs+szdbH9D6bW62TByZsGb+B7YsP1GxVtluTdYFH3esmYb02zVyijxs0/qw6It2AdQqmip0LZJRmIw4dnu7U8MECVxbjZf3rNqxUnyWS9T0ZFScS/o6hoBWcPZ/hzDOwfs+cgdwRrnaSNF/rjUFggmYj3OsK3q1TGcir9N6WZFk9VcTa7kru02F/+JVgxZxVhS3P8aOTou8f32YjtNQ086NPiqF8j+UzfZ2w71f7Z6ys76wXUmVP4ro2VXRJL9CDW2NpiXoW9a908w65CXrIGRuATTX392NOFRgRbgShOiheJQOHlEgd9ga5UIl9CYKscPMryE3pQ1/KsEDgtS6eL user@L-PC-NET-DBG
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:jxrNzqaxNjEfKx2ualq+QrMv2cRMZWWkxO0K7keWr3M user@L-PC-NET-DBG
+  SHA256:qhEoaZQq0aFy6tJrE0ZNBLM9NZnD6xbijwr2G3yeHMY user@L-PC-NET-DBG
   The key's randomart image is:
   +--[ED25519 256]--+
-  |     ..++        |
-  |     .+o.        |
-  |     o..         |
-  |    o   .        |
-  |   = . oS        |
-  |  o = Booo       |
-  | . B.ooB++.      |
-  |  =o+ *BE        |
-  |  .*==*Xo        |
+  |  +o..oo         |
+  | o.=..=.         |
+  |+o+oo  o         |
+  |+=..o.o          |
+  |*o...o .S        |
+  |+o+ o.o.         |
+  |o+.+.E.          |
+  |o.+.Bo+          |
+  | .o=o+           |
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
-  2048 SHA256:s2g3ChkytG4cF/YWOBSCuOQ6aIFyWG0H9HiwUQ7nvsw user@L-PC-NET-DBG (RSA)
+  2048 SHA256:7oAe52dWXGzojtcz/sQnIIG8wSAa4HQ4VymJEqoepfw user@L-PC-NET-DBG (RSA)
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDdS5d75Cgk64ANVdwppY6tFbG1dVDCnSrA/uRnlqJ9LixzAHF9jQU//TElF9C14sYZ1dXc/b8qX6D0qVSuWuWltcY8woo89vSd711Et3bHLbNWgzOn4rZF77G/MxMPHOI07psdj8e+LwNBK1w38p+2QnEI6AJ8LZXwJHvpUcBS9I7GBXNiW0JC7NZNnX5yhnT0PhZwxKaFPXxt6GEp6VGTkNW3YT+sLhGm94s4HzRiWQnQWaTR51WQDVRVdi1rrtjyOXjYDl2v4e1fSNRbjPl2Ee/xFI+dtfZDjiUzeIKgBcwchO+nAD5pqJFzJrhM7ZzUWt6nrEVBD88j+mlPS83F user@L-PC-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDgs+szdbH9D6bW62TByZsGb+B7YsP1GxVtluTdYFH3esmYb02zVyijxs0/qw6It2AdQqmip0LZJRmIw4dnu7U8MECVxbjZf3rNqxUnyWS9T0ZFScS/o6hoBWcPZ/hzDOwfs+cgdwRrnaSNF/rjUFggmYj3OsK3q1TGcir9N6WZFk9VcTa7kru02F/+JVgxZxVhS3P8aOTou8f32YjtNQ086NPiqF8j+UzfZ2w71f7Z6ys76wXUmVP4ro2VXRJL9CDW2NpiXoW9a908w65CXrIGRuATTX392NOFRgRbgShOiheJQOHlEgd9ga5UIl9CYKscPMryE3pQ1/KsEDgtS6eL user@L-PC-NET-DBG
 
 $ [224/302]> ssh -V
   OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022
@@ -1296,12 +1296,12 @@ $ [228/302]> dhclient -v eth0
   Listening on LPF/eth0/02:00:00:aa:bb:cc
   Sending on   LPF/eth0/02:00:00:aa:bb:cc
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xf3b4731b)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0xf3b4731b)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0xf3b4731b)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xf3b4731b)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xf3b4731b)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0xf3b4731b)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0x4f5a1a4a)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0x4f5a1a4a)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0x4f5a1a4a)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0x4f5a1a4a)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0x4f5a1a4a)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0x4f5a1a4a)
   No DHCPOFFERS received.
   No working leases in persistent database - sleeping.
 

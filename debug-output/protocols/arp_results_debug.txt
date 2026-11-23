@@ -1258,14 +1258,14 @@ Total steps: 339
 
 [232/339] lhq lhq$ arping -c 1 -D -I eth0 10.1.1.11
   ARPING 10.1.1.11 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  0.855ms
+  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  0.984ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [233/339] lhq lhq$ arping -c 2 -I eth0 10.1.1.1
   ARPING 10.1.1.1 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.560ms
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.405ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.688ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.660ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1279,14 +1279,14 @@ Total steps: 339
 
 [236/339] lbr lbr$ arping -c 1 -D -I eth0 10.2.2.10
   ARPING 10.2.2.10 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.541ms
+  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.469ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [237/339] lbr lbr$ arping -c 2 -I eth0 10.2.2.1
   ARPING 10.2.2.1 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.514ms
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  1.857ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.511ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.488ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1300,14 +1300,14 @@ Total steps: 339
 
 [240/339] ldc ldc$ arping -c 1 -D -I eth0 10.3.3.10
   ARPING 10.3.3.10 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.509ms
+  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.632ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [241/339] ldc ldc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.421ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.294ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.546ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.490ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1321,14 +1321,14 @@ Total steps: 339
 
 [244/339] srvdc srvdc$ arping -c 1 -D -I eth0 10.3.3.11
   ARPING 10.3.3.11 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.421ms
+  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.561ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [245/339] srvdc srvdc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.322ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.237ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.388ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.267ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
