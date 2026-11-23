@@ -350,7 +350,7 @@ export class RadiusdService {
     context.proxyRequest = [...outbound];
     context.proxyReply = [...reply];
     const lines: string[] = [];
-    const host: UnlangHost = { runModule: (name, ctx) => (name === 'suffix' || name === 'ntdomain' ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }) };
+    const host: UnlangHost = { runModule: (name, ctx) => (this.isRealmInstance(name) ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }) };
     const outcome = run(program, context, host, lines, 3);
     const place = pipeline?.locations.get(section);
     this.radiusServer.emitDebugLines([
@@ -378,7 +378,7 @@ export class RadiusdService {
           const rejected = applyPreprocess(this.preprocessFiles, ctx, info.sourceIp, Math.floor(this.wallClock.nowMs() / 1000), (user) => this.wallClock.groupsOf(user));
           return { result: rejected ? 'reject' : 'ok', messages: [] };
         }
-        if (name === 'suffix' || name === 'ntdomain') return this.runRealmModule(name, ctx);
+        if (this.isRealmInstance(name)) return this.runRealmModule(name, ctx);
         if (name === 'acct_unique') {
           ctx.overlay.set('acct-unique-session-id', acctUniqueFor(recordOf()));
           return { result: 'updated', messages: [] };
@@ -623,7 +623,7 @@ export class RadiusdService {
       context.reply.push(...match.reply);
       return { result: 'ok', messages };
     }
-    if (name === 'suffix' || name === 'ntdomain') return this.runRealmModule(name, context);
+    if (this.isRealmInstance(name)) return this.runRealmModule(name, context);
     if (name === 'logintime') {
       const loginTime = context.control.get('login-time');
       if (loginTime === undefined) return { result: 'noop', messages };
@@ -651,9 +651,14 @@ export class RadiusdService {
     return { result: 'noop', messages };
   }
 
+  private isRealmInstance(name: string): boolean {
+    return name === 'suffix' || name === 'ntdomain' || this.proxyConfig.instances.has(name);
+  }
+
   private runRealmModule(instanceName: string, context: UnlangContext): ModuleOutcome {
     const messages: string[] = [];
-    const format: RadiusFormat = this.proxyConfig.instances.get(instanceName) ?? (instanceName === 'ntdomain' ? { format: 'prefix', delimiter: '\\', ignoreDefault: false, ignoreNull: false } : { format: 'suffix', delimiter: '@', ignoreDefault: false, ignoreNull: false });
+    const configured = this.proxyConfig.instances.get(instanceName);
+    const format: RadiusFormat = configured ?? (instanceName === 'ntdomain' ? { format: 'prefix', delimiter: '\\', ignoreDefault: false, ignoreNull: false, returnNotfound: false } : { format: 'suffix', delimiter: '@', ignoreDefault: false, ignoreNull: false, returnNotfound: false });
     if (context.overlay.has('realm')) {
       messages.push(`${instanceName}: Request already has destination realm set.  Ignoring`);
       return { result: 'noop', messages };
@@ -670,10 +675,11 @@ export class RadiusdService {
       messages.push(`${instanceName}: No '${format.delimiter}' in User-Name = "${name}", looking up realm NULL`);
     }
     if (realmName === null && format.ignoreNull) return { result: 'noop', messages };
-    const realm = findRealm(this.proxyConfig, realmName);
+    const found = findRealm(this.proxyConfig, realmName);
+    const realm = found !== null && found.name === 'DEFAULT' && format.ignoreDefault ? null : found;
     if (realm === null) {
       messages.push(`${instanceName}: No such realm "${realmName ?? 'NULL'}"`);
-      return { result: 'noop', messages };
+      return { result: format.returnNotfound ? 'notfound' : 'noop', messages };
     }
     messages.push(`${instanceName}: Found realm "${realm.name}"`);
     if (realm.strip && position >= 0) {

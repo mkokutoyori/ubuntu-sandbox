@@ -27,7 +27,7 @@ import { CoaClient } from '../radius/CoaClient';
 import { formatRadiusAttribute } from '../radius/attributeText';
 import { RADIUS_PACKET_NAME } from '../radius/types';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
-import { DEFAULT_RADIUSD_CONF, DEFAULT_PROXY_CONF } from './linux/freeradius/DefaultRadiusdConf';
+import { DEFAULT_RADIUSD_CONF, DEFAULT_PROXY_CONF, REALM_MODULE } from './linux/freeradius/DefaultRadiusdConf';
 import { RADZAP_PATH, RADZAP_SCRIPT } from './linux/freeradius/DefaultRadzap';
 import { DEFAULT_SITE, STATUS_SITE, CONTROL_SOCKET_SITE } from './linux/freeradius/DefaultSites';
 import { DEFAULT_PREPROCESS_MODULE, DEFAULT_HINTS, DEFAULT_HUNTGROUPS } from './linux/freeradius/DefaultPreprocess';
@@ -287,6 +287,9 @@ export class LinuxServer extends LinuxMachine {
     }
     if (!this.executor.vfs.exists(`${modulesDir}/preprocess`)) {
       this.executor.vfs.writeFile(`${modulesDir}/preprocess`, DEFAULT_PREPROCESS_MODULE, 0, 0, 0o022);
+    }
+    if (!this.executor.vfs.exists(`${modulesDir}/realm`)) {
+      this.executor.vfs.writeFile(`${modulesDir}/realm`, REALM_MODULE, 0, 0, 0o022);
     }
     const preprocessDir = `${dir}/mods-config/preprocess`;
     if (!this.executor.vfs.exists(preprocessDir)) this.executor.vfs.mkdirp(preprocessDir, 0o755, 0, 0);

@@ -42,6 +42,7 @@ export interface RadiusFormat {
   readonly delimiter: string;
   readonly ignoreDefault: boolean;
   readonly ignoreNull: boolean;
+  readonly returnNotfound: boolean;
 }
 
 export interface ProxyConfig {
@@ -53,6 +54,7 @@ export interface ProxyConfig {
 export const NO_PROXY: ProxyConfig = { realms: [], homeServers: [], instances: new Map() };
 
 const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto', 'ping_interval', 'zombie_period', 'revive_interval', 'status_check', 'check_interval', 'check_timeout', 'num_answers_to_alive']);
+const REALM_MODULE_KEYS = new Set(['format', 'delimiter', 'ignore_default', 'ignore_null', 'return_notfound']);
 const HOME_TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file']);
 const POOL_KEYS = new Set(['type', 'home_server']);
 const REALM_KEYS = new Set(['type', 'auth_pool', 'acct_pool', 'nostrip', 'authhost', 'accthost', 'secret']);
@@ -80,12 +82,14 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
   const instances = new Map<string, RadiusFormat>();
   const modules = root.sections.find((section) => section.name1 === 'modules') ?? root;
   for (const section of modules.sections.filter((candidate) => candidate.name1 === 'realm' && candidate.name2 !== null)) {
+    const unknownKey = section.pairs.find((pair) => !REALM_MODULE_KEYS.has(pair.name));
+    if (unknownKey !== undefined) return { error: `${located(unknownKey)}: The realm module setting "${unknownKey.name}" is not implemented in this simulator` };
     const format = value(section, 'format') ?? 'suffix';
     if (format !== 'suffix' && format !== 'prefix') return { error: `${located(section)}: The realm format "${format}" is not implemented in this simulator` };
     const delimiter = value(section, 'delimiter') ?? '@';
     if (delimiter.length === 0) return { error: `${located(section)}: Invalid empty delimiter` };
     const flag = (key: string) => /^(yes|true|on)$/i.test(value(section, key) ?? 'no');
-    instances.set(section.name2 as string, { format, delimiter: delimiter[0], ignoreDefault: flag('ignore_default'), ignoreNull: flag('ignore_null') });
+    instances.set(section.name2 as string, { format, delimiter: delimiter[0], ignoreDefault: flag('ignore_default'), ignoreNull: flag('ignore_null'), returnNotfound: flag('return_notfound') });
   }
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'home_server')) {
     const refusal = refuseUnknown(section, HOME_SERVER_KEYS, 'home_server');

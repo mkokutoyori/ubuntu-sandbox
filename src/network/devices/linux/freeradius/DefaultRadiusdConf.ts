@@ -41,3 +41,11 @@ export const DEFAULT_RADIUSD_CONF = [
 ].join('\n');
 
 export const DEFAULT_PROXY_CONF = ['realm LOCAL {', '}', ''].join('\n');
+
+export const REALM_MODULE = [
+  'realm IPASS {', '\tformat = prefix', '\tdelimiter = "/"', '}', '',
+  'realm suffix {', '\tformat = suffix', '\tdelimiter = "@"', '\treturn_notfound = no', '}', '',
+  'realm bangpath {', '\tformat = prefix', '\tdelimiter = "!"', '}', '',
+  'realm realmpercent {', '\tformat = suffix', '\tdelimiter = "%"', '}', '',
+  'realm ntdomain {', '\tformat = prefix', '\tdelimiter = "\\\\"', '}', '',
+].join('\n');
