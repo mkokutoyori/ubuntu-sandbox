@@ -11,7 +11,9 @@
  * Discriminated with git stash on src, in two steps. The server commit: 7 of the first 8 cases fall before it; the family case passes either way (named: on the
  * base the agent dropped every IPv6 source; with the fix the service decides the family where the listener is declared). The client commit that
  * follows (radclient and the client agents sending over IPv6, `[address]:port` and bare IPv6 server arguments, the status listener on IPv6): the 5 cases of
- * the last two groups fall before it, since radclient refused an IPv6 server name.
+ * the first of the last two groups fall before it, since radclient refused an IPv6 server name. The EAP / MS-CHAPv2 commit after that (the three client send paths now
+ * share one sender, and the EAP round honours the fixed reply port that the other two already used, a defect on Linux hosts): 2 of the last 3 cases fall
+ * before it (MS-CHAPv2, the EAP round); the CHAP case passes either way, named: the PAP / CHAP path was already IPv6-capable.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -160,6 +162,33 @@ describe('radclient over IPv6', () => {
     await made.client.executeCommand('ping -6 -c 1 fd00::2');
     const out = await made.client.executeCommand("printf 'Message-Authenticator = 0x00\\n' | radclient -r 1 -t 2 '[fd00::2]:18121' status shared");
     expect(out).toContain('Received Access-Accept');
+  });
+
+  it('sends a CHAP password over IPv6', async () => {
+    const made = await lab(V6_CLIENT);
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    const out = await made.client.executeCommand(`printf 'User-Name = "alice"\\nCHAP-Password = "wonderland"\\n' | radclient -r 1 -t 2 fd00::2 auth shared`);
+    expect(out).toContain('Received Access-Accept');
+  });
+
+  it('runs an MS-CHAPv2 exchange over IPv6', async () => {
+    const made = await lab(V6_CLIENT);
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    const out = await made.client.executeCommand(`printf 'User-Name = "alice"\\nMS-CHAP-Password = "wonderland"\\n' | radclient -r 1 -t 2 fd00::2 auth shared`);
+    expect(out).toContain('Received Access-Accept');
+    const bad = await made.client.executeCommand(`printf 'User-Name = "alice"\\nMS-CHAP-Password = "wrong"\\n' | radclient -r 1 -t 2 fd00::2 auth shared`);
+    expect(bad).not.toContain('Received Access-Accept');
+  });
+
+  it('relays one EAP round over IPv6: the Identity response is answered by an Access-Challenge carrying the MD5 request', async () => {
+    const made = await lab(V6_CLIENT);
+    await made.client.executeCommand('ping -6 -c 1 fd00::2');
+    const agent = (made.client as unknown as { radtestClient: { addServer(ip: string, secret: string, opts?: { timeoutMs?: number; retransmit?: number }): void; sendEapRound(user: string, hex: string, state: string | null, nas?: object, serverIp?: string): Promise<{ kind: string; eapMessageHex?: string }> } }).radtestClient;
+    agent.addServer('fd00::2', 'shared', { timeoutMs: 2000, retransmit: 0 });
+    const identity = `020000${(5 + 'alice'.length).toString(16).padStart(2, '0')}01${Buffer.from('alice').toString('hex')}`;
+    const outcome = await agent.sendEapRound('alice', identity, null, {}, 'fd00::2');
+    expect(outcome.kind).toBe('challenge');
+    expect(outcome.eapMessageHex?.slice(0, 2)).toBe('01');
   });
 });
 
