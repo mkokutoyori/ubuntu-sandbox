@@ -169,6 +169,7 @@ interface RedeemedPsk {
   readonly identity: string;
   readonly cipherSuite: CipherSuite;
   readonly ageAcceptable: boolean;
+  readonly peerCertificates?: readonly X509Certificate[];
 }
 
 function groupOf(keyShare: string): string {
@@ -656,7 +657,7 @@ export class TlsServerSession {
       if (!ticket) continue;
       const clientAge = ((offer.obfuscatedAge - Number.parseInt(candidate.ticketAgeAdd ?? '0', 16)) >>> 0);
       const ageAcceptable = Math.abs(clientAge - Math.max(0, now - candidate.issuedAt)) <= TICKET_AGE_ALLOWANCE_MS;
-      return { psk, hash, index, identity: offer.identity, cipherSuite: candidate.cipherSuite, ageAcceptable };
+      return { psk, hash, index, identity: offer.identity, cipherSuite: candidate.cipherSuite, ageAcceptable, ...(ticket.peerCertificates === undefined ? {} : { peerCertificates: ticket.peerCertificates }) };
     }
     return null;
   }
@@ -739,6 +740,12 @@ export class TlsServerSession {
     this.serverHandshakeTrafficSecret = handshakePhase.serverHandshakeTrafficSecret;
     if (pskAccepted) {
       this.sessionResumed = true;
+      const original = redeemed!.peerCertificates;
+      if (original !== undefined && original.length > 0) {
+        this.peerCertificate = original[0];
+        this.peerCertificateChain = original;
+        this.peerVerified = true;
+      }
       this.emit({
         topic: 'tls.session.resumed',
         payload: { sessionId: this.sessionId, role: 'server', ticket: redeemed!.identity },
@@ -837,7 +844,7 @@ export class TlsServerSession {
     const messages = received.map((entry) => entry.message);
     const rawOf = (message: TlsHandshakeMessage): Uint8Array => received.find((entry) => entry.message === message)!.raw;
 
-    if (this.config.requestClientCert) {
+    if (this.config.requestClientCert && !this.sessionResumed) {
       const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate');
       const certificateVerify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify');
       const policy = this.config.clientCertPolicy;
@@ -895,6 +902,7 @@ export class TlsServerSession {
       ticketNonce: randomHex(8),
       ticketAgeAdd,
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
+      ...(this.peerVerified && this.peerCertificate !== null ? { peerCertificates: this.peerCertificateChain.length > 0 ? this.peerCertificateChain : [this.peerCertificate] } : {}),
       ticketLifetime: this.config.ticketLifetimeSeconds ?? 7200,
       issuedAt: simulationNowMs(),
       consumed: false,

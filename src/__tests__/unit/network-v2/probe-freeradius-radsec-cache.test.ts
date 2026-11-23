@@ -5,10 +5,10 @@
  * 2.2 / 4.6.1 (a resumed handshake offers a PSK taken from a NewSessionTicket, which a server redeems once). The listener now owns a ticket store when the
  * cache is enabled, issues a ticket after each full handshake with the cache lifetime, and resumes a client that presents a live, unused one; the client
  * side of radSecExchange reports the ticket it received and whether the handshake was a resumption. A pooled proxy connection does not reuse tickets yet
- * (TODO.md). The probe listener does not require a client certificate: with mutual TLS a resumed handshake of this TLS stack derives keys the
- * client cannot read (measured: bad_record_mac on the first record after the resumed handshake; recorded in TODO.md, the defect is in the stack, not in RADIUS).
- *
- * Discriminated with git stash on src: 4 of 6 fall before the fix; two pass either way and are named: the witness (no cache: no ticket is issued) and the
+ * (TODO.md). The listener of the probe requires a client certificate, as RadSec does: a resumed handshake carries the identity of the first one
+ * (the ticket remembers the verified chain), which the TLS stack did not do before this commit: it still waited for a Certificate message that a PSK
+ * handshake never carries and rejected the resumed client (measured: bad_record_mac on the client, unexpected_message on the server). *
+ * Discriminated with git stash on src, in two steps: the cache commit (4 of 6 cases fall before it, with a listener that needs no client certificate) and the mutual-TLS fix that follows (the resumption cases fall again before it with the certificate required); two pass either way and are named: the witness (no cache: no ticket is issued) and the
  * single-use case (a ticket that was already redeemed is not resumed: on the base nothing was ever resumed).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -102,9 +102,9 @@ const exchange = (made: Awaited<ReturnType<typeof lab>>, versions: readonly ('1.
 
 
 const CACHE = (inner = '\t\t\t\tenable = yes\n') => `\t\t\tcache {\n${inner}\t\t\t}\n`;
-const WITH = (extra: string) => `\tlisten {\n\t\ttype = auth+acct\n\t\tipaddr = *\n\t\tport = 2083\n\t\tproto = tcp\n\t\ttls {\n\t\t\tprivate_key_file = ${DIR}/certs/server.key\n\t\t\tcertificate_file = ${DIR}/certs/server.pem\n\t\t\tca_file = ${DIR}/certs/ca.pem\n\t\t\trequire_client_cert = no\n\t\t\ttls_min_version = "1.3"\n\t\t\ttls_max_version = "1.3"\n${extra}\t\t}\n\t}\n`;
+const WITH = (extra: string) => `\tlisten {\n\t\ttype = auth+acct\n\t\tipaddr = *\n\t\tport = 2083\n\t\tproto = tcp\n\t\ttls {\n\t\t\tprivate_key_file = ${DIR}/certs/server.key\n\t\t\tcertificate_file = ${DIR}/certs/server.pem\n\t\t\tca_file = ${DIR}/certs/ca.pem\n\t\t\trequire_client_cert = yes\n\t\t\ttls_min_version = "1.3"\n\t\t\ttls_max_version = "1.3"\n${extra}\t\t}\n\t}\n`;
 const go = (made: Awaited<ReturnType<typeof lab>>, ticket?: import('@/network/tls/sessionTickets').SessionTicket | null) =>
-  radSecExchange(made.client.getTcpStack(), '10.0.0.2', 2083, request('wonderland'), { ...tlsConfig(made.pki, 'none', ['1.3']), ...(ticket ? { resumptionTicket: ticket } : {}) });
+  radSecExchange(made.client.getTcpStack(), '10.0.0.2', 2083, request('wonderland'), { ...tlsConfig(made.pki, 'client', ['1.3']), ...(ticket ? { resumptionTicket: ticket } : {}) });
 
 describe('tls cache (session resumption)', () => {
   it('witness: with no cache subsection the server issues no ticket', async () => {
@@ -151,4 +151,13 @@ describe('tls cache (session resumption)', () => {
     expect((await lab({ block: WITH(CACHE('\t\t\t\tenable = yes\n\t\t\t\tpersist_dir = /tmp\n')) })).started).toContain('The cache setting "persist_dir" is not implemented in this simulator');
     expect((await lab({ block: WITH(CACHE('\t\t\t\tenable = maybe\n')) })).started).toContain('Invalid value "maybe" for variable enable');
   });
+
+  it('a resumed connection keeps the identity of the first: check_cert_cn still sees the client certificate', async () => {
+    const made = await lab({ block: WITH(CACHE() + '\t\t\tcheck_cert_cn = nas1\n') });
+    const ticket = go(made).ticket!;
+    const second = go(made, ticket);
+    expect(second.resumed).toBe(true);
+    expect(second.reply?.code).toBe('access-accept');
+  });
 });
+
