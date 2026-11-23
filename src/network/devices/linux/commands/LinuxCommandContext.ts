@@ -45,6 +45,7 @@ export interface RadiusdCommandPort {
   configuredControlSockets(): readonly string[];
   clientListing(verbose: boolean): string[];
   clientConfig(address: string): string[] | null;
+  moduleListing(): string[];
   homeServerListing(all: boolean): string[];
   homeServerStateText(address: string, port: number): string | null;
   setHomeServerState(address: string, port: number, state: 'alive' | 'dead' | 'down'): boolean;

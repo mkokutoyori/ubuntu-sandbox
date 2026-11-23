@@ -28,6 +28,10 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     if (rest[0] !== 'verbose') return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };
     return { text: ctx.radiusd!.clientListing(true).join('\n'), failed: false };
   }
+  if (words[0] === 'show' && words[1] === 'module' && words[2] === 'list') {
+    if (words.length > 3) return { text: `ERROR: Unknown command ${words[3]}`, failed: true };
+    return { text: ctx.radiusd!.moduleListing().join('\n'), failed: false };
+  }
   if (words[0] === 'show' && words[1] === 'client' && words[2] === 'config') {
     const rest = words.slice(3);
     if (rest.length === 0) return { text: 'ERROR: Must specify <ipaddr>', failed: true };

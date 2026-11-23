@@ -102,13 +102,23 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; files: readonly string[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[] }
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
 const DEFAULT_PREACCT_PROGRAM = moduleProgram(['preprocess', 'suffix', 'acct_unique']);
 const DEFAULT_ACCOUNTING_PROGRAM = moduleProgram(['detail', 'radutmp']);
 const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
+
+const LOADED_MODULE_SECTIONS = new Set(['detail', 'preprocess', 'realm']);
+
+function loadedModules(root: { sections: readonly { name1: string; name2: string | null }[] }): string[] {
+  const modules = root.sections.find((section) => section.name1 === 'modules') as unknown as { sections: readonly { name1: string; name2: string | null }[] } | undefined;
+  if (modules === undefined) return [];
+  return modules.sections
+    .filter((section) => LOADED_MODULE_SECTIONS.has(section.name1))
+    .map((section) => (section.name2 === null ? section.name1 : `${section.name2} (${section.name1})`));
+}
 
 export class RadiusdService {
   private running = false;
@@ -148,6 +158,12 @@ export class RadiusdService {
   configuredControlSockets(): readonly string[] {
     const loaded = this.loadConfig();
     return loaded.ok ? loaded.site.controlSockets.map((socket) => socket.path) : [];
+  }
+
+  moduleListing(): string[] {
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return [];
+    return loaded.modules.slice();
   }
 
   clientConfig(address: string): string[] | null {
@@ -798,7 +814,7 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, files: main.files };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files };
   }
 
   private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig }): void {

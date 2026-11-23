@@ -12,7 +12,9 @@
  *
  * Discriminated with git stash on src: the first 9 cases fall 8 of 9 before the commit that added radmin (the witness passes either way:
  * a top-level control listener was ignored before, so the daemon starts and answers a request the same way); the 4 cases for show client
- * config all fall on the commit that precedes them.
+ * config and the 2 for show module list all fall on the commit that precedes them. `show module list` names the modules
+ * the simulator loads from the configuration (detail, preprocess, the realm instances): the others of a real list (pap, chap, files...)
+ * have no configuration section here.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -97,7 +99,7 @@ describe('radmin and the control listener', () => {
   it('an unknown word gets the source wording, a real command the simulator lacks is refused naming the limit', async () => {
     const { target } = await lab(true);
     expect((await radmin(target, '-f ' + SOCKET + ' -e "frobnicate"')).output).toBe("ERROR: Unknown command 'frobnicate'");
-    expect((await radmin(target, '-f ' + SOCKET + ' -e "show module list"')).output).toContain('not implemented in this simulator');
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "show module config detail"')).output).toContain('not implemented in this simulator');
   });
 
   it('refuses a control listener key the simulator cannot honour, naming it', async () => {
@@ -131,5 +133,19 @@ describe('radmin and the control listener', () => {
   it('refuses the listen option, naming the limit', async () => {
     const { target } = await lab(true);
     expect((await radmin(target, '-f ' + SOCKET + ' -e "show client config 10.0.0.1 listen 10.0.0.2 1812"')).output).toContain('listen is not implemented in this simulator');
+  });
+
+  it('show module list prints the module instances of the configuration, a named instance as name (type)', async () => {
+    const { target } = await lab(true);
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "show module list"')).output).toBe(
+      ['detail', 'preprocess', 'IPASS (realm)', 'suffix (realm)', 'bangpath (realm)', 'realmpercent (realm)', 'ntdomain (realm)'].join('\n'),
+    );
+  });
+
+  it('show module list follows the files of mods-enabled: an added instance appears', async () => {
+    const { target } = await lab(true);
+    write(target, '/etc/freeradius/3.0/mods-enabled/realm', (vfsOf(target).readFile('/etc/freeradius/3.0/mods-enabled/realm') ?? '') + 'realm extra {\n  format = suffix\n  delimiter = "#"\n}\n');
+    await target.executeCommand('systemctl restart freeradius');
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "show module list"')).output.split('\n')).toContain('extra (realm)');
   });
 });
