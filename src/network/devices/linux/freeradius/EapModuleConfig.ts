@@ -19,7 +19,7 @@ const EAP_KEYS = new Set(['default_eap_type']);
 const TLS_CONFIG_KEYS = new Set(['private_key_file', 'certificate_file', 'ca_file', 'private_key_password', 'fragment_size']);
 const TYPES: ReadonlySet<string> = new Set(['md5', 'tls', 'peap', 'ttls']);
 const isEapType = (text: string): text is EapDefaultType => TYPES.has(text);
-export const EAP_FRAGMENT_LIMIT = 200;
+export const EAP_DEFAULT_FRAGMENT_SIZE = 1024;
 
 const pairOf = (section: ConfSection, name: string): string | undefined => section.pairs.find((candidate) => candidate.name === name)?.value;
 const at = (section: ConfSection): string => `${section.file}[${section.line}]`;
@@ -45,9 +45,6 @@ export function readEapModule(modules: ConfSection | undefined): EapModuleConfig
       if (privateKeyFile === undefined) return { error: `${at(section)}: Failed to find "private_key_file" in the tls-config section` };
       const fragment = pairOf(section, 'fragment_size');
       if (fragment !== undefined && (!/^\d+$/.test(fragment) || Number(fragment) < 1)) return { error: `${at(section)}: Invalid value "${fragment}" for variable fragment_size` };
-      if (fragment !== undefined && Number(fragment) > EAP_FRAGMENT_LIMIT) {
-        return { error: `${at(section)}: fragment_size ${fragment} is not implemented in this simulator: an EAP-Message attribute carries at most 253 bytes and RFC 3579 fragmentation across repeated attributes is not implemented, so the limit is ${EAP_FRAGMENT_LIMIT}` };
-      }
       tlsConfigs.set(section.name2 ?? '', {
         privateKeyFile, certificateFile, caFile: pairOf(section, 'ca_file') ?? null,
         privateKeyPassword: pairOf(section, 'private_key_password') ?? null, fragmentSize: fragment === undefined ? null : Number(fragment),

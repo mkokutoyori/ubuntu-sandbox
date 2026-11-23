@@ -13,6 +13,7 @@ import {
   type RadiusAttribute, type ProxyRoute, type StatusCheck,
   createDefaultServerConfig, attr, getAttr, getVsa, RADIUS_PACKET_NAME,
   decryptUserPassword, encryptUserPassword, isPrintablePassword,
+  eapMessageAttributes, eapMessageHex,
 } from './types';
 import {
   verifyMessageAuthenticator, withMessageAuthenticator, withResponseAuthenticator,
@@ -1069,8 +1070,7 @@ export class RadiusServerAgent {
     inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
     username: string, user: RadiusUser | undefined, dedupKey: string,
   ): void {
-    const eapAttr = getAttr(request, 'eap-message')!;
-    const eap = eapPacketFromWireHex(String(eapAttr.value));
+    const eap = eapPacketFromWireHex(eapMessageHex(request.attributes) ?? '');
     if (!eap) return; // malformed EAP-Message — nothing sane to answer
 
     const stateAttr = getAttr(request, 'state');
@@ -1343,7 +1343,7 @@ export class RadiusServerAgent {
     let response: RadiusPacket = {
       type: 'radius', code: 'access-challenge', identifier: request.identifier,
       authenticator: '00'.repeat(16),
-      attributes: [attr('eap-message', eapPacketToWireHex(eapRequest)), attr('state', state), ...this.proxyStatesOf(request)],
+      attributes: [...eapMessageAttributes(eapPacketToWireHex(eapRequest)), attr('state', state), ...this.proxyStatesOf(request)],
     };
     response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
@@ -1384,7 +1384,7 @@ export class RadiusServerAgent {
       eapResult = { type: 'eap', code: 'failure', identifier: eapResult.identifier };
       this.publishRejected(dstIp.toString(), user!.username, 'simultaneous-use');
     }
-    const attrs: RadiusAttribute[] = [attr('eap-message', eapPacketToWireHex(eapResult))];
+    const attrs: RadiusAttribute[] = [...eapMessageAttributes(eapPacketToWireHex(eapResult))];
     this.publishDecision(request, dstIp, accepted, denial?.note);
     if (denial !== null) attrs.push(...denial.reply);
     const post = this.postAuth(accepted, user?.replyAttributes ?? []);

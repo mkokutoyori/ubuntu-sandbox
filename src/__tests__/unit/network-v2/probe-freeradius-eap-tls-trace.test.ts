@@ -9,11 +9,13 @@
  * says that the final record size will be N bytes", "Expecting N fragments", "Got first TLS fragment (N bytes).  Peer says more fragments
  * will follow", "Got additional fragment ...", "Got final fragment (N bytes) total N", "Got all data (N bytes)"). The `eap` section now
  * selects the method, reads the certificates and drives the real TLS 1.3 engine; keys the simulator does not honour are refused naming
- * them, and `fragment_size` above 200 is refused naming the limit (an EAP-Message attribute carries at most 253 bytes and RFC 3579
- * fragmentation across attributes is not implemented). Debug levels above 2 (flags line, [eaptls process]) are not printed.
+ * them, and a zero `fragment_size` is refused; an EAP-Message longer than 253 bytes is split across repeated attributes (RFC 3579 section 3.1: the
+ * server and radclient emit them, every reader concatenates them in order) and the default fragment_size is the real 1024. Debug levels above 2 (flags line, [eaptls process]) are not printed.
  *
- * Discriminated with git stash on src: 7 of 8 fall before the fix; the witness, an EAP-MD5 default configuration with an `eap` section
- * that names no TLS file, passes either way and is named (on base the section was never read).
+ * Discriminated with git stash on src, in two steps. The eap module commit: 7 of the first 8 cases fall before it; the MD5 witness passes either
+ * way. The RFC 3579 commit that follows (the fragmentation of an EAP-Message over repeated attributes, fragment_size defaulting to 1024):
+ * 1 of the 10 cases falls before it, the default-fragment_size conversation; the fragment_size = 200 case (one attribute, nothing to split)
+ * and the refusals pass either way and are named: they guard that the change did not move what already worked.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -79,7 +81,10 @@ async function lab(eapSection: string) {
   return { client, target, keys, started, lines };
 }
 
-const hexOf = (output: string, name: string) => Array.from(output.matchAll(new RegExp(`${name} = 0x([0-9a-f]+)`, 'g'))).pop()?.[1] ?? '';
+const receivedOf = (output: string) => output.slice(output.lastIndexOf('Received'));
+const piecesOf = (output: string, name: string) => Array.from(receivedOf(output).matchAll(new RegExp(`${name} = 0x([0-9a-f]+)`, 'g'))).map((match) => match[1]);
+const hexOf = (output: string, name: string) => piecesOf(output, name).join('');
+const mostPieces = { value: 0 };
 const identityHex = (name: string) => `020000${(5 + name.length).toString(16).padStart(2, '0')}01${Buffer.from(name).toString('hex')}`;
 
 async function converse(made: Awaited<ReturnType<typeof lab>>, peer: EapTlsPeerSession): Promise<'accept' | 'reject' | 'stuck'> {
@@ -87,6 +92,7 @@ async function converse(made: Awaited<ReturnType<typeof lab>>, peer: EapTlsPeerS
   for (let round = 0; round < 200; round++) {
     if (reply.includes('Received Access-Accept')) return 'accept';
     if (reply.includes('Received Access-Reject')) return 'reject';
+    mostPieces.value = Math.max(mostPieces.value, piecesOf(reply, 'EAP-Message').length);
     const request = eapPacketFromWireHex(hexOf(reply, 'EAP-Message'));
     if (request === null) return 'stuck';
     const response = eapPacketToWireHex(peer.handle(request));
@@ -156,9 +162,23 @@ describe('the eap module: EAP-TLS, PEAP and TTLS', () => {
     expect(made.lines).toContain('eap: Calling submodule eap_peap to process data');
   });
 
-  it('refuses, in the words of the simulator, a setting it does not honour, a missing certificate and a fragment size above the attribute limit', async () => {
+  it('with the default fragment_size the server fragments an EAP-Message over several attributes (RFC 3579 section 3.1) and the conversation still succeeds', async () => {
+    mostPieces.value = 0;
+    const made = await lab(EAP('tls'));
+    expect(await converse(made, tlsPeer(made.keys))).toBe('accept');
+    expect(mostPieces.value).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a fragment_size that fits one attribute keeps every EAP-Message in a single attribute', async () => {
+    mostPieces.value = 0;
+    const made = await lab(EAP('tls', '', '    fragment_size = 200\n'));
+    expect(await converse(made, tlsPeer(made.keys))).toBe('accept');
+    expect(mostPieces.value).toBe(1);
+  });
+
+  it('refuses, in the words of the simulator, a setting it does not honour, a missing certificate and an invalid fragment size', async () => {
     expect((await lab(EAP('tls').replace('default_eap_type = tls', 'default_eap_type = tls\n  timer_expire = 60'))).started).toContain('The eap setting "timer_expire" is not implemented in this simulator');
-    expect((await lab(EAP('tls', '', '    fragment_size = 1024\n'))).started).toContain('fragment_size 1024 is not implemented in this simulator');
+    expect((await lab(EAP('tls', '', '    fragment_size = 0\n'))).started).toContain('Invalid value "0" for variable fragment_size');
     const made = await lab(EAP('tls'));
     write(made.target, `${DIR}/certs/server.pem`, '');
     expect(await made.target.executeCommand('systemctl restart freeradius')).toContain('Failed');

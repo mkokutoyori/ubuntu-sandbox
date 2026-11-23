@@ -1,6 +1,6 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { attr, RADIUS_PACKET_NAME, type RadiusAttribute, type RadiusCode } from '@/network/radius/types';
+import { attr, splitEapMessages, RADIUS_PACKET_NAME, type RadiusAttribute, type RadiusCode } from '@/network/radius/types';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import type { RadiusExchange } from '@/network/radius/RadiusClientAgent';
 import type { RawRequestCode } from '@/network/radius/RadiusAccountingClient';
@@ -172,7 +172,7 @@ async function runCoa(
       for (const pair of packet.pairs) {
         const attribute = usersPairToAttribute(pair);
         if (attribute === null) return { output: `radclient: Failed to parse attribute "${pair.name}"`, exitCode: 1 };
-        attributes.push(attribute);
+        attributes.push(...splitEapMessages([attribute]));
       }
       for (let repeat = 0; repeat < run.count; repeat++, number++) {
         const result = await client.sendAttributes(run.server, code, attributes);
@@ -225,7 +225,7 @@ async function runRaw(
       for (const pair of packet.pairs) {
         const attribute = usersPairToAttribute(pair);
         if (attribute === null) return { output: `radclient: Failed to parse attribute "${pair.name}"`, exitCode: 1 };
-        attributes.push(attribute);
+        attributes.push(...splitEapMessages([attribute]));
       }
       for (let repeat = 0; repeat < run.count; repeat++, number++) {
         const exchange = await client.sendAttributes(run.server, attributes, {
@@ -361,7 +361,7 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
           else {
             const attribute = usersPairToAttribute(pair);
             if (attribute === null) return { output: `radclient: Failed to parse attribute "${pair.name}"`, exitCode: 1 };
-            extras.push(attribute);
+            extras.push(...splitEapMessages([attribute]));
           }
           shown.push(key === 'user-name' || key.endsWith('password') ? `${pair.name} = "${pair.value}"` : formatRadiusAttribute(usersPairToAttribute(pair) ?? attr('user-name', pair.value)));
         }

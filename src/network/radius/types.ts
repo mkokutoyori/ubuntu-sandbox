@@ -312,6 +312,23 @@ export function getVsa(pkt: RadiusPacket, vendorId: number, vendorType: number):
   );
 }
 
+export const EAP_MESSAGE_FRAGMENT_HEX = 253 * 2;
+
+export function eapMessageAttributes(hex: string): RadiusAttribute[] {
+  const pieces: RadiusAttribute[] = [];
+  for (let at = 0; at === 0 || at < hex.length; at += EAP_MESSAGE_FRAGMENT_HEX) pieces.push({ type: 'eap-message', value: hex.slice(at, at + EAP_MESSAGE_FRAGMENT_HEX) });
+  return pieces;
+}
+
+export function splitEapMessages(attributes: readonly RadiusAttribute[]): RadiusAttribute[] {
+  return attributes.flatMap((attribute) => attribute.type === 'eap-message' && String(attribute.value).length > EAP_MESSAGE_FRAGMENT_HEX ? eapMessageAttributes(String(attribute.value)) : [attribute]);
+}
+
+export function eapMessageHex(attributes: readonly RadiusAttribute[]): string | null {
+  const pieces = attributes.filter((attribute) => attribute.type === 'eap-message');
+  return pieces.length === 0 ? null : pieces.map((piece) => String(piece.value)).join('');
+}
+
 export function getAttr(pkt: RadiusPacket, type: RadiusAttrType): RadiusAttribute | undefined {
   return pkt.attributes.find((a) => a.type === type);
 }

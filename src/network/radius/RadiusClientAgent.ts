@@ -11,6 +11,7 @@ import {
   createDefaultClientConfig, defaultServerEntry, attr, getAttr, getVsa,
   encryptUserPassword,
   UDP_PORT_RADIUS_AUTH,
+  eapMessageAttributes, eapMessageHex,
 } from './types';
 import {
   randomRequestAuthenticator, randomOpaqueToken, withMessageAuthenticator,
@@ -390,7 +391,7 @@ export class RadiusClientAgent {
       attr('user-name', pending.username),
       attr('nas-ip-address', srcIp.toString()),
       attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
-      attr('eap-message', pending.eapMessageHex),
+      ...eapMessageAttributes(pending.eapMessageHex),
     ];
     if (pending.callingStationId) attrs.push(attr('calling-station-id', pending.callingStationId));
     if (pending.calledStationId) attrs.push(attr('called-station-id', pending.calledStationId));
@@ -459,19 +460,18 @@ export class RadiusClientAgent {
         fromIp: srcIp.toString(), code: payload.code, identifier: payload.identifier,
       },
     });
-    const eapAttr = getAttr(payload, 'eap-message');
-    const eapMessageHex = eapAttr ? String(eapAttr.value) : null;
+    const eapMessageHexValue = eapMessageHex(payload.attributes);
     const stateAttr = getAttr(payload, 'state');
     const state = stateAttr ? String(stateAttr.value) : null;
     if (payload.code === 'access-challenge') {
-      pending.resolve({ kind: 'challenge', eapMessageHex: eapMessageHex ?? '', state });
+      pending.resolve({ kind: 'challenge', eapMessageHex: eapMessageHexValue ?? '', state });
       return;
     }
     if (payload.code === 'access-accept') {
-      pending.resolve({ kind: 'accept', eapMessageHex, attributes: payload.attributes });
+      pending.resolve({ kind: 'accept', eapMessageHex: eapMessageHexValue, attributes: payload.attributes });
       return;
     }
-    pending.resolve({ kind: 'reject', eapMessageHex });
+    pending.resolve({ kind: 'reject', eapMessageHex: eapMessageHexValue });
   }
 
   private transmitMsChap(server: RadiusServerConfig, pending: PendingMsChapRound): void {

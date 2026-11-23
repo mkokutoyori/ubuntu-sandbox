@@ -20,13 +20,13 @@ import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
 import { parseClientsConf } from './ClientsConfParser';
-import { readEapModule, type EapModuleConfig } from './EapModuleConfig';
+import { readEapModule, EAP_DEFAULT_FRAGMENT_SIZE, type EapModuleConfig } from './EapModuleConfig';
 import type { EapTlsConfig } from '@/network/radius/eaptls/EapTlsConfig';
 import { PeapMd5InnerAuthServer } from '@/network/radius/eaptls/PeapInnerAuth';
 import { TtlsPapInnerAuthServer } from '@/network/radius/eaptls/TtlsInnerAuth';
 import { protocolOf, type RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
-import type { RadiusUser, RadiusAttribute, RadiusPacket, ProxyRoute } from '@/network/radius/types';
+import { eapMessageHex, type RadiusUser, type RadiusAttribute, type RadiusPacket, type ProxyRoute } from '@/network/radius/types';
 import { detailPath, detailEntry, acctUniqueFor, type DetailRecord } from './DetailModule';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
@@ -738,7 +738,7 @@ export class RadiusdService {
       return { result: present ? 'ok' : 'noop', messages };
     }
     if (name === 'eap') {
-      const eapHex = String(context.request.find((attribute) => attribute.type === 'eap-message')?.value ?? '');
+      const eapHex = eapMessageHex(context.request) ?? '';
       if (eapHex.length >= 10) {
         const code = parseInt(eapHex.slice(0, 2), 16);
         const codeName = ['', 'Request', 'Response', 'Success', 'Failure'][code];
@@ -974,7 +974,7 @@ export class RadiusdService {
       serverCert: chain[0], serverPrivateKey: key,
       verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => this.wallClock.nowMs() }),
       requireClientCert: module.defaultType === 'tls', eapType: module.defaultType as 'tls' | 'peap' | 'ttls',
-      ...(tls.fragmentSize === null ? {} : { mtu: tls.fragmentSize }),
+      mtu: tls.fragmentSize ?? EAP_DEFAULT_FRAGMENT_SIZE,
       ...(module.defaultType === 'peap' ? { innerAuth: new PeapMd5InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
     };
   }
