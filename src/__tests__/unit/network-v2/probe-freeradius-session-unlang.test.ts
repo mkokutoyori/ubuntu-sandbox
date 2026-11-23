@@ -83,6 +83,6 @@ describe('unlang in the session section', () => {
 
   it('refuses an unknown module and an unsupported unlang construct, naming them', async () => {
     expect((await lab('\t\tfrobnicate\n')).restarted).toContain('Failed to find module "frobnicate"');
-    expect((await lab('\t\tswitch &User-Name {\n\t\t}\n')).restarted).toContain('"switch"');
+    expect((await lab('\t\tforeach &Reply-Message {\n\t\t}\n')).restarted).toContain('"foreach"');
   });
 });

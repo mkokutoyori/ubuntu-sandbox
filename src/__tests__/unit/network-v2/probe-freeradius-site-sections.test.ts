@@ -7,7 +7,7 @@
  * authorize), rlm_logintime and rlm_preprocess (only if listed), rlm_detail and rlm_radutmp (in accounting), policy.d/accounting
  * (acct_unique in preacct is what adds Acct-Unique-Session-Id), and src/main/modules.c for the refusals ("Failed to find module").
  * The simulator reads the module NAMES of each section (and of an Auth-Type subsection); a module left out is not run. The unlang
- * constructs the simulator does not run (switch, redundant, foreach...) and the modules the simulator does not have are refused naming them, never ignored.
+ * constructs the simulator does not run (foreach, map, break) and the modules the simulator does not have are refused naming them, never ignored.
  *
  * Discriminated with git stash on src: 12 of 14 fall before the fix; two pass either way and are named: the witness (the default site,
  * whose sections list every module the simulator runs, behaves as before) and the shipped status site (its authorize with an
@@ -153,9 +153,9 @@ describe('the processing sections of a site', () => {
 
   it('an unlang construct is refused naming it, with its file and line', async () => {
     const { target } = await lab();
-    write(target, SITES, site(target).replace('\tauthorize {\n', '\tauthorize {\n\t\tredundant {\n\t\t}\n'));
+    write(target, SITES, site(target).replace('\tauthorize {\n', '\tauthorize {\n\t\tforeach &Reply-Message {\n\t\t}\n'));
     const error = (target.getRadiusd().checkConfig() as { error: string }).error;
-    expect(error).toMatch(/^\/etc\/freeradius\/3\.0\/sites-enabled\/default\[\d+\]: The unlang construct "redundant" is not implemented in this simulator$/);
+    expect(error).toMatch(/^\/etc\/freeradius\/3\.0\/sites-enabled\/default\[\d+\]: The unlang construct "foreach" is not implemented in this simulator$/);
   });
 
   it('a module the real server has and this one has not is refused naming it; an optional one (-ldap) is skipped', async () => {

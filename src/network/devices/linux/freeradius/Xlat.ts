@@ -1,5 +1,16 @@
 import { formatCtime } from '../time/ctime';
 import { formatLocalTime } from '../system/SystemInfo';
+import { md5Hex, sha1Hex } from '@/crypto/hash';
+
+export const XLAT_FUNCTIONS = new Set(['toupper', 'tolower', 'strlen', 'md5', 'sha1']);
+
+function applyFunction(name: string, argument: string): string {
+  if (name === 'toupper') return argument.toUpperCase();
+  if (name === 'tolower') return argument.toLowerCase();
+  if (name === 'strlen') return String(argument.length);
+  if (name === 'md5') return md5Hex(argument);
+  return sha1Hex(argument);
+}
 
 export type Lookup = (name: string) => string | undefined;
 
@@ -24,7 +35,10 @@ export function expandTemplate(template: string, lookup: Lookup, atMs: number, e
         const first = expandTemplate(alternative[0], lookup, atMs, escape);
         out += first !== '' ? first : expandTemplate(alternative[1], lookup, atMs, escape);
       } else if (body.startsWith('%{')) out += expandTemplate(body, lookup, atMs, escape);
-      else {
+      else if (/^(toupper|tolower|strlen|md5|sha1):/.test(body)) {
+        const colon = body.indexOf(':');
+        out += applyFunction(body.slice(0, colon), expandTemplate(body.slice(colon + 1), lookup, atMs, escape));
+      } else {
         const value = lookup(body);
         out += value === undefined ? '' : escape(value);
       }

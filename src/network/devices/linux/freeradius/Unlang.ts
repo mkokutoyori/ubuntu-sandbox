@@ -4,7 +4,7 @@ import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodP
 import type { ConfPair, ConfSection } from './FreeradiusConf';
 import { usersPairToAttribute, requestViewOf, type PacketFacts, type ViewContext } from './UsersFileParser';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
-import { expandTemplate } from './Xlat';
+import { expandTemplate, XLAT_FUNCTIONS } from './Xlat';
 
 export type ModuleResult = 'reject' | 'fail' | 'ok' | 'handled' | 'invalid' | 'userlock' | 'notfound' | 'noop' | 'updated';
 export type AttributeList = 'request' | 'control' | 'reply' | 'proxy-request' | 'proxy-reply';
@@ -47,7 +47,10 @@ export type Condition =
 export interface Assignment { list: AttributeList; name: string; op: string; value: Term; file: string; line: number }
 
 export type Statement =
-  | { kind: 'module'; name: string; file: string; line: number }
+  | { kind: 'module'; name: string; file: string; line: number; actions?: ReadonlyMap<ModuleResult, 'return' | 'continue' | 'reject'> }
+  | { kind: 'leave' }
+  | { kind: 'group'; keyword: 'group' | 'redundant' | 'load-balance' | 'redundant-load-balance'; body: Statement[] }
+  | { kind: 'switch'; text: string; expression: Term; cases: Array<{ value: string | null; body: Statement[] }> }
   | { kind: 'return'; result: ModuleResult }
   | { kind: 'update'; list: AttributeList; assignments: Assignment[] }
   | { kind: 'if'; branches: Array<{ keyword: 'if' | 'elsif' | 'else'; text: string; condition: Condition | null; body: Statement[] }> }
@@ -57,7 +60,9 @@ export class UnlangError extends Error {}
 
 const RESULT_KEYWORDS = new Set<string>(['ok', 'reject', 'noop', 'fail', 'handled', 'invalid', 'userlock', 'notfound', 'updated']);
 const STOPPING = new Set<ModuleResult>(['reject', 'fail', 'userlock', 'invalid', 'handled']);
-const UNSUPPORTED = new Set(['switch', 'case', 'foreach', 'redundant', 'load-balance', 'redundant-load-balance', 'group', 'return', 'break', 'map']);
+const UNSUPPORTED = new Set(['case', 'foreach', 'break', 'map']);
+const GROUPS = new Set(['group', 'redundant', 'load-balance', 'redundant-load-balance']);
+const ACTIONS = new Set(['return', 'continue', 'reject']);
 const LIST_ALIASES: Record<string, AttributeList> = { request: 'request', control: 'control', config: 'control', reply: 'reply', 'proxy-request': 'proxy-request', 'proxy-reply': 'proxy-reply' };
 
 function fail(file: string, line: number, message: string): never {
@@ -189,7 +194,7 @@ const TEMPLATE_FUNCTION = /%\{([A-Za-z0-9_-]+):(?!-)/g;
 
 function checkTemplate(text: string, file: string, line: number): void {
   for (const match of text.matchAll(TEMPLATE_FUNCTION)) {
-    if (LIST_ALIASES[match[1]] === undefined) fail(file, line, `The expansion function "%{${match[1]}:...}" is not implemented in this simulator`);
+    if (LIST_ALIASES[match[1]] === undefined && !XLAT_FUNCTIONS.has(match[1])) fail(file, line, `The expansion function "%{${match[1]}:...}" is not implemented in this simulator`);
   }
 }
 
@@ -248,6 +253,7 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
     if (!('items' in item)) {
       pending = null;
       if (item.op !== '=' || item.value !== '') fail(item.file, item.line, `The unlang statement "${item.name} ${item.op} ${item.value}" is not implemented in this simulator`);
+      if (item.name === 'return') { statements.push({ kind: 'leave' }); continue; }
       if (RESULT_KEYWORDS.has(item.name)) { statements.push({ kind: 'return', result: item.name as ModuleResult }); continue; }
       const resolved = knownModule(item.name, item.file, item.line);
       if (resolved !== null) statements.push({ kind: 'module', name: resolved, file: item.file, line: item.line });
@@ -265,12 +271,39 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       const list = LIST_ALIASES[item.name2 ?? ''];
       if (list === undefined) fail(item.file, item.line, `The attribute list "${item.name2 ?? ''}" in update is not implemented in this simulator`);
       statements.push({ kind: 'update', list, assignments: item.pairs.map((pair) => assignmentOf(pair, list)) });
+    } else if (GROUPS.has(item.name1)) {
+      pending = null;
+      statements.push({ kind: 'group', keyword: item.name1 as 'group', body: parseStatements(item, knownModule) });
+    } else if (item.name1 === 'switch') {
+      pending = null;
+      const text = item.name2 ?? '';
+      if (text === '') fail(item.file, item.line, 'Syntax error: switch without an expression');
+      const expression: Term = text.startsWith('&') ? parseReference(text, 'request', item.file, item.line) : { kind: 'literal', value: text.replace(/^["']|["']$/g, ''), ...(text.includes('%{') ? { template: true } : {}) };
+      const cases: Array<{ value: string | null; body: Statement[] }> = [];
+      for (const child of item.sections) {
+        if (child.name1 !== 'case') fail(child.file, child.line, `Unknown section "${child.name1}" in switch`);
+        cases.push({ value: child.name2 === null ? null : child.name2.replace(/^["']|["']$/g, ''), body: parseStatements(child, knownModule) });
+      }
+      statements.push({ kind: 'switch', text, expression, cases });
     } else if (UNSUPPORTED.has(item.name1)) {
       fail(item.file, item.line, `The unlang construct "${item.name1}" is not implemented in this simulator`);
     } else if (item.name1.endsWith('-Type')) {
       pending = null;
       statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule), file: item.file, line: item.line });
-    } else fail(item.file, item.line, `Unknown section "${item.name1}" in ${section.name1}`);
+    } else {
+      pending = null;
+      const resolved = knownModule(item.name1, item.file, item.line);
+      if (resolved === null) continue;
+      const actions = new Map<ModuleResult, 'return' | 'continue' | 'reject'>();
+      for (const pair of item.pairs) {
+        if (!RESULT_KEYWORDS.has(pair.name)) fail(pair.file, pair.line, `Unknown return code "${pair.name}" in the actions of module ${item.name1}`);
+        if (pair.op !== '=' || /^\d+$/.test(pair.value)) fail(pair.file, pair.line, `The action "${pair.value}" for "${pair.name}" is not implemented in this simulator: only return, continue and reject are`);
+        if (!ACTIONS.has(pair.value)) fail(pair.file, pair.line, `Invalid action "${pair.value}" for "${pair.name}" in module ${item.name1}`);
+        actions.set(pair.name as ModuleResult, pair.value as 'return' | 'continue' | 'reject');
+      }
+      if (item.sections.length > 0) fail(item.sections[0].file, item.sections[0].line, `Unknown section "${item.sections[0].name1}" in the actions of module ${item.name1}`);
+      statements.push({ kind: 'module', name: resolved, file: item.file, line: item.line, actions });
+    }
   }
   return statements;
 }
@@ -280,6 +313,8 @@ export function moduleNames(statements: readonly Statement[], into: Set<string>)
     if (statement.kind === 'module') into.add(statement.name);
     else if (statement.kind === 'if') for (const branch of statement.branches) moduleNames(branch.body, into);
     else if (statement.kind === 'typed') moduleNames(statement.body, into);
+    else if (statement.kind === 'group') moduleNames(statement.body, into);
+    else if (statement.kind === 'switch') for (const branch of statement.cases) moduleNames(branch.body, into);
   }
 }
 
@@ -322,6 +357,8 @@ export function priorityResult(results: readonly ModuleResult[]): ModuleResult {
   return 'noop';
 }
 
+const ROTATION = new WeakMap<object, number>();
+
 export function run(statements: readonly Statement[], context: UnlangContext, host: UnlangHost, lines: string[], depth: number): { result: ModuleResult; stopped: boolean } {
   const indent = (text: string, extra = 0): void => { lines.push(`${'  '.repeat(depth + extra)}${text}`); };
   const results: ModuleResult[] = [];
@@ -331,13 +368,50 @@ export function run(statements: readonly Statement[], context: UnlangContext, ho
       context.lastResult = statement.result;
       results.push(statement.result);
       if (STOPPING.has(statement.result)) return { result: priorityResult(results), stopped: true };
+    } else if (statement.kind === 'leave') {
+      return { result: priorityResult(results), stopped: true };
     } else if (statement.kind === 'module') {
       const outcome = host.runModule(statement.name, context);
       for (const message of outcome.messages) indent(message, 1);
-      indent(`[${statement.name}] = ${outcome.result}`);
-      context.lastResult = outcome.result;
-      results.push(outcome.result);
-      if (STOPPING.has(outcome.result)) return { result: priorityResult(results), stopped: true };
+      const action = statement.actions?.get(outcome.result);
+      const result: ModuleResult = action === 'reject' ? 'reject' : outcome.result;
+      indent(`[${statement.name}] = ${result}`);
+      context.lastResult = result;
+      results.push(result);
+      if (action === 'return' || action === 'reject' || (action === undefined && STOPPING.has(result))) return { result: priorityResult(results), stopped: true };
+    } else if (statement.kind === 'group') {
+      indent(`${statement.keyword} {`);
+      let inner: { result: ModuleResult; stopped: boolean };
+      if (statement.keyword === 'group') inner = run(statement.body, context, host, lines, depth + 1);
+      else {
+        const count = statement.body.length;
+        const turn = ROTATION.get(statement) ?? 0;
+        if (statement.keyword !== 'redundant') ROTATION.set(statement, turn + 1);
+        const first = statement.keyword === 'redundant' || count === 0 ? 0 : turn % count;
+        inner = { result: 'noop', stopped: false };
+        for (let step = 0; step < count; step++) {
+          inner = run([statement.body[(first + step) % count]], context, host, lines, depth + 1);
+          if (statement.keyword === 'load-balance' || inner.result !== 'fail') break;
+        }
+      }
+      indent(`} # ${statement.keyword} = ${inner.result}`);
+      results.push(inner.result);
+      if (inner.stopped) return { result: priorityResult(results), stopped: true };
+    } else if (statement.kind === 'switch') {
+      indent(`switch ${statement.text} {`);
+      const value = String(valueOf(context, statement.expression) ?? '');
+      const chosen = statement.cases.find((candidate) => candidate.value !== null && candidate.value === value) ?? statement.cases.find((candidate) => candidate.value === null);
+      let result: ModuleResult = 'noop';
+      if (chosen !== undefined) {
+        const label = chosen.value === null ? 'case' : `case ${chosen.value}`;
+        indent(`${label} {`, 1);
+        const inner = run(chosen.body, context, host, lines, depth + 2);
+        indent(`} # ${label}`, 1);
+        result = inner.result;
+        indent(`} # switch ${statement.text} = ${result}`);
+        results.push(result);
+        if (inner.stopped) return { result: priorityResult(results), stopped: true };
+      } else indent(`} # switch ${statement.text} = ${result}`);
     } else if (statement.kind === 'update') {
       indent(`update ${statement.list} {`);
       for (const assignment of statement.assignments) {
