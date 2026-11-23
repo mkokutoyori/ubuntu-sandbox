@@ -312,7 +312,14 @@ export class RadiusServerAgent {
     this.unknownClientListener = listener;
   }
 
+  private countGlobal(kind: 'auth' | 'acct', change: (stats: RadiusStats) => void): void {
+    let stats = this.statistics.get(`${kind}:*`);
+    if (stats === undefined) { stats = emptyStats(); this.statistics.set(`${kind}:*`, stats); }
+    change(stats);
+  }
+
   private reportUnknownClient(kind: 'auth' | 'acct', senderIp: string, clientPort: number, listenPort: number): void {
+    this.countGlobal(kind, (stats) => { stats.invalid++; stats.lastPacket = Math.floor(simulationNowMs() / 1000); });
     if (this.unknownClientListener === null) return;
     if (this.packetTrace === null) {
       const second = Math.floor(simulationNowMs() / 1000);
@@ -637,10 +644,18 @@ export class RadiusServerAgent {
       return;
     }
     if (payload?.type === 'radius' && payload.code === 'accounting-response' && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0) && this.tryCompleteProxyReply(srcIp, udp, payload)) return;
-    if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-request') return;
+    if (!payload || payload.type !== 'radius') {
+      this.countGlobal('acct', (stats) => { stats.requests++; stats.malformed++; });
+      return;
+    }
+    if (payload.code !== 'accounting-request') {
+      if (payload.code !== 'accounting-response') this.countGlobal('acct', (stats) => { stats.requests++; stats.unknownTypes++; });
+      return;
+    }
 
     const senderIp = srcIp.toString();
     if (this.clientRefused(senderIp)) {
+      this.countGlobal('acct', (stats) => { stats.requests++; });
       this.reportUnknownClient('acct', senderIp, udp.sourcePort, udp.destinationPort);
       return;
     }
@@ -768,7 +783,10 @@ export class RadiusServerAgent {
     if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.port) return;
     if (this.anyPort) this.servedPort = udp.destinationPort;
     const payload = udp.payload as RadiusPacket | undefined;
-    if (!payload || payload.type !== 'radius') return;
+    if (!payload || payload.type !== 'radius') {
+      this.countGlobal('auth', (stats) => { stats.requests++; stats.malformed++; });
+      return;
+    }
 
     if ((payload.code === 'access-accept' || payload.code === 'access-reject') && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0)) {
       if (this.tryCompleteProxyReply(srcIp, udp, payload)) return;
@@ -777,7 +795,10 @@ export class RadiusServerAgent {
       this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies);
       return;
     }
-    if (payload.code !== 'access-request') return;
+    if (payload.code !== 'access-request') {
+      if (payload.code !== 'access-accept' && payload.code !== 'access-reject' && payload.code !== 'access-challenge') this.countGlobal('auth', (stats) => { stats.requests++; stats.unknownTypes++; });
+      return;
+    }
 
     const eapAttr = getAttr(payload, 'eap-message');
     if (eapAttr && !getAttr(payload, 'message-authenticator')) {
@@ -950,10 +971,12 @@ export class RadiusServerAgent {
     const senderIp = srcIp.toString();
     const refused = clients === null ? this.clientRefused(senderIp) : clients.find(srcIp, this.transport()) === null;
     if (refused) {
+      this.countGlobal(replyCode === 'access-accept' ? 'auth' : 'acct', (stats) => { stats.requests++; });
       this.reportUnknownClient(replyCode === 'access-accept' ? 'auth' : 'acct', senderIp, udp.sourcePort, udp.destinationPort);
       return;
     }
     if (this.config.statusServer !== true) {
+      this.countGlobal(replyCode === 'access-accept' ? 'auth' : 'acct', (stats) => { stats.requests++; stats.unknownTypes++; });
       const message = 'Ignoring Status-Server request due to security configuration';
       Logger.warn(this.host.id, 'radius:status-server-ignored', `${this.host.name}: ${message}`);
       this.warningListener?.(message);
