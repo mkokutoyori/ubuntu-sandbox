@@ -9,7 +9,7 @@
  * `STARTUP` / `SHUTDOWN` reactively.
  */
 
-import { IPAddress, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
+import { IPAddress, IPv6Address, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
 import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
@@ -89,6 +89,8 @@ export class LinuxServer extends LinuxMachine {
         this.sendIpv4FrameArpAware(outPortName, ipPkt, nextHopIP),
       sendUdpDatagram: (request: import('../layers/transport/UdpEgress').UdpSendRequest) =>
         this.sendUdpDatagram(request),
+      sendUdpDatagramTo: (destination: IPAddress | IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
+        this.sendUdpDatagramTo(destination, destinationPort, sourcePort, payload, payloadBytes),
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
     };
     this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());

@@ -15,7 +15,7 @@
  * touch.
  */
 import { knownGoodPassword } from '@/network/radius/KnownGoodPassword';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
@@ -274,7 +274,7 @@ export class RadiusdService {
 
   clientListing(verbose: boolean): string[] {
     const entries = this.radiusServer.clientTable.list();
-    const address = (entry: RadiusClientEntry) => entry.prefix === 32 ? entry.address.toString() : `${entry.address.toString()}/${entry.prefix}`;
+    const address = (entry: RadiusClientEntry) => entry.prefix === (entry.address instanceof IPv6Address ? 128 : 32) ? entry.address.toString() : `${entry.address.toString()}/${entry.prefix}`;
     if (!verbose) return entries.map(address);
     return entries.flatMap((entry, index) => [
       `client ${entry.section ?? entry.shortname} {`, `\tipaddr = ${address(entry)}`, `\tproto = ${protocolOf(entry) === 'udp' ? 'udp' : protocolOf(entry) === 'tcp' ? 'tcp' : '*'}`, `\tsecret = ${entry.secret}`, `\tlongname = ${entry.name}`,
@@ -341,7 +341,8 @@ export class RadiusdService {
     const bound: number[] = [];
     const tables = this.serverClientTables(loaded.site);
     const handlerOf = (spec: ListenerSpec) => (dgram: { inPort: string; sourceIP: unknown; udp: never }): void => {
-      if (!(dgram.sourceIP instanceof IPAddress)) return;
+      if (!(dgram.sourceIP instanceof IPAddress) && !(dgram.sourceIP instanceof IPv6Address)) return;
+      if ((dgram.sourceIP instanceof IPv6Address) !== (spec.ipv6 === true)) return;
       const udp = dgram.udp as { payload?: { code?: string } };
       if (spec.type === 'auth') this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
       else if (spec.type === 'acct') this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
@@ -359,7 +360,10 @@ export class RadiusdService {
     }
     this.radSecServers = radSecServers;
     for (const spec of specs.filter((candidate) => candidate.tls === undefined)) {
-      const owner = spec.address === null ? {} : { acceptsDestination: (destination: { toString(): string }) => destination.toString() === spec.address };
+      const owner = {
+        ...(spec.ipv6 === true ? { families: ['ipv6' as const] } : {}),
+        ...(spec.address === null ? {} : { acceptsDestination: (destination: { toString(): string }) => destination.toString() === spec.address }),
+      };
       let bindFailed = false;
       try {
         bindFailed = this.host.udpBind(spec.port, handlerOf(spec) as never, PROCESS_NAME, owner as never) === false;

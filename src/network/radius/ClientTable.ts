@@ -1,5 +1,5 @@
 import type { RadSecTls } from './RadSecTlsPolicy';
-import { IPAddress, SubnetMask } from '@/network/core/types';
+import { IPAddress, IPv6Address, SubnetMask } from '@/network/core/types';
 
 export type MessageAuthenticatorPolicy = 'yes' | 'no' | 'auto';
 
@@ -8,7 +8,7 @@ export interface RadiusClientEntry {
   readonly shortname: string;
   readonly section?: string;
   readonly confLines?: readonly string[];
-  readonly address: IPAddress;
+  readonly address: IPAddress | IPv6Address;
   readonly prefix: number;
   readonly secret: string;
   readonly nasType: string;
@@ -46,11 +46,16 @@ export class RadiusClientTable {
     return true;
   }
 
-  find(ip: IPAddress, transport: ClientTransport = 'udp'): RadiusClientEntry | null {
+  find(ip: IPAddress | IPv6Address, transport: ClientTransport = 'udp'): RadiusClientEntry | null {
     for (const entry of this.entries) {
       const carried = transport === 'udp' ? 'udp' : 'tcp';
       if (protocolOf(entry) !== '*' && protocolOf(entry) !== carried) continue;
       if (entry.tlsRequired === true && transport !== 'tls') continue;
+      if (ip instanceof IPv6Address) {
+        if (entry.address instanceof IPv6Address && ip.isInSameSubnet(entry.address, entry.prefix)) return entry;
+        continue;
+      }
+      if (entry.address instanceof IPv6Address) continue;
       if (entry.prefix === 0) return entry;
       const mask = SubnetMask.fromCIDR(entry.prefix);
       if (ip.isInSameSubnet(entry.address, mask)) return entry;

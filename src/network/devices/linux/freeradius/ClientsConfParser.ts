@@ -1,4 +1,4 @@
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { RadSecTls } from '@/network/radius/RadSecTlsPolicy';
 import { readTlsBody } from './RadSecTlsSection';
 import type { ClientProtocol, MessageAuthenticatorPolicy, RadiusClientEntry } from '@/network/radius/ClientTable';
@@ -34,9 +34,16 @@ function pair(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
 }
 
-function parseAddressSpec(text: string, netmask: number | null): { address: IPAddress; prefix: number } | null {
+function parseAddressSpec(text: string, netmask: number | null): { address: IPAddress | IPv6Address; prefix: number } | null {
   const slash = text.indexOf('/');
-  const address = IPAddress.tryParse(slash === -1 ? text : text.slice(0, slash));
+  const host = slash === -1 ? text : text.slice(0, slash);
+  const v6 = IPv6Address.tryParse(host);
+  if (v6 !== null) {
+    if (slash === -1) return { address: v6, prefix: netmask ?? 128 };
+    const prefix = Number(text.slice(slash + 1));
+    return Number.isInteger(prefix) && prefix >= 0 && prefix <= 128 ? { address: v6, prefix } : null;
+  }
+  const address = IPAddress.tryParse(host);
   if (address === null) return null;
   if (slash === -1) return { address, prefix: netmask ?? 32 };
   const prefix = Number(text.slice(slash + 1));
@@ -51,11 +58,13 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
     const explicit = pair(section, 'ipaddr') ?? pair(section, 'ipv4addr') ?? pair(section, 'ipv6addr');
     const netmaskText = pair(section, 'netmask');
     const netmask = netmaskText === undefined ? null : Number(netmaskText);
-    let spec: { address: IPAddress; prefix: number } | null;
+    let spec: { address: IPAddress | IPv6Address; prefix: number } | null;
     let longname: string;
     if (explicit !== undefined) {
       spec = parseAddressSpec(explicit, netmask);
       longname = explicit;
+      const family = spec === null ? null : spec.address instanceof IPv6Address ? 6 : 4;
+      if (spec !== null && ((pair(section, 'ipv4addr') !== undefined && family !== 4) || (pair(section, 'ipv6addr') !== undefined && family !== 6))) spec = null;
       if (spec === null) {
         result.errors.push(`${where}: Failed parsing client address "${explicit}"`);
         continue;

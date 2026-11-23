@@ -35,7 +35,7 @@ import {
 import { EapTlsServerSession } from './eaptls/EapTlsServerSession';
 import type { EapTlsConfig } from './eaptls/EapTlsConfig';
 import {
-  IPAddress,
+  IPAddress, IPv6Address,
   type EthernetFrame, type UDPPacket,
   type IPv4Packet,
 } from '../core/types';
@@ -80,6 +80,12 @@ export interface UtmpFields {
   startedAtMs: number;
 }
 
+export type PeerAddress = IPAddress | IPv6Address;
+
+export function peerOf(text: string): PeerAddress {
+  return text.includes(':') ? new IPv6Address(text) : new IPAddress(text);
+}
+
 export interface RadiusServerHost {
   readonly id: string;
   readonly name: string;
@@ -90,6 +96,7 @@ export interface RadiusServerHost {
   /** ARP-resolved next-hop MAC, when known — falls back to broadcast otherwise (mirrors `TcpHost`). */
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
+  sendUdpDatagramTo?(destination: PeerAddress, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
   /** Real RIB lookup (LPM) — needed to reach a proxy realm's home server on another subnet (mirrors `RadiusClientHost`). */
 }
@@ -275,7 +282,7 @@ export class RadiusServerAgent {
     const counted = this.sessionHook === null ? active.length : this.sessionHook({ port: this.servedPort ?? this.config.port, username, active: active.length, maximum });
     if (counted === null || counted < maximum) return null;
     for (const record of active) {
-      const nasType = this.clientTable.find(new IPAddress(record.nasIp))?.nasType ?? 'other';
+      const nasType = this.clientTable.find(peerOf(record.nasIp))?.nasType ?? 'other';
       if (nasType !== 'other' && nasType !== '') return null;
     }
     const denied = this.config.deniedMessage ?? 'You are already logged in - access denied';
@@ -386,7 +393,7 @@ export class RadiusServerAgent {
     this.traceOpen = false;
   }
 
-  private displayAttributes(packet: RadiusPacket, srcIp: IPAddress, decrypt: boolean): RadiusAttribute[] {
+  private displayAttributes(packet: RadiusPacket, srcIp: PeerAddress, decrypt: boolean): RadiusAttribute[] {
     return decrypt
       ? packet.attributes.map((attribute) => {
         if (attribute.type !== 'user-password') return attribute;
@@ -481,7 +488,7 @@ export class RadiusServerAgent {
     return { result: verdict.secondsLeft > 0 ? 'updated' : 'ok', secondsLeft: verdict.secondsLeft };
   }
 
-  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[], eap?: RequestDebugInfo['eap'], authenticate?: RequestDebugInfo['authenticate']): void {
+  private emitRequestDebug(request: RadiusPacket, srcIp: PeerAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[], eap?: RequestDebugInfo['eap'], authenticate?: RequestDebugInfo['authenticate']): void {
     if (this.debugEmit === null || this.debugBuilder === null) return;
     const lineOf = (attribute: RadiusAttribute) => `  ${formatRadiusAttribute(attribute)}`;
     this.debugEmit(this.requestNumber, this.debugBuilder({
@@ -493,7 +500,7 @@ export class RadiusServerAgent {
     }));
   }
 
-  private traceReceived(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstPort: number, inPort: string, decrypt: boolean): void {
+  private traceReceived(packet: RadiusPacket, srcIp: PeerAddress, srcPort: number, dstPort: number, inPort: string, decrypt: boolean): void {
     if (this.packetTrace === null) return;
     const attributes = this.displayAttributes(packet, srcIp, decrypt);
     this.traceOpen = true;
@@ -504,7 +511,7 @@ export class RadiusServerAgent {
     });
   }
 
-  private traceSent(packet: RadiusPacket, srcIp: IPAddress, srcPort: number, dstIp: IPAddress, dstPort: number): void {
+  private traceSent(packet: RadiusPacket, srcIp: PeerAddress, srcPort: number, dstIp: PeerAddress, dstPort: number): void {
     if (this.packetTrace === null || !this.traceOpen) return;
     this.traceOpen = false;
     this.packetTrace({
@@ -518,7 +525,7 @@ export class RadiusServerAgent {
 
   setDecisionListener(listener: ((payload: RadiusAuthDecidedPayload) => void) | null): void { this.decisionListener = listener; }
 
-  private publishDecision(request: RadiusPacket, clientIp: IPAddress, accepted: boolean, precedingMessage?: string): void {
+  private publishDecision(request: RadiusPacket, clientIp: PeerAddress, accepted: boolean, precedingMessage?: string): void {
     const passwordAttr = getAttr(request, 'user-password');
     const chapAttr = getAttr(request, 'chap-password');
     let password = '<no User-Password attribute>';
@@ -538,15 +545,15 @@ export class RadiusServerAgent {
   }
 
   private clientRefused(senderIp: string): boolean {
-    if (this.clientTable.size > 0 && this.clientTable.find(new IPAddress(senderIp), this.transport()) !== null) return false;
+    if (this.clientTable.size > 0 && this.clientTable.find(peerOf(senderIp), this.transport()) !== null) return false;
     const restricted = this.config.requireAuthorizedClient === true || this.config.clients.size > 0 || this.clientTable.size > 0;
     return restricted && !this.config.clients.has(senderIp);
   }
 
-  private secretFor(ip: IPAddress | string): string {
+  private secretFor(ip: PeerAddress | string): string {
     if (this.secretOverride !== null) return this.secretOverride;
     if (this.clientTable.size === 0) return this.config.sharedSecret;
-    const entry = this.clientTable.find(typeof ip === 'string' ? new IPAddress(ip) : ip, this.transport());
+    const entry = this.clientTable.find(typeof ip === 'string' ? peerOf(ip) : ip, this.transport());
     return entry === null ? this.config.sharedSecret : entry.secret;
   }
 
@@ -612,7 +619,7 @@ export class RadiusServerAgent {
 
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleStreamRequest(
-    srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    srcIp: PeerAddress, srcPort: number, localIp: IPAddress, localPort: number,
     request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string, encrypted = false,
   ): void {
     const inPort = this.host.getPorts().find((candidate) => candidate.getIPAddress()?.toString() === localIp.toString());
@@ -644,7 +651,7 @@ export class RadiusServerAgent {
   private secretOverride: string | null = null;
   private streamSink: ((response: RadiusPacket) => void) | null = null;
 
-  handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, viaStream = false): void {
+  handleAcctUdp(inPort: string, srcIp: PeerAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
     if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.acctPort) return;
     if (this.anyPort) this.servedPort = udp.destinationPort;
@@ -788,7 +795,7 @@ export class RadiusServerAgent {
     this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
   }
 
-  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, viaStream = false): void {
+  handleUdp(inPort: string, srcIp: PeerAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
     if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.port) return;
     if (this.anyPort) this.servedPort = udp.destinationPort;
@@ -965,7 +972,7 @@ export class RadiusServerAgent {
     this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, finalUser, dedupKey, null, rejectExtra);
   }
 
-  handleStatusUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, clients: RadiusClientTable): void {
+  handleStatusUdp(inPort: string, srcIp: PeerAddress, udp: UDPPacket, clients: RadiusClientTable): void {
     if (!this.running || !this.config.enabled) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius' || payload.code !== 'status-server') return;
@@ -973,7 +980,7 @@ export class RadiusServerAgent {
   }
 
   private handleStatusServer(
-    inPort: string, srcIp: IPAddress, udp: UDPPacket, request: RadiusPacket,
+    inPort: string, srcIp: PeerAddress, udp: UDPPacket, request: RadiusPacket,
     replyCode: 'access-accept' | 'accounting-response',
     cache: Map<string, { response: RadiusPacket; sentAt: number }>,
     clients: RadiusClientTable | null = null,
@@ -1073,7 +1080,7 @@ export class RadiusServerAgent {
   private eapTrace: RequestDebugInfo['eap'] | null = null;
 
   private handleEapRequest(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     username: string, user: RadiusUser | undefined, dedupKey: string,
   ): void {
     const eap = eapPacketFromWireHex(eapMessageHex(request.attributes) ?? '');
@@ -1187,7 +1194,7 @@ export class RadiusServerAgent {
 
   /** RFC 5216 — one round of an ongoing EAP-TLS conversation: unlike EAP-MD5's single challenge/response, this can take many rounds (fragmentation both ways), all sharing the same State. */
   private handleEapTlsResponse(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     username: string, eap: EapPacket, state: string, dedupKey: string,
   ): void {
     this.pruneEapTlsSessions();
@@ -1234,7 +1241,7 @@ export class RadiusServerAgent {
   }
 
   private handleMsChapV2Request(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     username: string, initialUser: RadiusUser | undefined, responseVsa: RadiusAttribute, dedupKey: string,
   ): void {
     let user = initialUser;
@@ -1286,13 +1293,13 @@ export class RadiusServerAgent {
 
   /** Access-Accept carrying MS-CHAP2-Success (mutual-auth proof) and the MPPE session-key VSAs (RFC 3079/2548). */
   private replyMsChapV2Success(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     username: string, user: RadiusUser, peerChallenge: Uint8Array, authChallenge: Uint8Array,
     ntResponse: Uint8Array, dedupKey: string, authenticateTrace?: RequestDebugInfo['authenticate'],
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
 
     const authenticatorResponse = generateAuthenticatorResponse(user.password, ntResponse, peerChallenge, authChallenge, username);
@@ -1339,12 +1346,12 @@ export class RadiusServerAgent {
 
   /** Access-Challenge carrying an EAP-Request (RFC 3579 §3.1) — always Message-Authenticator-signed. */
   private replyEapChallenge(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     eapRequest: EapPacket, state: string, dedupKey: string,
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
     let response: RadiusPacket = {
       type: 'radius', code: 'access-challenge', identifier: request.identifier,
@@ -1371,12 +1378,12 @@ export class RadiusServerAgent {
 
   /** Final Access-Accept/Reject carrying EAP-Success/Failure, plus any authorization attributes on accept. */
   private replyEap(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     eapResult: EapPacket, accepted: boolean, user: RadiusUser | undefined, dedupKey: string,
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
     const authenticated = this.authenticateHook?.({ port: this.servedPort ?? this.config.port, accepted, user, request: request.attributes, ...(this.eapTrace === null ? {} : { messages: this.eapTrace.lines }) }) ?? null;
     if (authenticated !== null) {
@@ -1431,12 +1438,12 @@ export class RadiusServerAgent {
 
   /** RFC 2865 §4.4: answer with Access-Challenge instead of a final decision, and remember the State so the next round can be redeemed. */
   private issueChallenge(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     user: RadiusUser, dedupKey: string,
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
     const state = randomOpaqueToken(16);
     this.challenges.set(state, { username: user.username, expiresAt: simulationNowMs() + CHALLENGE_TTL_MS });
@@ -1466,14 +1473,14 @@ export class RadiusServerAgent {
   }
 
   private reply(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket,
     accepted: boolean, user: RadiusUser | undefined, dedupKey: string,
     denial: { reply: RadiusAttribute[]; note: string } | null = null,
     rejectExtra: readonly RadiusAttribute[] = [],
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
     const replyAttrs: RadiusAttribute[] = [];
     if (accepted && user?.replyAttributes) replyAttrs.push(...user.replyAttributes);
@@ -1510,10 +1517,10 @@ export class RadiusServerAgent {
   }
 
   /** Retransmission of a request already answered: replay the cached response on the wire without re-processing (no duplicate accept/reject decision, no duplicate received/rejected events). */
-  private resend(inPort: string, dstIp: IPAddress, clientPort: number, response: RadiusPacket): void {
+  private resend(inPort: string, dstIp: PeerAddress, clientPort: number, response: RadiusPacket): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:resend',
@@ -1522,11 +1529,11 @@ export class RadiusServerAgent {
 
   /** RFC 2866 §3: Accounting-Response, signed with the plain Response Authenticator (no Message-Authenticator). */
   private replyAcct(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket, dedupKey: string,
+    inPort: string, dstIp: PeerAddress, clientPort: number, request: RadiusPacket, dedupKey: string,
   ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
     let response: RadiusPacket = {
       type: 'radius', code: 'accounting-response', identifier: request.identifier,
@@ -1537,10 +1544,10 @@ export class RadiusServerAgent {
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.acctSource(), response);
   }
 
-  private resendAcct(inPort: string, dstIp: IPAddress, clientPort: number, response: RadiusPacket): void {
+  private resendAcct(inPort: string, dstIp: PeerAddress, clientPort: number, response: RadiusPacket): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
-    const srcIp = port.getIPAddress();
+    const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.acctSource(), response);
     Logger.info(this.host.id, 'radius:resend',
@@ -1554,7 +1561,7 @@ export class RadiusServerAgent {
 
   /** RFC 2607 — forward this Access-Request to the realm's home server, tracking it under our own identifier space. */
   private forwardToRealm(
-    inPort: string, nasIp: IPAddress, nasPort: number, request: RadiusPacket,
+    inPort: string, nasIp: PeerAddress, nasPort: number, request: RadiusPacket,
     username: string, realm: string, route: RealmRoute, dedupKey: string, fallbacks: readonly RealmRoute[] = [], kind: 'auth' | 'acct' = 'auth',
   ): void {
     const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
@@ -1708,7 +1715,7 @@ export class RadiusServerAgent {
     loop.timer = this.getScheduler().setTimeout(tick, route.statusCheck.intervalMs);
   }
 
-  private tryCompleteProbe(srcIp: IPAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
+  private tryCompleteProbe(srcIp: PeerAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
     const probe = this.pendingProbes.get(payload.identifier);
     if (probe === undefined || srcIp.toString() !== probe.address || udp.sourcePort !== probe.port) return false;
     if (!verifyResponseAuthenticator(payload, probe.authenticator, probe.secret)) return false;
@@ -1730,7 +1737,7 @@ export class RadiusServerAgent {
   }
 
   /** The home server's Access-Accept/Reject for a request we forwarded — translate it back to the original NAS. Returns false when the reply doesn't match any pending proxied request (so the caller can fall through to normal handling). */
-  private tryCompleteProxyReply(srcIp: IPAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
+  private tryCompleteProxyReply(srcIp: PeerAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
     if (this.tryCompleteProbe(srcIp, udp, payload)) return true;
     const ctx = this.pendingProxy.get(payload.identifier);
     if (!ctx) return false;
@@ -1779,15 +1786,23 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: null,
       },
     });
-    this.sendRadiusFrame(ctx.nasInPort, port, nasSrcIp, new IPAddress(ctx.nasIp), ctx.nasPort, ctx.kind === 'acct' ? this.acctSource() : this.config.port, response);
+    this.sendRadiusFrame(ctx.nasInPort, port, nasSrcIp, peerOf(ctx.nasIp), ctx.nasPort, ctx.kind === 'acct' ? this.acctSource() : this.config.port, response);
     Logger.info(this.host.id, 'radius:proxy',
       `${this.host.name}: proxied ${response.code} from ${ctx.homeServerIp} → NAS ${ctx.nasIp}`);
   }
 
   /** Egress toward an arbitrary target IP (the home server, typically off-subnet) — mirrors `RadiusClientAgent`'s own resolver. */
 
+  private sourceOnPort(port: Port, peer: PeerAddress): PeerAddress | null {
+    if (peer instanceof IPv6Address) {
+      const own = port.getIPv6Addresses().find((entry) => !entry.address.isUnspecified());
+      return own === undefined ? null : own.address;
+    }
+    return port.getIPAddress();
+  }
+
   private sendRadiusFrame(
-    inPort: string, port: Port, srcIp: IPAddress, dstIp: IPAddress,
+    inPort: string, port: Port, srcIp: PeerAddress, dstIp: PeerAddress,
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
     this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
@@ -1800,6 +1815,10 @@ export class RadiusServerAgent {
     });
     if (this.streamSink !== null) {
       this.streamSink(response);
+      return;
+    }
+    if (dstIp instanceof IPv6Address || srcIp instanceof IPv6Address) {
+      this.host.sendUdpDatagramTo?.(dstIp, clientPort, sourcePort, response, 20 + 16 - 8);
       return;
     }
     if (dstIp.isLoopback() || dstIp.toString() === srcIp.toString()) {

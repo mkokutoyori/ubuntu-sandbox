@@ -1,4 +1,4 @@
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import type { RadSecTls } from '@/network/radius/RadSecTlsPolicy';
 import { readTlsBody } from './RadSecTlsSection';
@@ -13,6 +13,7 @@ export type { RadSecTls };
 export interface ListenerSpec {
   readonly type: ListenerType;
   readonly address: string | null;
+  readonly ipv6?: boolean;
   readonly port: number;
   readonly server: string;
   readonly file: string;
@@ -106,16 +107,19 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
       const portText = pairValue(section, 'port');
       const port = portText === undefined ? 0 : Number(portText);
       if (!Number.isInteger(port) || port < 0 || port > 65535) return { error: `${where}: Invalid value "${portText}" for variable port` };
-      if (pairValue(section, 'ipv6addr') !== undefined) return { error: `${where}: The listen setting "ipv6addr" is not implemented in this simulator: the RADIUS agents handle IPv4 only` };
-      const addressText = pairValue(section, 'ipaddr') ?? pairValue(section, 'ipv4addr') ?? '*';
+      const v6Text = pairValue(section, 'ipv6addr');
+      const addressText = v6Text ?? pairValue(section, 'ipaddr') ?? pairValue(section, 'ipv4addr') ?? '*';
       let address: string | null = null;
-      if (addressText !== '*') {
+      if (v6Text !== undefined) {
+        if (v6Text !== '*' && IPv6Address.tryParse(v6Text) === null) return { error: `${where}: Failed finding address for ${v6Text}` };
+        address = v6Text === '*' || IPv6Address.tryParse(v6Text)!.isUnspecified() ? null : IPv6Address.tryParse(v6Text)!.toString();
+      } else if (addressText !== '*') {
         const parsed = IPAddress.tryParse(addressText);
         if (parsed === null) return { error: `${where}: Failed finding address for ${addressText}` };
         address = parsed.toString();
       }
       listeners.push({
-        type: type as ListenerType, address, port: port === 0 ? (tls === undefined ? DEFAULT_PORT[type as ListenerType] : RADSEC_DEFAULT_PORT) : port,
+        type: type as ListenerType, address, ...(v6Text === undefined ? {} : { ipv6: true }), port: port === 0 ? (tls === undefined ? DEFAULT_PORT[type as ListenerType] : RADSEC_DEFAULT_PORT) : port,
         server: pairValue(section, 'virtual_server') ?? serverName, file: section.file, line: section.line,
         ...(tls === undefined ? {} : { tls }),
       });
@@ -129,7 +133,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
 }
 
 export function listenerAddressText(spec: ListenerSpec): string {
-  return spec.address ?? '*';
+  return spec.address ?? (spec.ipv6 === true ? '::' : '*');
 }
 
 export function describeListener(spec: ListenerSpec): string {
