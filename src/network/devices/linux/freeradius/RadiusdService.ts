@@ -356,6 +356,28 @@ export class RadiusdService {
     this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique') ? acctUniqueFor(record) : null), ~settings.permissions & 0o777);
   }
 
+  private runSession(info: { port: number; username: string; active: number; maximum: number }): number | null {
+    const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
+    const program = pipeline?.session;
+    if (program === undefined || program === null) return pipeline !== undefined && pipeline.sections.has('session') && !pipeline.sections.get('session')!.has('radutmp') ? null : info.active;
+    let counted = 0;
+    const context = newContext(info.username, [], null, this.wallClock.nowMs());
+    const lines: string[] = [];
+    const host: UnlangHost = {
+      runModule: (name): ModuleOutcome => {
+        if (name === 'radutmp') {
+          counted = info.active;
+          return { result: 'ok', messages: [] };
+        }
+        if (name === 'ok') return { result: 'ok', messages: [] };
+        if (name === 'reject') return { result: 'reject', messages: [] };
+        return { result: 'noop', messages: [] };
+      },
+    };
+    const outcome = run(program, context, host, lines, 3);
+    return outcome.result === 'ok' ? counted : null;
+  }
+
   private runAuthenticate(info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }): AuthenticateOutcome | null {
     const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
     const raw = this.lastResolution?.authTypeName ?? null;
@@ -855,6 +877,7 @@ export class RadiusdService {
     this.pipelines = loaded.pipelines;
     this.proxyConfig = loaded.proxy;
     this.radiusServer.setAuthenticateHook((info) => this.runAuthenticate(info));
+    this.radiusServer.setSessionHook((info) => this.runSession(info));
     this.radiusServer.setRadSecClient((address, port, request) => this.radSecRequest(address, port, request));
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
     this.radiusServer.setProxyHooks({

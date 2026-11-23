@@ -255,10 +255,12 @@ export class RadiusServerAgent {
   }
 
   private simultaneousUseDenial(user: RadiusUser | undefined, username: string): { reply: RadiusAttribute[]; note: string } | null {
-    if (user?.simultaneousUse === undefined || !this.allows('session')) return null;
+    if (user?.simultaneousUse === undefined) return null;
     const maximum = user.simultaneousUse;
     const active = this.utmpSessions().filter((record) => record.username === username);
-    if (active.length < maximum) return null;
+    if (this.sessionHook === null ? !this.allows('session') : false) return null;
+    const counted = this.sessionHook === null ? active.length : this.sessionHook({ port: this.servedPort ?? this.config.port, username, active: active.length, maximum });
+    if (counted === null || counted < maximum) return null;
     for (const record of active) {
       const nasType = this.clientTable.find(new IPAddress(record.nasIp))?.nasType ?? 'other';
       if (nasType !== 'other' && nasType !== '') return null;
@@ -371,6 +373,10 @@ export class RadiusServerAgent {
   private radSecClient: ((address: string, port: number, request: RadiusPacket) => RadiusPacket | null) | null = null;
 
   setRadSecClient(client: ((address: string, port: number, request: RadiusPacket) => RadiusPacket | null) | null): void { this.radSecClient = client; }
+
+  private sessionHook: ((info: { port: number; username: string; active: number; maximum: number }) => number | null) | null = null;
+
+  setSessionHook(hook: ((info: { port: number; username: string; active: number; maximum: number }) => number | null) | null): void { this.sessionHook = hook; }
 
   private authenticateHook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }) => AuthenticateOutcome | null) | null = null;
 

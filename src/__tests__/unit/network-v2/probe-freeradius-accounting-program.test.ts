@@ -9,7 +9,7 @@
  *
  * Discriminated with git stash on src: 6 of 9 fall before the fix; three pass either way and are named: the witness (the default site
  * writes the detail entry and records the session), the removal of detail and of acct_unique (a module left out of a section was
- * already not run) and the refusal of unlang in session (refused before as after).
+ * already not run) and the refusal of a construct the simulator lacks in session (foreach; refused before as after, the case moved from `update`, which session now runs).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -140,9 +140,9 @@ describe('the accounting programs', () => {
     expect(await detailOf(noUnique.target)).not.toContain('Acct-Unique-Session-Id');
   });
 
-  it('unlang in authenticate and session is still refused naming it', async () => {
+  it('an unlang construct the simulator lacks is still refused naming it, in session as in authenticate', async () => {
     const { target } = await lab();
-    write(target, SITES, site(target).replace('\tsession {\n', '\tsession {\n\t\tupdate control {\n\t\t}\n'));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "update" is not implemented in this simulator$/);
+    write(target, SITES, site(target).replace('\tsession {\n', '\tsession {\n\t\tforeach &Reply-Message {\n\t\t}\n'));
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "foreach" is not implemented in this simulator$/);
   });
 });

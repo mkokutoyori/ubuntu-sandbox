@@ -26,6 +26,7 @@ export interface Pipeline {
   readonly preProxy: readonly Statement[] | null;
   readonly postProxy: readonly Statement[] | null;
   readonly authGroups: ReadonlyMap<string, AuthGroup>;
+  readonly session: readonly Statement[] | null;
 }
 
 const SECTION_NAMES: readonly ProcessingSection[] = ['authorize', 'authenticate', 'preacct', 'accounting', 'session', 'post-auth', 'pre-proxy', 'post-proxy'];
@@ -57,6 +58,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
     let preacct: Statement[] | null = null;
     let accounting: Statement[] | null = null;
     const authGroups = new Map<string, AuthGroup>();
+    let session: Statement[] | null = null;
     let preProxy: Statement[] | null = null;
     let postProxy: Statement[] | null = null;
     for (const section of server.sections) {
@@ -66,7 +68,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
         for (const child of section.sections) if (child.name1 === 'Auth-Type' && child.name2 !== null) authTypes.set(child.name2, { file: child.file, line: child.line });
       }
       const names = new Set<string>();
-      if (section.name1 === 'authorize' || section.name1 === 'post-auth' || section.name1 === 'preacct' || section.name1 === 'accounting' || section.name1 === 'pre-proxy' || section.name1 === 'post-proxy') {
+      if (section.name1 === 'authorize' || section.name1 === 'post-auth' || section.name1 === 'preacct' || section.name1 === 'accounting' || section.name1 === 'pre-proxy' || section.name1 === 'post-proxy' || section.name1 === 'session') {
         let program: Statement[];
         try {
           program = parseStatements(section, resolve);
@@ -77,6 +79,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
         if (section.name1 === 'authorize') authorize = program;
         else if (section.name1 === 'post-auth') postAuth = program;
         else if (section.name1 === 'preacct') preacct = program;
+        else if (section.name1 === 'session') session = program;
         else if (section.name1 === 'pre-proxy') preProxy = program;
         else if (section.name1 === 'post-proxy') postProxy = program;
         else accounting = program;
@@ -103,7 +106,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
       }
       sections.set(section.name1 as ProcessingSection, names);
     }
-    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize, postAuth, preacct, accounting, preProxy, postProxy, authGroups });
+    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize, postAuth, preacct, accounting, preProxy, postProxy, authGroups, session });
   }
   return pipelines;
 }
