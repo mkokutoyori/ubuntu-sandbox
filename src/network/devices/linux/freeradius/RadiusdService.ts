@@ -33,10 +33,11 @@ import type { RadiusUserResolverContext, AccountingRun } from '@/network/radius/
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
-import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer } from './ProxyConfig';
+import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer, type RadSecHomeTls } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
-import { RadSecServer } from '@/network/radius/RadSecTransport';
+import { RadSecServer, radSecExchange } from '@/network/radius/RadSecTransport';
+import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { pemToCertChain, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
 import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
@@ -421,6 +422,32 @@ export class RadiusdService {
   private boundPorts: number[] = [];
   private radSecServers: RadSecServer[] = [];
 
+  private radSecRequest(address: string, port: number, request: RadiusPacket): RadiusPacket | null {
+    const home = this.proxyConfig.homeServers.find((server) => server.address === address && server.radSec !== null && (server.port === port || server.acctPort === port));
+    if (home === undefined || home.radSec === null) return null;
+    const config = this.radSecClientConfig(home.radSec);
+    if (typeof config === 'string') return null;
+    const outcome = radSecExchange(this.host.getTcpStack(), address, port, request, config);
+    return outcome.ok && outcome.reply !== undefined ? outcome.reply : null;
+  }
+
+  private radSecClientConfig(tls: RadSecHomeTls): TlsClientConfig | string {
+    const certificateText = this.files.read(tls.certificateFile);
+    if (certificateText === null) return `Failed reading certificate_file "${tls.certificateFile}": No such file or directory`;
+    const chain = pemToCertChain(certificateText);
+    if (chain.length === 0) return `Failed parsing certificate_file "${tls.certificateFile}": no certificate found`;
+    const keyText = this.files.read(tls.privateKeyFile);
+    if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
+    const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
+    if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
+    const caText = this.files.read(tls.caFile);
+    if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
+    return {
+      verifier: new CertificateVerifier({ trustAnchors: pemToCertChain(caText), clock: () => this.wallClock.nowMs() }),
+      clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: ['1.3'],
+    };
+  }
+
   private radSecTlsConfig(tls: RadSecTls): TlsServerConfig | string {
     const certificateText = this.files.read(tls.certificateFile);
     if (certificateText === null) return `Failed reading certificate_file "${tls.certificateFile}": No such file or directory`;
@@ -664,7 +691,7 @@ export class RadiusdService {
     }
     messages.push(`${instanceName}: Proxying request from user ${name} to realm ${realm.name}`);
     const server = this.pickHomeServer(pool, accounting);
-    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: accounting ? candidate.acctPort ?? candidate.port : candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs, ...(candidate.statusCheck === null ? {} : { statusCheck: candidate.statusCheck }) });
+    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: accounting ? candidate.acctPort ?? candidate.port : candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs, ...(candidate.statusCheck === null ? {} : { statusCheck: candidate.statusCheck }), ...(candidate.radSec === null ? {} : { radSec: true }) });
     const rest = pool.servers.filter((candidate) => candidate !== server);
     this.proxyDecision = {
       realm: realm.name, forwardName: realm.strip && position >= 0 ? local : name,
@@ -710,12 +737,12 @@ export class RadiusdService {
   homeServerListing(all: boolean): string[] {
     const lines: string[] = [];
     for (const server of this.proxyConfig.homeServers) {
-      const entries: Array<{ port: number; type: string }> = server.type === 'auth+acct'
+      const entries: Array<{ port: number; type: string }> = server.type === 'auth+acct' && server.radSec === null
         ? [{ port: server.port, type: 'auth+acct' }, { port: server.port + 1, type: 'acct' }]
         : [{ port: server.port, type: server.type }];
       for (const entry of entries) {
         const { state, outstanding } = this.radiusServer.homeServerState(server.address, entry.port, server);
-        lines.push(`${server.address}\t${entry.port}\tudp\t${entry.type}\t${state}\t${outstanding}${all ? `\t(name=${server.name}, dynamic=no)` : ''}`);
+        lines.push(`${server.address}\t${entry.port}\t${server.radSec === null ? 'udp' : 'tcp'}\t${entry.type}\t${state}\t${outstanding}${all ? `\t(name=${server.name}, dynamic=no)` : ''}`);
       }
     }
     return lines;
@@ -752,6 +779,11 @@ export class RadiusdService {
     if ('error' in pipelines) return { ok: false, error: pipelines.error };
     const proxy = readProxyConfig(main.root);
     if ('error' in proxy) return { ok: false, error: proxy.error };
+    for (const server of proxy.homeServers) {
+      if (server.radSec === null) continue;
+      const tlsConfig = this.radSecClientConfig(server.radSec);
+      if (typeof tlsConfig === 'string') return { ok: false, error: `home_server ${server.name}: ${tlsConfig}` };
+    }
     const clientsSource = this.files.read(clientsPath);
     if (clientsSource === null) return { ok: false, error: `open: ${clientsPath}: file not found` };
     const usersSource = this.files.read(usersPath);
@@ -768,6 +800,7 @@ export class RadiusdService {
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
     this.proxyConfig = loaded.proxy;
+    this.radiusServer.setRadSecClient((address, port, request) => this.radSecRequest(address, port, request));
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
     this.radiusServer.setProxyHooks({
       pre: (info) => this.runProxyStage('pre-proxy', info.port, info.request, info.outbound, []).attributes,

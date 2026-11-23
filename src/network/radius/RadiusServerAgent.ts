@@ -104,6 +104,7 @@ const LOGIN_TIME_MINIMUM_TIMEOUT_SECONDS = 60;
 
 /** RFC 2607 — a realm this server proxies to a home server instead of authenticating locally. */
 interface RealmRoute {
+  radSec?: boolean;
   homeServerIp: string;
   homePort: number;
   homeSecret: string;
@@ -359,6 +360,10 @@ export class RadiusServerAgent {
       })
       : packet.attributes;
   }
+
+  private radSecClient: ((address: string, port: number, request: RadiusPacket) => RadiusPacket | null) | null = null;
+
+  setRadSecClient(client: ((address: string, port: number, request: RadiusPacket) => RadiusPacket | null) | null): void { this.radSecClient = client; }
 
   private proxyHooks: ProxyHooks | null = null;
 
@@ -1399,22 +1404,38 @@ export class RadiusServerAgent {
       outAuthenticator = outbound.authenticator;
     }
 
-    const timer = this.getScheduler().setTimeout(() => {
-      this.pendingProxy.delete(outIdentifier);
+    const onSilence = (): void => {
       const activity = this.homeActivity.get(`${route.homeServerIp}:${route.homePort}`) ?? { lastReplyMs: null, timedOutAtMs: null };
       if (activity.timedOutAtMs === null) activity.timedOutAtMs = simulationNowMs();
       this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, activity);
-      this.startProbing(route, kind === 'acct');
+      if (route.radSec !== true) this.startProbing(route, kind === 'acct');
       if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1), kind);
-    }, route.timeoutMs);
-
-    this.pendingProxy.set(outIdentifier, {
+    };
+    const context = (timer: TimerHandle | null): PendingProxyContext => ({
       nasInPort: inPort, nasIp: nasIp.toString(), nasPort,
       originalIdentifier: request.identifier, originalAuthenticator: request.authenticator,
       nasSecret: this.secretFor(nasIp),
       homeServerIp: route.homeServerIp, homePort: route.homePort, homeSecret: route.homeSecret,
       outAuthenticator, dedupKey, timer, kind, realm, listenPort, request: [...request.attributes],
     });
+    if (route.radSec === true) {
+      this.getBus().publish({ topic: 'radius.proxy.forwarded', payload: { deviceId: this.host.id, hostname: this.host.getHostname(), username, realm, homeServerIp: route.homeServerIp } });
+      Logger.info(this.host.id, 'radius:proxy', `${this.host.name}: forwarding ${username} (realm ${realm}) → home server ${route.homeServerIp} over RadSec`);
+      const answer = this.radSecClient?.(route.homeServerIp, route.homePort, outbound) ?? null;
+      if (answer === null || !verifyResponseAuthenticator(answer, outAuthenticator, route.homeSecret)) {
+        onSilence();
+        return;
+      }
+      this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
+      this.finishProxy(context(null), answer);
+      return;
+    }
+    const timer = this.getScheduler().setTimeout(() => {
+      this.pendingProxy.delete(outIdentifier);
+      onSilence();
+    }, route.timeoutMs);
+
+    this.pendingProxy.set(outIdentifier, context(timer));
 
     this.getBus().publish({
       topic: 'radius.proxy.forwarded',
@@ -1498,10 +1519,15 @@ export class RadiusServerAgent {
     if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
     this.homeActivity.set(`${ctx.homeServerIp}:${ctx.homePort}`, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
 
+    this.finishProxy(ctx, payload);
+    return true;
+  }
+
+  private finishProxy(ctx: PendingProxyContext, payload: RadiusPacket): void {
     const port = this.host.getPort(ctx.nasInPort);
-    if (!port) return true;
+    if (!port) return;
     const nasSrcIp = port.getIPAddress();
-    if (!nasSrcIp) return true;
+    if (!nasSrcIp) return;
 
     let forwardedAttrs = payload.attributes.filter(
       (a) => a.type !== 'message-authenticator' && a.type !== 'state',
@@ -1510,7 +1536,7 @@ export class RadiusServerAgent {
     if (this.proxyHooks !== null) {
       const staged = this.proxyHooks.post({ kind: ctx.kind, port: ctx.listenPort, realm: ctx.realm, request: ctx.request, reply: forwardedAttrs });
       if (staged === null) {
-        if (ctx.kind === 'acct') return true;
+        if (ctx.kind === 'acct') return;
         replyCode = 'access-reject';
         forwardedAttrs = [];
       } else forwardedAttrs = staged;
@@ -1533,7 +1559,6 @@ export class RadiusServerAgent {
     this.sendRadiusFrame(ctx.nasInPort, port, nasSrcIp, new IPAddress(ctx.nasIp), ctx.nasPort, ctx.kind === 'acct' ? this.acctSource() : this.config.port, response);
     Logger.info(this.host.id, 'radius:proxy',
       `${this.host.name}: proxied ${response.code} from ${ctx.homeServerIp} → NAS ${ctx.nasIp}`);
-    return true;
   }
 
   /** Egress toward an arbitrary target IP (the home server, typically off-subnet) — mirrors `RadiusClientAgent`'s own resolver. */

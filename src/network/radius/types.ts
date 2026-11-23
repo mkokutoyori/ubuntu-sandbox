@@ -220,7 +220,8 @@ export interface ProxyRoute {
   homeSecret: string;
   timeoutMs: number;
   statusCheck?: StatusCheck;
-  fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number; statusCheck?: StatusCheck }[];
+  radSec?: boolean;
+  fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number; statusCheck?: StatusCheck; radSec?: boolean }[];
 }
 
 export interface RadiusUser {

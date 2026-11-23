@@ -1,7 +1,15 @@
 import { IPAddress } from '@/network/core/types';
 import type { ConfSection } from './FreeradiusConf';
 
+export interface RadSecHomeTls {
+  readonly certificateFile: string;
+  readonly privateKeyFile: string;
+  readonly privateKeyPassword: string | null;
+  readonly caFile: string;
+}
+
 export interface HomeServer {
+  readonly radSec: RadSecHomeTls | null;
   readonly name: string;
   readonly address: string;
   readonly port: number;
@@ -45,6 +53,7 @@ export interface ProxyConfig {
 export const NO_PROXY: ProxyConfig = { realms: [], homeServers: [], instances: new Map() };
 
 const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto', 'ping_interval', 'zombie_period', 'revive_interval', 'status_check', 'check_interval', 'check_timeout', 'num_answers_to_alive']);
+const HOME_TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file']);
 const POOL_KEYS = new Set(['type', 'home_server']);
 const REALM_KEYS = new Set(['type', 'auth_pool', 'acct_pool', 'nostrip', 'authhost', 'accthost', 'secret']);
 const POOL_TYPES = new Set(['fail-over', 'load-balance', 'client-balance', 'client-port-balance', 'keyed-balance']);
@@ -84,13 +93,37 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     const name = section.name2 ?? '';
     const type = value(section, 'type') ?? 'auth+acct';
     if (type !== 'auth' && type !== 'auth+acct' && type !== 'acct') return { error: `${located(section)}: Invalid type "${type}" for home server ${name}` };
-    if ((value(section, 'proto') ?? 'udp') !== 'udp') return { error: `${located(section)}: The home server protocol "${value(section, 'proto')}" is not implemented in this simulator` };
+    const proto = value(section, 'proto') ?? 'udp';
+    const tlsSection = section.sections.find((candidate) => candidate.name1 === 'tls');
+    if (proto !== 'udp' && proto !== 'tcp') return { error: `${located(section)}: The home server protocol "${proto}" is not implemented in this simulator` };
+    if (proto === 'tcp' && tlsSection === undefined) return { error: `${located(section)}: The home server ${name} uses proto = tcp without a tls section: plain RADIUS/TCP proxying is not implemented in this simulator` };
+    if (proto === 'udp' && tlsSection !== undefined) return { error: `${located(tlsSection)}: A tls section needs proto = tcp in the home_server ${name}` };
+    let radSec: RadSecHomeTls | null = null;
+    if (tlsSection !== undefined) {
+      for (const pair of tlsSection.pairs) {
+        if (!HOME_TLS_KEYS.has(pair.name)) return { error: `${located(pair)}: The tls setting "${pair.name}" is not implemented in this simulator` };
+      }
+      const certificateFile = value(tlsSection, 'certificate_file');
+      const privateKeyFile = value(tlsSection, 'private_key_file');
+      const caFile = value(tlsSection, 'ca_file');
+      if (certificateFile === undefined || privateKeyFile === undefined || caFile === undefined) {
+        return { error: `${located(tlsSection)}: A tls section of a home server needs certificate_file, private_key_file and ca_file` };
+      }
+      radSec = { certificateFile, privateKeyFile, privateKeyPassword: value(tlsSection, 'private_key_password') ?? null, caFile };
+      if (value(section, 'status_check') !== undefined && value(section, 'status_check') !== 'none') {
+        return { error: `${located(section)}: status_check over RadSec is not implemented in this simulator` };
+      }
+    }
     const address = value(section, 'ipaddr') ?? value(section, 'ipv4addr');
     if (address === undefined || IPAddress.tryParse(address) === null) return { error: `${located(section)}: No valid ipaddr found for home server ${name}` };
-    const secret = value(section, 'secret');
+    let secret = value(section, 'secret');
+    if (radSec !== null) {
+      if (secret !== undefined && secret !== 'radsec') return { error: `${located(section)}: The shared secret of a TLS home server must be "radsec" (RFC 6614)` };
+      secret = 'radsec';
+    }
     if (secret === undefined || secret === '') return { error: `${located(section)}: No shared secret defined for home server ${name}` };
-    const port = Number(value(section, 'port') ?? (type === 'acct' ? 1813 : 1812));
-    const acctPort = type === 'auth' ? null : type === 'acct' ? port : port + 1;
+    const port = Number(value(section, 'port') ?? (radSec !== null ? 2083 : type === 'acct' ? 1813 : 1812));
+    const acctPort = type === 'auth' ? null : type === 'acct' || radSec !== null ? port : port + 1;
     const windowSeconds = Number(value(section, 'response_window') ?? 20);
     const bounded = (key: string, fallback: number, min: number, max: number): number | string => {
       const text = value(section, key);
@@ -110,7 +143,7 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
       return { error: `${located(section)}: ${check === 'request' ? 'The home_server status_check "request" is not implemented in this simulator: it needs a username and password to build an Access-Request' : `Invalid status_check "${check}" for home server ${name}`}` };
     }
     if (check === 'status-server' && type !== 'auth' && type !== 'acct' && type !== 'auth+acct') return { error: `${located(section)}: status_check = status-server is not valid for a home server of type ${type}` };
-    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000, pingIntervalMs: (ping as number) * 1000, zombiePeriodMs: (zombie as number) * 1000, reviveIntervalMs: (revive as number) * 1000, statusCheck: check === 'status-server' ? { intervalMs: (checkInterval as number) * 1000, timeoutMs: (checkTimeout as number) * 1000, answers: answers as number } : null });
+    homeServers.set(name, { radSec, name, address: IPAddress.tryParse(address)!.toString(), port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000, pingIntervalMs: (ping as number) * 1000, zombiePeriodMs: (zombie as number) * 1000, reviveIntervalMs: (revive as number) * 1000, statusCheck: check === 'status-server' ? { intervalMs: (checkInterval as number) * 1000, timeoutMs: (checkTimeout as number) * 1000, answers: answers as number } : null });
   }
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'home_server_pool')) {
     const refusal = refuseUnknown(section, POOL_KEYS, 'home_server_pool');
@@ -139,7 +172,7 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
       const [address, portText] = host.split(':');
       const secret = value(section, 'secret');
       if (IPAddress.tryParse(address) === null || secret === undefined) return `${located(section)}: Invalid ${hostKey} "${host}" or missing secret for realm ${name}`;
-      const server: HomeServer = { name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000, pingIntervalMs: 30000, zombiePeriodMs: 40000, reviveIntervalMs: 120000, statusCheck: null };
+      const server: HomeServer = { radSec: null, name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000, pingIntervalMs: 30000, zombiePeriodMs: 40000, reviveIntervalMs: 120000, statusCheck: null };
       return { name: server.name, type: 'fail-over', servers: [server] };
     };
     const authPool = poolFor('auth_pool', 'authhost', 'auth', 1812);
