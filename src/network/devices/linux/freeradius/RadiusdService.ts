@@ -28,8 +28,8 @@ import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
-import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from './RequestDebug';
-import type { RadiusUserResolverContext, AccountingRun } from '@/network/radius/RadiusServerAgent';
+import { requestDebugLines, knownGoodDisplayName, credentialMessages, type ResolutionTrace } from './RequestDebug';
+import type { RadiusUserResolverContext, AccountingRun, AuthenticateOutcome } from '@/network/radius/RadiusServerAgent';
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
@@ -110,6 +110,7 @@ const DEFAULT_PREACCT_PROGRAM = moduleProgram(['preprocess', 'suffix', 'acct_uni
 const DEFAULT_ACCOUNTING_PROGRAM = moduleProgram(['detail', 'radutmp']);
 const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
 
+const BUILTIN_AUTH_TYPES = new Set(['accept', 'reject', 'pap', 'chap', 'mschap', 'eap']);
 const LOADED_MODULE_SECTIONS = new Set(['detail', 'preprocess', 'realm']);
 
 function loadedModules(root: { sections: readonly { name1: string; name2: string | null }[] }): string[] {
@@ -355,6 +356,35 @@ export class RadiusdService {
     this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique') ? acctUniqueFor(record) : null), ~settings.permissions & 0o777);
   }
 
+  private runAuthenticate(info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }): AuthenticateOutcome | null {
+    const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
+    const raw = this.lastResolution?.authTypeName ?? null;
+    if (pipeline === undefined || raw === null) return null;
+    const group = pipeline.authGroups.get(raw.toLowerCase());
+    if (group === undefined) return null;
+    const builtin = raw.toLowerCase();
+    const userName = String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
+    const context = newContext(userName, info.request, null, this.wallClock.nowMs());
+    const lines: string[] = [];
+    const host: UnlangHost = {
+      runModule: (name): ModuleOutcome => {
+        if ((name === 'pap' && builtin === 'pap') || (name === 'chap' && builtin === 'chap')) {
+          return { result: info.accepted ? 'ok' : 'reject', messages: credentialMessages(builtin === 'pap' ? 'PAP' : 'CHAP', info.accepted, userName, info.user?.knownGoodName) };
+        }
+        if (name === 'ok') return { result: 'ok', messages: [] };
+        if (name === 'reject') return { result: 'reject', messages: [] };
+        if (this.isRealmInstance(name)) return this.runRealmModule(name, context);
+        return { result: 'noop', messages: [] };
+      },
+    };
+    const outcome = run(group.program, context, host, lines, 3);
+    return {
+      accepted: outcome.result === 'ok' || outcome.result === 'handled' || outcome.result === 'updated',
+      reply: context.reply,
+      trace: { type: group.name, name: group.name, file: group.file, line: group.line, lines, result: outcome.result },
+    };
+  }
+
   private runProxyStage(section: 'pre-proxy' | 'post-proxy', port: number, request: readonly RadiusAttribute[], outbound: RadiusAttribute[], reply: RadiusAttribute[]): { attributes: RadiusAttribute[] | null } {
     const server = this.portServers.get(port) ?? 'default';
     const pipeline = this.pipelines.get(server);
@@ -570,9 +600,11 @@ export class RadiusdService {
     const outcome = run(program, context, host, lines, 3);
     const authType = context.control.get('auth-type')?.toLowerCase();
     const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : authType === 'mschap' ? 'MS-CHAP' : authType === 'eap' ? 'EAP' : null;
-    this.lastResolution = { lines, result: outcome.result, authType: trace };
+    this.lastResolution = { lines, result: outcome.result, authType: trace, authTypeName: context.control.get('auth-type') ?? null };
     if (outcome.result === 'reject' || authType === 'reject') return undefined;
     if (this.proxyDecision !== null && this.proxyDecision !== undefined) return { username, password: '', proxy: this.proxyDecision };
+    const customGroup = authType !== undefined && !BUILTIN_AUTH_TYPES.has(authType) && pipeline?.authGroups.has(authType) === true;
+    if (customGroup) return { username, password: '', acceptAny: true, replyAttributes: context.reply };
     const known = knownGoodPassword(context.knownGood);
     const acceptAny = authType === 'accept';
     if (known === null && !acceptAny) return undefined;
@@ -822,6 +854,7 @@ export class RadiusdService {
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
     this.proxyConfig = loaded.proxy;
+    this.radiusServer.setAuthenticateHook((info) => this.runAuthenticate(info));
     this.radiusServer.setRadSecClient((address, port, request) => this.radSecRequest(address, port, request));
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
     this.radiusServer.setProxyHooks({
@@ -834,6 +867,7 @@ export class RadiusdService {
       request: info.request, user: info.user, resolution: this.lastResolution, usersPath: this.usersFilePath, accepted: info.accepted,
       receivedLines: info.receivedLines, replyLines: info.replyLines, postAuthLines: info.postAuthLines,
       ...(info.eap === undefined ? {} : { eap: info.eap }),
+      ...(info.authenticate === undefined ? {} : { authenticate: info.authenticate }),
     }));
     this.radiusServer.setFeaturePolicy((feature, port) => {
       const both = (name: string) => this.sectionAllows(port, 'authorize', name) && this.sectionAllows(port, 'authenticate', name);

@@ -8,6 +8,13 @@ export interface SectionLocation {
   readonly line: number;
 }
 
+export interface AuthGroup {
+  readonly name: string;
+  readonly file: string;
+  readonly line: number;
+  readonly program: readonly Statement[];
+}
+
 export interface Pipeline {
   readonly sections: ReadonlyMap<ProcessingSection, ReadonlySet<string>>;
   readonly locations: ReadonlyMap<ProcessingSection, SectionLocation>;
@@ -18,6 +25,7 @@ export interface Pipeline {
   readonly accounting: readonly Statement[] | null;
   readonly preProxy: readonly Statement[] | null;
   readonly postProxy: readonly Statement[] | null;
+  readonly authGroups: ReadonlyMap<string, AuthGroup>;
 }
 
 const SECTION_NAMES: readonly ProcessingSection[] = ['authorize', 'authenticate', 'preacct', 'accounting', 'session', 'post-auth', 'pre-proxy', 'post-proxy'];
@@ -48,6 +56,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
     let postAuth: Statement[] | null = null;
     let preacct: Statement[] | null = null;
     let accounting: Statement[] | null = null;
+    const authGroups = new Map<string, AuthGroup>();
     let preProxy: Statement[] | null = null;
     let postProxy: Statement[] | null = null;
     for (const section of server.sections) {
@@ -72,13 +81,29 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
         else if (section.name1 === 'post-proxy') postProxy = program;
         else accounting = program;
         moduleNames(program, names);
+      } else if (section.name1 === 'authenticate') {
+        const bare: ConfSection = { ...section, sections: [], items: [] };
+        const failure = collectModules(bare, names, realms);
+        if (failure !== null) return { error: failure };
+        for (const child of section.sections) {
+          if (child.name1 !== 'Auth-Type' || child.name2 === null) return { error: `${child.file}[${child.line}]: ${REAL_UNLANG.has(child.name1) ? `The unlang construct "${child.name1}" directly in authenticate is not implemented in this simulator` : `Unknown section "${child.name1}" in authenticate`}` };
+          let program: Statement[];
+          try {
+            program = parseStatements(child, resolve);
+          } catch (error) {
+            if (error instanceof UnlangError) return { error: error.message };
+            throw error;
+          }
+          moduleNames(program, names);
+          authGroups.set(child.name2.toLowerCase(), { name: child.name2, file: child.file, line: child.line, program });
+        }
       } else {
         const failure = collectModules(section, names, realms);
         if (failure !== null) return { error: failure };
       }
       sections.set(section.name1 as ProcessingSection, names);
     }
-    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize, postAuth, preacct, accounting, preProxy, postProxy });
+    pipelines.set(server.name2 ?? '', { sections, locations, authTypes, authorize, postAuth, preacct, accounting, preProxy, postProxy, authGroups });
   }
   return pipelines;
 }

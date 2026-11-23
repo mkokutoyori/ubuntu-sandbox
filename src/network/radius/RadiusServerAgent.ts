@@ -154,6 +154,13 @@ export interface RequestDebugInfo {
   replyLines: string[];
   postAuthLines: string[];
   eap?: { lines: string[]; result: 'ok' | 'handled' | 'reject' };
+  authenticate?: { type: string; name: string; file: string; line: number; lines: string[]; result: 'ok' | 'handled' | 'updated' | 'noop' | 'notfound' | 'reject' | 'fail' | 'userlock' | 'invalid' };
+}
+
+export interface AuthenticateOutcome {
+  accepted: boolean;
+  reply: RadiusAttribute[];
+  trace: NonNullable<RequestDebugInfo['authenticate']>;
 }
 
 export interface ProxyHooks {
@@ -365,6 +372,10 @@ export class RadiusServerAgent {
 
   setRadSecClient(client: ((address: string, port: number, request: RadiusPacket) => RadiusPacket | null) | null): void { this.radSecClient = client; }
 
+  private authenticateHook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }) => AuthenticateOutcome | null) | null = null;
+
+  setAuthenticateHook(hook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }) => AuthenticateOutcome | null) | null): void { this.authenticateHook = hook; }
+
   private proxyHooks: ProxyHooks | null = null;
 
   setProxyHooks(hooks: ProxyHooks | null): void { this.proxyHooks = hooks; }
@@ -393,7 +404,7 @@ export class RadiusServerAgent {
     return { result: verdict.secondsLeft > 0 ? 'updated' : 'ok', secondsLeft: verdict.secondsLeft };
   }
 
-  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[], eap?: RequestDebugInfo['eap']): void {
+  private emitRequestDebug(request: RadiusPacket, srcIp: IPAddress, username: string, user: RadiusUser | undefined, accepted: boolean, postAuthLines: string[], finalReply: readonly RadiusAttribute[], eap?: RequestDebugInfo['eap'], authenticate?: RequestDebugInfo['authenticate']): void {
     if (this.debugEmit === null || this.debugBuilder === null) return;
     const lineOf = (attribute: RadiusAttribute) => `  ${formatRadiusAttribute(attribute)}`;
     this.debugEmit(this.requestNumber, this.debugBuilder({
@@ -401,6 +412,7 @@ export class RadiusServerAgent {
       receivedLines: this.displayAttributes(request, srcIp, true).map(lineOf),
       replyLines: finalReply.map(lineOf), postAuthLines,
       ...(eap === undefined ? {} : { eap }),
+      ...(authenticate === undefined ? {} : { authenticate }),
     }));
   }
 
@@ -758,7 +770,7 @@ export class RadiusServerAgent {
       this.reply(inPort, srcIp, udp.sourcePort, payload, false, resolved, dedupKey);
       return;
     }
-    const user = loginTime.secondsLeft === 0 || resolved === undefined ? resolved : this.withSessionTimeout(resolved, loginTime.secondsLeft);
+    let user = loginTime.secondsLeft === 0 || resolved === undefined ? resolved : this.withSessionTimeout(resolved, loginTime.secondsLeft);
 
     if (eapAttr && !this.allows('eap')) {
       this.publishRejected(senderIp, username, 'bad-password');
@@ -823,12 +835,18 @@ export class RadiusServerAgent {
       reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
     }
 
+    const authenticated = this.authenticateHook?.({ port: this.servedPort ?? this.config.port, accepted, user, request: payload.attributes }) ?? null;
+    if (authenticated !== null) {
+      accepted = authenticated.accepted;
+      if (!accepted && reason !== 'unknown-user') reason = 'bad-password';
+      if (accepted && user !== undefined && authenticated.reply.length > 0) user = { ...user, replyAttributes: [...(user.replyAttributes ?? []), ...authenticated.reply] };
+    }
     const denial = accepted ? this.simultaneousUseDenial(user, username) : null;
     const finalAccepted = accepted && denial === null;
     const post = this.postAuthHook?.({ port: this.servedPort ?? this.config.port, accepted: finalAccepted, userReply: user?.replyAttributes ?? [] }) ?? null;
     const finalUser = finalAccepted && post !== null && user !== undefined ? { ...user, replyAttributes: post.reply } : user;
     const rejectExtra = !finalAccepted && post !== null ? post.reply : [];
-    this.emitRequestDebug(payload, srcIp, username, user, accepted, post?.lines ?? [], finalAccepted ? (finalUser?.replyAttributes ?? []) : rejectExtra);
+    this.emitRequestDebug(payload, srcIp, username, user, accepted, post?.lines ?? [], finalAccepted ? (finalUser?.replyAttributes ?? []) : rejectExtra, undefined, authenticated?.trace);
     if (denial !== null) {
       this.publishRejected(senderIp, username, 'simultaneous-use');
       this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey, denial, rejectExtra);
