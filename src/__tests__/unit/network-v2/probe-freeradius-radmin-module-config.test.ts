@@ -9,7 +9,7 @@
  * implemented for detail (its parse table is the one rlm_detail declares, the values come from the settings the simulator evaluates);
  * the other modules answer that their parse table is not implemented (preprocess followed: its table is the one rlm_preprocess declares).
  *
- * Discriminated with git stash on src: 7 of 8 fall before the fix; the witness (the module list still answers) passes either way. The preprocess table, added later, is a ninth case that falls before it.
+ * Discriminated with git stash on src: 7 of 8 fall before the fix; the witness (the module list still answers) passes either way. The preprocess table and the realm table, added later, are a ninth and a tenth case that fall before it; the refusal case now names the eap module.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -106,7 +106,9 @@ describe('radmin: module methods, flags, config and show config', () => {
 
   it('show module config answers for a module whose parse table is not implemented, naming the limit', async () => {
     const { target } = await lab(true);
-    expect((await ask(target, 'show module config suffix')).output).toContain("cannot be shown: its parse table is not implemented in this simulator");
+    write(target, '/etc/freeradius/3.0/mods-enabled/eap', 'eap {\n  default_eap_type = md5\n}\n');
+    await target.executeCommand('systemctl restart freeradius');
+    expect((await ask(target, 'show module config eap')).output).toContain("cannot be shown: its parse table is not implemented in this simulator");
   });
 
   it('refuses a missing or unknown module name in the words of the source', async () => {
@@ -130,4 +132,19 @@ describe('radmin: module methods, flags, config and show config', () => {
     expect(unknown.code).toBe('1');
     expect((await ask(target, 'show config')).output).toBe('ERROR: No path was given');
   });
+
+  it('show module config of a realm instance prints the rlm_realm table under its instance name, with the values written and the defaults', async () => {
+    const { target } = await lab(true);
+    const suffix = (await ask(target, 'show module config suffix')).output.split('\n');
+    expect(suffix[0]).toBe('realm suffix {');
+    expect(suffix).toContain("\tformat = 'suffix'");
+    expect(suffix).toContain("\tdelimiter = '@'");
+    expect(suffix).toContain('\treturn_notfound = no');
+    const prefix = (await ask(target, 'show module config IPASS')).output.split('\n');
+    expect(prefix[0]).toBe('realm IPASS {');
+    expect(prefix).toContain("\tformat = 'prefix'");
+    expect(prefix).toContain("\tdelimiter = '/'");
+    expect(prefix).toContain('\tignore_default = no');
+  });
 });
+

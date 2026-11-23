@@ -236,9 +236,18 @@ export class RadiusdService {
   moduleConfigListing(name: string): string[] | 'unsupported' | null {
     const type = this.moduleType(name);
     if (type === null) return null;
-    if (type !== 'detail' && type !== 'preprocess') return 'unsupported';
+    if (type !== 'detail' && type !== 'preprocess' && type !== 'realm') return 'unsupported';
     const loaded = this.loadConfig();
     if (!loaded.ok) return null;
+    if (type === 'realm') {
+      const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'realm' && candidate.name2 === name);
+      const text = (key: string): string | undefined => section?.pairs.find((pair) => pair.name === key)?.value;
+      const flag = (key: string): string => (/^(yes|true|on)$/i.test(text(key) ?? 'no') ? 'yes' : 'no');
+      return [
+        `realm ${name} {`, `\tformat = '${text('format') ?? 'suffix'}'`, `\tdelimiter = '${text('delimiter') ?? '@'}'`,
+        `\tignore_default = ${flag('ignore_default')}`, `\tignore_null = ${flag('ignore_null')}`, `\treturn_notfound = ${flag('return_notfound')}`, '}',
+      ];
+    }
     if (type === 'preprocess') {
       const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'preprocess' && (candidate.name2 ?? 'preprocess') === name);
       const text = (key: string): string | undefined => section?.pairs.find((pair) => pair.name === key)?.value;
