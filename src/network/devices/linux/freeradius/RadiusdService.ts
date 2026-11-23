@@ -236,9 +236,21 @@ export class RadiusdService {
   moduleConfigListing(name: string): string[] | 'unsupported' | null {
     const type = this.moduleType(name);
     if (type === null) return null;
-    if (type !== 'detail') return 'unsupported';
+    if (type !== 'detail' && type !== 'preprocess') return 'unsupported';
     const loaded = this.loadConfig();
     if (!loaded.ok) return null;
+    if (type === 'preprocess') {
+      const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'preprocess' && (candidate.name2 ?? 'preprocess') === name);
+      const text = (key: string): string | undefined => section?.pairs.find((pair) => pair.name === key)?.value;
+      const flag = (key: string): string => (/^(yes|true|on)$/i.test(text(key) ?? 'no') ? 'yes' : 'no');
+      const path = (key: string): string => (text(key) === undefined ? `\t${key} = ` : `\t${key} = '${text(key)}'`);
+      return [
+        'preprocess {', path('huntgroups'), path('hints'), `\twith_ascend_hack = ${flag('with_ascend_hack')}`,
+        `\tascend_channels_per_line = ${text('ascend_channels_per_line') ?? '23'}`, `\twith_ntdomain_hack = ${flag('with_ntdomain_hack')}`,
+        `\twith_specialix_jetstream_hack = ${flag('with_specialix_jetstream_hack')}`, `\twith_cisco_vsa_hack = ${flag('with_cisco_vsa_hack')}`,
+        `\twith_alvarion_vsa_hack = ${flag('with_alvarion_vsa_hack')}`, '}',
+      ];
+    }
     const settings = readDetailSettings(loaded.root);
     if (settings === null || 'error' in settings) return null;
     return [

@@ -7,9 +7,9 @@
  * prints the value of the pair a dotted path names and fails silently on an unknown path, "No path was given"), and the module_t tables of
  * rlm_detail / rlm_preprocess / rlm_realm / rlm_eap (methods and HUP_SAFE) read in the source tree. The configuration listing is
  * implemented for detail (its parse table is the one rlm_detail declares, the values come from the settings the simulator evaluates);
- * the other modules answer that their parse table is not implemented.
+ * the other modules answer that their parse table is not implemented (preprocess followed: its table is the one rlm_preprocess declares).
  *
- * Discriminated with git stash on src: 7 of 8 fall before the fix; the witness (the module list still answers) passes either way.
+ * Discriminated with git stash on src: 7 of 8 fall before the fix; the witness (the module list still answers) passes either way. The preprocess table, added later, is a ninth case that falls before it.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -89,9 +89,24 @@ describe('radmin: module methods, flags, config and show config', () => {
     expect(custom).toContain('\tlocking = yes');
   });
 
+  it('show module config preprocess prints the rlm_preprocess table in its order, with the values written', async () => {
+    const { target } = await lab(true);
+    const text = (await ask(target, 'show module config preprocess')).output.split('\n');
+    expect(text[0]).toBe('preprocess {');
+    expect(text).toContain('\twith_ascend_hack = no');
+    expect(text).toContain('\tascend_channels_per_line = 23');
+    expect(text.indexOf('\twith_cisco_vsa_hack = no')).toBeGreaterThan(text.indexOf('\twith_ntdomain_hack = no'));
+    write(target, '/etc/freeradius/3.0/mods-enabled/preprocess', "preprocess {\n  huntgroups = /etc/freeradius/3.0/mods-config/preprocess/huntgroups\n  with_cisco_vsa_hack = yes\n  ascend_channels_per_line = 30\n}\n");
+    await target.executeCommand('systemctl restart freeradius');
+    const custom = (await ask(target, 'show module config preprocess')).output;
+    expect(custom).toContain("\thuntgroups = '/etc/freeradius/3.0/mods-config/preprocess/huntgroups'");
+    expect(custom).toContain('\twith_cisco_vsa_hack = yes');
+    expect(custom).toContain('\tascend_channels_per_line = 30');
+  });
+
   it('show module config answers for a module whose parse table is not implemented, naming the limit', async () => {
     const { target } = await lab(true);
-    expect((await ask(target, 'show module config preprocess')).output).toContain("cannot be shown: its parse table is not implemented in this simulator");
+    expect((await ask(target, 'show module config suffix')).output).toContain("cannot be shown: its parse table is not implemented in this simulator");
   });
 
   it('refuses a missing or unknown module name in the words of the source', async () => {
