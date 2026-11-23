@@ -64,6 +64,22 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     }
     return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
   }
+  if (words[0] === 'show' && words[1] === 'module' && (words[2] === 'config' || words[2] === 'methods' || words[2] === 'flags')) {
+    if (words.length !== 4) return { text: 'ERROR: No module name was given', failed: true };
+    if (words[2] === 'config') {
+      const listing = ctx.radiusd!.moduleConfigListing(words[3]);
+      if (listing === null) return { text: `ERROR: No such module '${words[3]}'`, failed: true };
+      if (listing === 'unsupported') return { text: `ERROR: The configuration of module '${words[3]}' cannot be shown: its parse table is not implemented in this simulator`, failed: true };
+      return { text: listing.join('\n'), failed: false };
+    }
+    const lines = words[2] === 'methods' ? ctx.radiusd!.moduleMethods(words[3]) : ctx.radiusd!.moduleFlags(words[3]);
+    return lines === null ? { text: `ERROR: No such module '${words[3]}'`, failed: true } : { text: lines.join('\n'), failed: false };
+  }
+  if (words[0] === 'show' && words[1] === 'config') {
+    if (words.length !== 3) return { text: 'ERROR: No path was given', failed: true };
+    const value = ctx.radiusd!.configValue(words[2]);
+    return value === null ? { text: '', failed: true } : { text: value, failed: false };
+  }
   if (words[0] === 'show' && words[1] === 'version') return { text: RADIUSD_VERSION_LINE, failed: false };
   if (words[0] === 'show' && words[1] === 'module' && words[2] === 'status') {
     if (words.length !== 4) return { text: 'ERROR: No module name was given', failed: true };

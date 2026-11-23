@@ -28,9 +28,9 @@ import { TtlsPapInnerAuthServer } from '@/network/radius/eaptls/TtlsInnerAuth';
 import { protocolOf, type RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
 import { eapMessageHex, type RadiusUser, type RadiusAttribute, type RadiusPacket, type ProxyRoute } from '@/network/radius/types';
-import { detailPath, detailEntry, acctUniqueFor, type DetailRecord } from './DetailModule';
+import { detailPath, detailEntry, acctUniqueFor, readDetailSettings, type DetailRecord } from './DetailModule';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
-import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
+import { parseFreeradiusConf, type ConfFileReader, type ConfSection } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
 import { requestDebugLines, knownGoodDisplayName, credentialMessages, type ResolutionTrace } from './RequestDebug';
@@ -108,7 +108,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null; root: ConfSection }
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
@@ -117,7 +117,15 @@ const DEFAULT_ACCOUNTING_PROGRAM = moduleProgram(['detail', 'radutmp']);
 const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
 
 const BUILTIN_AUTH_TYPES = new Set(['accept', 'reject', 'pap', 'chap', 'mschap', 'eap']);
-const LOADED_MODULE_SECTIONS = new Set(['detail', 'preprocess', 'realm']);
+const LOADED_MODULE_SECTIONS = new Set(['detail', 'preprocess', 'realm', 'eap']);
+
+const MODULE_METHODS: Readonly<Record<string, readonly string[]>> = {
+  detail: ['authorize', 'preacct', 'accounting', 'pre-proxy', 'post-proxy', 'post-auth', 'recv-coa', 'send-coa'],
+  preprocess: ['authorize', 'preacct'],
+  realm: ['authorize', 'preacct', 'recv-coa'],
+  eap: ['authenticate', 'authorize', 'pre-proxy', 'post-proxy', 'post-auth'],
+};
+const MODULE_FLAGS: Readonly<Record<string, readonly string[]>> = { detail: ['reload-on-hup'], preprocess: [], realm: ['reload-on-hup'], eap: [] };
 
 function loadedModules(root: { sections: readonly { name1: string; name2: string | null }[] }): string[] {
   const modules = root.sections.find((section) => section.name1 === 'modules') as unknown as { sections: readonly { name1: string; name2: string | null }[] } | undefined;
@@ -193,6 +201,52 @@ export class RadiusdService {
     ['1us', '10us', '100us', '1ms', '10ms', '100ms', '1s', '10s'].forEach((name, index) => lines.push(`elapsed.${name}\t${stats.elapsed[index]}`));
     if (address !== null) lines.push(`outstanding\t${outstanding}`);
     return lines;
+  }
+
+  moduleType(name: string): string | null {
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return null;
+    const modules = loaded.root.sections.find((section) => section.name1 === 'modules');
+    const found = modules?.sections.find((section) => LOADED_MODULE_SECTIONS.has(section.name1) && (section.name2 ?? section.name1) === name);
+    return found === undefined ? null : found.name1;
+  }
+
+  moduleMethods(name: string): string[] | null {
+    const type = this.moduleType(name);
+    return type === null ? null : [...MODULE_METHODS[type]];
+  }
+
+  moduleFlags(name: string): string[] | null {
+    const type = this.moduleType(name);
+    return type === null ? null : [...MODULE_FLAGS[type]];
+  }
+
+  moduleConfigListing(name: string): string[] | 'unsupported' | null {
+    const type = this.moduleType(name);
+    if (type === null) return null;
+    if (type !== 'detail') return 'unsupported';
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return null;
+    const settings = readDetailSettings(loaded.root);
+    if (settings === null || 'error' in settings) return null;
+    return [
+      'detail {', `\tdetailfile = '${settings.filename}'`, `\tfilename = '${settings.filename}'`, `\theader = '${settings.header}'`,
+      `\tdetailperm = ${settings.permissions}`, `\tpermissions = ${settings.permissions}`, `\tgroup = ${settings.group === null ? '' : `'${settings.group}'`}`,
+      `\tlocking = ${settings.locking ? 'yes' : 'no'}`, `\tdates_as_integer = ${settings.datesAsInteger ? 'yes' : 'no'}`,
+      `\tescape_filenames = ${settings.escapeFilenames ? 'yes' : 'no'}`, `\tlog_packet_header = ${settings.logPacketHeader ? 'yes' : 'no'}`, '}',
+    ];
+  }
+
+  configValue(path: string): string | null {
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return null;
+    const names = path.split('.');
+    let section: ConfSection | undefined = loaded.root;
+    for (const name of names.slice(0, -1)) {
+      section = section?.sections.find((candidate) => candidate.name1 === name || candidate.name2 === name);
+    }
+    if (section === undefined) return null;
+    return section.pairs.find((pair) => pair.name === names[names.length - 1])?.value ?? null;
   }
 
   moduleListing(): string[] {
@@ -969,7 +1023,7 @@ export class RadiusdService {
     if (eapModule !== null && 'error' in eapModule) return { ok: false, error: eapModule.error };
     const eapTls = eapModule === null ? null : this.eapTlsConfig(eapModule as EapModuleConfig, users.entries);
     if (typeof eapTls === 'string') return { ok: false, error: eapTls };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls, root: main.root };
   }
 
   private eapTlsConfig(module: EapModuleConfig, entries: UsersEntry[]): EapTlsConfig | string | null {
