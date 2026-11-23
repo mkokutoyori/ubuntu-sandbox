@@ -6,6 +6,14 @@ import type { ConfSection } from './FreeradiusConf';
 
 export type ListenerType = 'auth' | 'acct' | 'auth+acct' | 'status';
 
+export interface RadSecTls {
+  readonly certificateFile: string;
+  readonly privateKeyFile: string;
+  readonly privateKeyPassword: string | null;
+  readonly caFile: string | null;
+  readonly requireClientCert: boolean;
+}
+
 export interface ListenerSpec {
   readonly type: ListenerType;
   readonly address: string | null;
@@ -13,6 +21,7 @@ export interface ListenerSpec {
   readonly server: string;
   readonly file: string;
   readonly line: number;
+  readonly tls?: RadSecTls;
 }
 
 export interface ControlSocket {
@@ -37,6 +46,29 @@ export function defaultListeners(): ListenerSpec[] {
 
 function pairValue(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
+}
+
+const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert']);
+export const RADSEC_DEFAULT_PORT = 2083;
+
+function readTlsSection(listen: ConfSection): RadSecTls | undefined | { error: string } {
+  const section = listen.sections.find((candidate) => candidate.name1 === 'tls');
+  if (section === undefined) return undefined;
+  const where = `${section.file}[${section.line}]`;
+  if (pairValue(listen, 'proto') !== 'tcp') return { error: `${where}: A tls section needs proto = tcp in the listen section` };
+  for (const pair of section.pairs) {
+    if (!TLS_KEYS.has(pair.name)) return { error: `${pair.file}[${pair.line}]: The tls setting "${pair.name}" is not implemented in this simulator` };
+  }
+  const certificateFile = pairValue(section, 'certificate_file');
+  const privateKeyFile = pairValue(section, 'private_key_file');
+  if (certificateFile === undefined) return { error: `${where}: Failed to find "certificate_file" in the tls section` };
+  if (privateKeyFile === undefined) return { error: `${where}: Failed to find "private_key_file" in the tls section` };
+  const require = pairValue(section, 'require_client_cert') ?? 'yes';
+  if (!/^(yes|no|true|false|on|off)$/i.test(require)) return { error: `${where}: Invalid value "${require}" for variable require_client_cert` };
+  return {
+    certificateFile, privateKeyFile, privateKeyPassword: pairValue(section, 'private_key_password') ?? null,
+    caFile: pairValue(section, 'ca_file') ?? null, requireClientCert: /^(yes|true|on)$/i.test(require),
+  };
 }
 
 const CONTROL_KEYS = new Set(['type', 'socket', 'mode']);
@@ -86,6 +118,9 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
             : `${where}: Invalid type "${type}" in listen section.`,
         };
       }
+      const tlsRead = readTlsSection(section);
+      if (tlsRead !== undefined && 'error' in tlsRead) return tlsRead;
+      const tls = tlsRead as RadSecTls | undefined;
       const portText = pairValue(section, 'port');
       const port = portText === undefined ? 0 : Number(portText);
       if (!Number.isInteger(port) || port < 0 || port > 65535) return { error: `${where}: Invalid value "${portText}" for variable port` };
@@ -98,8 +133,9 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
         address = parsed.toString();
       }
       listeners.push({
-        type: type as ListenerType, address, port: port === 0 ? DEFAULT_PORT[type as ListenerType] : port,
+        type: type as ListenerType, address, port: port === 0 ? (tls === undefined ? DEFAULT_PORT[type as ListenerType] : RADSEC_DEFAULT_PORT) : port,
         server: pairValue(section, 'virtual_server') ?? serverName, file: section.file, line: section.line,
+        ...(tls === undefined ? {} : { tls }),
       });
     }
     const own: ParsedClients = { clients: [], errors: [], warnings: [] };

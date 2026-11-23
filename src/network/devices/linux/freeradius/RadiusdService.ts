@@ -36,7 +36,11 @@ import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
-import { type ControlSocket, readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
+import { RadSecServer } from '@/network/radius/RadSecTransport';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { pemToCertChain, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
+import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
+import { type ControlSocket, type RadSecTls, readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
 import { RadiusClientTable } from '@/network/radius/ClientTable';
 import { formatCtime } from '../time/ctime';
 import { formatLocalTime } from '../system/SystemInfo';
@@ -228,7 +232,16 @@ export class RadiusdService {
       else if (udp.payload?.code === 'accounting-request') this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
       else this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     };
-    for (const spec of specs) {
+    const radSecServers: RadSecServer[] = [];
+    for (const spec of specs.filter((candidate) => candidate.tls !== undefined)) {
+      const config = this.radSecTlsConfig(spec.tls as RadSecTls);
+      if (typeof config === 'string') return { ok: false, error: config };
+      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: () => config, onConnection: () => undefined });
+      server.start({ processName: PROCESS_NAME });
+      radSecServers.push(server);
+    }
+    this.radSecServers = radSecServers;
+    for (const spec of specs.filter((candidate) => candidate.tls === undefined)) {
       const owner = spec.address === null ? {} : { acceptsDestination: (destination: { toString(): string }) => destination.toString() === spec.address };
       let bindFailed = false;
       try {
@@ -239,6 +252,8 @@ export class RadiusdService {
       }
       if (bindFailed) {
         for (const taken of bound) this.host.udpClose(taken);
+        for (const server of radSecServers) server.stop();
+        this.radSecServers = [];
         const what = spec.type === 'acct' ? 'accounting' : spec.type === 'status' ? 'status' : 'authentication';
         return { ok: false, error: `There appears to be another RADIUS server running on the ${what} port ${spec.port}` };
       }
@@ -280,6 +295,8 @@ export class RadiusdService {
     this.boundPorts = [];
     this.radiusServer.stop();
     this.radiusTcpServer.stop();
+    for (const server of this.radSecServers) server.stop();
+    this.radSecServers = [];
     this.running = false;
   }
 
@@ -402,6 +419,30 @@ export class RadiusdService {
   }
 
   private boundPorts: number[] = [];
+  private radSecServers: RadSecServer[] = [];
+
+  private radSecTlsConfig(tls: RadSecTls): TlsServerConfig | string {
+    const certificateText = this.files.read(tls.certificateFile);
+    if (certificateText === null) return `Failed reading certificate_file "${tls.certificateFile}": No such file or directory`;
+    const chain = pemToCertChain(certificateText);
+    if (chain.length === 0) return `Failed parsing certificate_file "${tls.certificateFile}": no certificate found`;
+    const keyText = this.files.read(tls.privateKeyFile);
+    if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
+    const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
+    if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
+    let anchors: ReturnType<typeof pemToCertChain> = [];
+    if (tls.caFile !== null) {
+      const caText = this.files.read(tls.caFile);
+      if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
+      anchors = pemToCertChain(caText);
+    }
+    return {
+      serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
+      requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
+      verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => this.wallClock.nowMs() }),
+      protocols: ['1.3'],
+    };
+  }
   private activeListeners: ListenerSpec[] = [];
 
   listeners(): readonly ListenerSpec[] { return this.activeListeners; }
@@ -700,6 +741,11 @@ export class RadiusdService {
     if ('error' in security) return { ok: false, error: security.error };
     const site = readSiteConfig(main.root);
     if ('error' in site) return { ok: false, error: site.error };
+    for (const spec of site.listeners) {
+      if (spec.tls === undefined) continue;
+      const tlsConfig = this.radSecTlsConfig(spec.tls);
+      if (typeof tlsConfig === 'string') return { ok: false, error: `${spec.file}[${spec.line}]: ${tlsConfig}` };
+    }
     const preprocess = readPreprocess(main.root, (path) => this.files.read(path));
     if ('error' in preprocess) return { ok: false, error: preprocess.error };
     const pipelines = readPipelines(main.root);

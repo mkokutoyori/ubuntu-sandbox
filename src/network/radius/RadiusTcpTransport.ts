@@ -9,8 +9,7 @@
  * send, wait for the reply, close) — deliberately not folded into the
  * UDP agents' CHAP/EAP/challenge/accounting machinery, mirroring how
  * `TacacsClientAgent`/`TacacsServerAgent` already use the same `TcpStack`
- * for a TCP-native AAA protocol. RadSec (RFC 6614, TLS over this same
- * transport) stays out of scope — see PRD-RADIUS §2.2.
+ * for a TCP-native AAA protocol. RadSec (RFC 6614) lives in RadSecTransport.
  */
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';

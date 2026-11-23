@@ -450,6 +450,7 @@ export class RadiusServerAgent {
   }
 
   private secretFor(ip: IPAddress | string): string {
+    if (this.secretOverride !== null) return this.secretOverride;
     if (this.clientTable.size === 0) return this.config.sharedSecret;
     const entry = this.clientTable.find(typeof ip === 'string' ? new IPAddress(ip) : ip);
     return entry === null ? this.config.sharedSecret : entry.secret;
@@ -518,13 +519,15 @@ export class RadiusServerAgent {
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleStreamRequest(
     srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
-    request: RadiusPacket, reply: (response: RadiusPacket) => void,
+    request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string,
   ): void {
     const inPort = this.host.getPorts().find((candidate) => candidate.getIPAddress()?.toString() === localIp.toString());
     if (!inPort) return;
     const udp = { type: 'udp', sourcePort: srcPort, destinationPort: localPort, length: 0, checksum: 0, payload: request } as UDPPacket;
     const previousSink = this.streamSink;
     const previousPort = this.servedPort;
+    const previousSecret = this.secretOverride;
+    this.secretOverride = secret ?? null;
     this.streamSink = reply;
     this.servedPort = localPort;
     try {
@@ -533,9 +536,11 @@ export class RadiusServerAgent {
     } finally {
       this.streamSink = previousSink;
       this.servedPort = previousPort;
+      this.secretOverride = previousSecret;
     }
   }
 
+  private secretOverride: string | null = null;
   private streamSink: ((response: RadiusPacket) => void) | null = null;
 
   handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, viaStream = false): void {
