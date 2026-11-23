@@ -145,6 +145,14 @@ export interface RadiusPacketTrace {
   length: number;
 }
 
+export interface RadiusStats {
+  requests: number; responses: number; accepts: number; rejects: number; challenges: number; dup: number; invalid: number;
+  malformed: number; badAuthenticator: number; dropped: number; unknownTypes: number; noRecords: number; conflicts: number;
+  unresponsiveChild: number; lastPacket: number; elapsed: number[];
+}
+
+const emptyStats = (): RadiusStats => ({ requests: 0, responses: 0, accepts: 0, rejects: 0, challenges: 0, dup: 0, invalid: 0, malformed: 0, badAuthenticator: 0, dropped: 0, unknownTypes: 0, noRecords: 0, conflicts: 0, unresponsiveChild: 0, lastPacket: 0, elapsed: new Array(8).fill(0) });
+
 export interface RequestDebugInfo {
   port: number;
   request: RadiusPacket;
@@ -383,6 +391,20 @@ export class RadiusServerAgent {
 
   setAuthenticateHook(hook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }) => AuthenticateOutcome | null) | null): void { this.authenticateHook = hook; }
 
+  private readonly statistics = new Map<string, RadiusStats>();
+
+  private count(kind: 'auth' | 'acct', clientIp: string, change: (stats: RadiusStats) => void): void {
+    for (const key of [`${kind}:*`, `${kind}:${clientIp}`]) {
+      let stats = this.statistics.get(key);
+      if (stats === undefined) { stats = emptyStats(); this.statistics.set(key, stats); }
+      change(stats);
+    }
+  }
+
+  clientStatistics(kind: 'auth' | 'acct', clientIp: string | null): RadiusStats {
+    return this.statistics.get(`${kind}:${clientIp ?? '*'}`) ?? emptyStats();
+  }
+
   private proxyHooks: ProxyHooks | null = null;
 
   setProxyHooks(hooks: ProxyHooks | null): void { this.proxyHooks = hooks; }
@@ -585,6 +607,7 @@ export class RadiusServerAgent {
       return;
     }
     if (!verifyAccountingRequestAuthenticator(payload, this.secretFor(srcIp))) {
+      this.count('acct', senderIp, (stats) => { stats.requests++; stats.badAuthenticator++; stats.lastPacket = Math.floor(simulationNowMs() / 1000); });
       Logger.warn(this.host.id, 'radius:bad-accounting-authenticator',
         `${this.host.name}: dropped Accounting-Request from ${srcIp} — invalid Authenticator (shared secret mismatch?)`);
       return;
@@ -592,6 +615,7 @@ export class RadiusServerAgent {
     const dedupKey = `acct:${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
     this.pruneAcctDedupCache();
     const cached = this.recentAcctReplies.get(dedupKey);
+    this.count('acct', senderIp, (stats) => { stats.requests++; stats.lastPacket = Math.floor(simulationNowMs() / 1000); if (cached) stats.dup++; });
     if (cached) {
       this.resendAcct(inPort, srcIp, udp.sourcePort, cached.response);
       return;
@@ -716,6 +740,7 @@ export class RadiusServerAgent {
       return;
     }
     if (!verifyMessageAuthenticator(payload, payload.authenticator, this.secretFor(srcIp))) {
+      this.count('auth', srcIp.toString(), (stats) => { stats.requests++; stats.badAuthenticator++; stats.lastPacket = Math.floor(simulationNowMs() / 1000); });
       Logger.warn(this.host.id, 'radius:bad-message-authenticator',
         `${this.host.name}: dropped Access-Request from ${srcIp} — invalid Message-Authenticator`);
       return; // RFC 3579 §3.2 — silently discarded, no reply, no event
@@ -730,6 +755,7 @@ export class RadiusServerAgent {
     const dedupKey = `${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
     this.pruneDedupCache();
     const cached = this.recentReplies.get(dedupKey);
+    this.count('auth', senderIp, (stats) => { stats.requests++; stats.lastPacket = Math.floor(simulationNowMs() / 1000); if (cached) stats.dup++; });
     if (cached) {
       this.resend(inPort, srcIp, udp.sourcePort, cached.response);
       return;
@@ -1611,6 +1637,13 @@ export class RadiusServerAgent {
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
     this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
+    this.count(response.code === 'accounting-response' ? 'acct' : 'auth', dstIp.toString(), (stats) => {
+      stats.responses++;
+      stats.elapsed[0]++;
+      if (response.code === 'access-accept') stats.accepts++;
+      else if (response.code === 'access-reject') stats.rejects++;
+      else if (response.code === 'access-challenge') stats.challenges++;
+    });
     if (this.streamSink !== null) {
       this.streamSink(response);
       return;

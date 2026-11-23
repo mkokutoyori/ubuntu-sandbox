@@ -46,6 +46,7 @@ export interface RadiusdCommandPort {
   clientListing(verbose: boolean): string[];
   clientConfig(address: string): string[] | null;
   moduleListing(): string[];
+  statisticsListing(kind: 'auth' | 'acct', clientIp: string | null): string[];
   homeServerListing(all: boolean): string[];
   homeServerStateText(address: string, port: number): string | null;
   setHomeServerState(address: string, port: number, state: 'alive' | 'dead' | 'down'): boolean;

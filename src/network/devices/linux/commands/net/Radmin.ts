@@ -28,6 +28,17 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     if (rest[0] !== 'verbose') return { text: `ERROR: Unknown command ${rest[0]}`, failed: true };
     return { text: ctx.radiusd!.clientListing(true).join('\n'), failed: false };
   }
+  if (words[0] === 'stats' && words[1] === 'client') {
+    const rest = words.slice(2);
+    if (rest.length === 0) return { text: 'ERROR: Must specify [auth/acct]', failed: true };
+    const kind = rest[0];
+    if (kind !== 'auth' && kind !== 'acct') return { text: 'ERROR: Unknown statistics type', failed: true };
+    if (rest.length === 1) return { text: ctx.radiusd!.statisticsListing(kind, null).join('\n'), failed: false };
+    if (IPAddress.tryParse(rest[1]) === null) return { text: 'ERROR: Failed parsing IP address', failed: true };
+    if (rest.slice(2).some((option) => option !== 'udp' && option !== 'tcp')) return { text: 'ERROR: The client option listen is not implemented in this simulator: clients of a virtual server are not listed per listener', failed: true };
+    if (ctx.radiusd!.clientConfig(rest[1]) === null) return { text: 'ERROR: No such client', failed: true };
+    return { text: ctx.radiusd!.statisticsListing(kind, IPAddress.tryParse(rest[1])!.toString()).join('\n'), failed: false };
+  }
   if (words[0] === 'show' && words[1] === 'module' && words[2] === 'list') {
     if (words.length > 3) return { text: `ERROR: Unknown command ${words[3]}`, failed: true };
     return { text: ctx.radiusd!.moduleListing().join('\n'), failed: false };

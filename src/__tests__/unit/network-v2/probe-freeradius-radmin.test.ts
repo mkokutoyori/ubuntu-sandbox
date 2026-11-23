@@ -12,7 +12,7 @@
  *
  * Discriminated with git stash on src: the first 9 cases fall 8 of 9 before the commit that added radmin (the witness passes either way:
  * a top-level control listener was ignored before, so the daemon starts and answers a request the same way); the 4 cases for show client
- * config and the 2 for show module list all fall on the commit that precedes them. `show module list` names the modules
+ * config, the 2 for show module list and the 5 for stats client all fall on the commit that precedes them. `show module list` names the modules
  * the simulator loads from the configuration (detail, preprocess, the realm instances): the others of a real list (pap, chap, files...)
  * have no configuration section here.
  */
@@ -147,5 +147,51 @@ describe('radmin and the control listener', () => {
     write(target, '/etc/freeradius/3.0/mods-enabled/realm', (vfsOf(target).readFile('/etc/freeradius/3.0/mods-enabled/realm') ?? '') + 'realm extra {\n  format = suffix\n  delimiter = "#"\n}\n');
     await target.executeCommand('systemctl restart freeradius');
     expect((await radmin(target, '-f ' + SOCKET + ' -e "show module list"')).output.split('\n')).toContain('extra (realm)');
+  });
+
+  const auth = (password: string) => `printf 'User-Name = "x"\\nUser-Password = "${password}"\\n' | radclient -r 1 10.0.0.2 auth shared`;
+  const field = (output: string, name: string) => Number(new RegExp(`^${name}\\t+(\\d+)$`, 'm').exec(output)?.[1] ?? NaN);
+
+  it('stats client auth counts the requests, the responses and the verdicts, globally and per client', async () => {
+    const { client, target } = await lab(true);
+    await client.executeCommand(auth('a'));
+    await client.executeCommand(auth('b'));
+    const global = (await radmin(target, '-f ' + SOCKET + ' -e "stats client auth"')).output;
+    expect([field(global, 'requests'), field(global, 'responses'), field(global, 'accepts'), field(global, 'rejects'), field(global, 'challenges')]).toEqual([2, 2, 0, 2, 0]);
+    const own = (await radmin(target, '-f ' + SOCKET + ' -e "stats client auth 10.0.0.1"')).output;
+    expect(field(own, 'requests')).toBe(2);
+    expect(field(own, 'rejects')).toBe(2);
+  });
+
+  it('stats client acct counts accounting requests and omits the verdict lines of authentication', async () => {
+    const { client, target } = await lab(true);
+    await client.executeCommand(`printf 'User-Name = "x"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "s"\\nNAS-IP-Address = 10.0.0.1\\nNAS-Port = 1\\n' | radclient 10.0.0.2 acct shared`);
+    const output = (await radmin(target, '-f ' + SOCKET + ' -e "stats client acct"')).output;
+    expect([field(output, 'requests'), field(output, 'responses')]).toEqual([1, 1]);
+    expect(output).not.toContain('accepts');
+    expect(output).toContain('elapsed.10s\t0');
+  });
+
+  it('prints the lines in the source layout, tabs included, ending with the eight elapsed buckets', async () => {
+    const { target } = await lab(true);
+    const lines = (await radmin(target, '-f ' + SOCKET + ' -e "stats client auth"')).output.split('\n');
+    expect(lines.slice(0, 5)).toEqual(['requests\t0', 'responses\t0', 'accepts\t\t0', 'rejects\t\t0', 'challenges\t0']);
+    expect(lines.slice(-8).map((line) => line.split('\t')[0])).toEqual(['elapsed.1us', 'elapsed.10us', 'elapsed.100us', 'elapsed.1ms', 'elapsed.10ms', 'elapsed.100ms', 'elapsed.1s', 'elapsed.10s']);
+  });
+
+  it('an accounting packet with a wrong secret counts as a bad authenticator (each transmission) and gets no response', async () => {
+    const { client, target } = await lab(true);
+    await client.executeCommand(`printf 'User-Name = "x"\\nAcct-Status-Type = Start\\nAcct-Session-Id = "s"\\nNAS-IP-Address = 10.0.0.1\\nNAS-Port = 1\\n' | radclient -r 1 10.0.0.2 acct wrong`);
+    const output = (await radmin(target, '-f ' + SOCKET + ' -e "stats client acct"')).output;
+    expect(field(output, 'requests')).toBeGreaterThanOrEqual(1);
+    expect(field(output, 'bad_authenticator')).toBe(field(output, 'requests'));
+    expect(field(output, 'responses')).toBe(0);
+  });
+
+  it('answers the source errors: no type, an unknown type, an unknown client', async () => {
+    const { target } = await lab(true);
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "stats client"')).output).toBe('ERROR: Must specify [auth/acct]');
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "stats client bogus"')).output).toBe('ERROR: Unknown statistics type');
+    expect((await radmin(target, '-f ' + SOCKET + ' -e "stats client auth 172.16.0.1"')).output).toBe('ERROR: No such client');
   });
 });

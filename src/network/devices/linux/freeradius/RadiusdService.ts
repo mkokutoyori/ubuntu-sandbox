@@ -161,6 +161,19 @@ export class RadiusdService {
     return loaded.ok ? loaded.site.controlSockets.map((socket) => socket.path) : [];
   }
 
+  statisticsListing(kind: 'auth' | 'acct', clientIp: string | null): string[] {
+    const stats = this.radiusServer.clientStatistics(kind, clientIp);
+    const lines = [`requests\t${stats.requests}`, `responses\t${stats.responses}`];
+    if (kind === 'auth') lines.push(`accepts\t\t${stats.accepts}`, `rejects\t\t${stats.rejects}`, `challenges\t${stats.challenges}`);
+    lines.push(
+      `dup\t\t${stats.dup}`, `invalid\t\t${stats.invalid}`, `malformed\t${stats.malformed}`, `bad_authenticator\t${stats.badAuthenticator}`,
+      `dropped\t\t${stats.dropped}`, `unknown_types\t${stats.unknownTypes}`, `no_records\t${stats.noRecords}`, `conflicts\t${stats.conflicts}`,
+      `unresponsive_child\t${stats.unresponsiveChild}`, `last_packet\t${stats.lastPacket}`,
+    );
+    ['1us', '10us', '100us', '1ms', '10ms', '100ms', '1s', '10s'].forEach((name, index) => lines.push(`elapsed.${name}\t${stats.elapsed[index]}`));
+    return lines;
+  }
+
   moduleListing(): string[] {
     const loaded = this.loadConfig();
     if (!loaded.ok) return [];
