@@ -1564,8 +1564,9 @@ export class RadiusServerAgent {
     inPort: string, nasIp: PeerAddress, nasPort: number, request: RadiusPacket,
     username: string, realm: string, route: RealmRoute, dedupKey: string, fallbacks: readonly RealmRoute[] = [], kind: 'auth' | 'acct' = 'auth',
   ): void {
-    const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
-    if (!homeSrcIp) {
+    const homeIsV6 = route.homeServerIp.includes(':');
+    const homeSrcIp = homeIsV6 ? null : this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
+    if (homeIsV6 ? this.host.sendUdpDatagramTo === undefined : !homeSrcIp) {
       if (kind === 'acct') return;
       this.publishRejected(nasIp.toString(), username, 'client-not-authorized');
       this.reply(inPort, nasIp, nasPort, request, false, undefined, dedupKey);
@@ -1593,7 +1594,7 @@ export class RadiusServerAgent {
         attrs.push(attr('user-password', encryptUserPassword(decrypted, route.homeSecret, outAuthenticator)));
       }
     }
-    if (kind === 'auth') attrs.push(attr('nas-ip-address', homeSrcIp.toString()), ...this.proxyStatesOf(request));
+    if (kind === 'auth') attrs.push(...(homeSrcIp === null ? [] : [attr('nas-ip-address', homeSrcIp.toString())]), ...this.proxyStatesOf(request));
     attrs.push(ownProxyState);
     const listenPort = this.servedPort ?? (kind === 'acct' ? this.config.acctPort : this.config.port);
     const staged = this.proxyHooks === null ? attrs : this.proxyHooks.pre({ kind, port: listenPort, realm, request: request.attributes, outbound: attrs });
@@ -1660,11 +1661,29 @@ export class RadiusServerAgent {
     });
     Logger.info(this.host.id, 'radius:proxy',
       `${this.host.name}: forwarding ${username} (realm ${realm}) → home server ${route.homeServerIp}`);
+    this.sendToHome(route, kind === 'acct', homeSrcIp, outbound);
+  }
+
+  private proxyPort6: number | null = null;
+
+  setProxyPort6(port: number | null): void { this.proxyPort6 = port; }
+
+  private sendToHome(route: RealmRoute, accounting: boolean, homeSrcIp: IPAddress | null, payload: RadiusPacket): void {
+    if (homeSrcIp === null) {
+      this.host.sendUdpDatagramTo?.(peerOf(route.homeServerIp), route.homePort, this.proxyPort6 ?? this.config.port, payload, 20 + 16 - 8);
+      return;
+    }
     this.host.sendUdpDatagram({
       destination: new IPAddress(route.homeServerIp), source: homeSrcIp,
-      destinationPort: route.homePort, sourcePort: kind === 'acct' ? this.acctSource() : this.config.port,
-      payload: outbound, payloadBytes: 20 + 16 - 8,
+      destinationPort: route.homePort, sourcePort: accounting ? this.acctSource() : this.config.port,
+      payload, payloadBytes: 20 + 16 - 8,
     });
+  }
+
+  handleProxyReply(srcIp: PeerAddress, udp: UDPPacket): void {
+    const payload = udp.payload as RadiusPacket | undefined;
+    if (!this.running || payload === undefined || payload.type !== 'radius') return;
+    this.tryCompleteProxyReply(srcIp, udp, payload);
   }
 
   private freeProxyIdentifier(): number {
@@ -1692,8 +1711,9 @@ export class RadiusServerAgent {
         if (this.probeLoops.has(key)) loop.timer = this.getScheduler().setTimeout(tick, check.intervalMs);
         return;
       }
-      const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
-      if (homeSrcIp) {
+      const homeIsV6 = route.homeServerIp.includes(':');
+      const homeSrcIp = homeIsV6 ? null : this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
+      if (homeIsV6 ? this.host.sendUdpDatagramTo !== undefined : homeSrcIp !== null) {
         const identifier = this.freeProxyIdentifier();
         const authenticator = randomRequestAuthenticator();
         const probe = withMessageAuthenticator(
@@ -1704,11 +1724,7 @@ export class RadiusServerAgent {
           loop.answers = 0;
         }, check.timeoutMs);
         this.pendingProbes.set(identifier, { key, authenticator, secret: route.homeSecret, address: route.homeServerIp, port: route.homePort, timer });
-        this.host.sendUdpDatagram({
-          destination: new IPAddress(route.homeServerIp), source: homeSrcIp,
-          destinationPort: route.homePort, sourcePort: accounting ? this.acctSource() : this.config.port,
-          payload: probe, payloadBytes: 20 + 16 - 8,
-        });
+        this.sendToHome(route, accounting, homeSrcIp, probe);
       }
       loop.timer = this.getScheduler().setTimeout(tick, check.intervalMs);
     };

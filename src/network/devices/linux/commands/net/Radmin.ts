@@ -1,4 +1,6 @@
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+
+const parseHomeAddress = (text: string): IPAddress | IPv6Address | null => IPv6Address.tryParse(text) ?? IPAddress.tryParse(text);
 import type { LinuxCommand } from '../LinuxCommand';
 import { RADIUSD_VERSION_LINE } from './Freeradius';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -53,7 +55,7 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     }
     const kindWord = rest[0] === 'auth' || rest[0] === 'acct' ? rest[0] : null;
     const args = kindWord === null ? rest : rest.slice(1);
-    const address = IPAddress.tryParse(args[0] ?? '');
+    const address = parseHomeAddress(args[0] ?? '');
     if (address === null || !/^\d/.test(args[1] ?? '')) return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
     if (args.slice(2).some((option) => option !== 'udp')) return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
     const port = Number(args[1]);
@@ -125,7 +127,7 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
 function homeServerState(ctx: LinuxCommandContext, args: string[], mode: 'set' | null): { text: string; failed: boolean } {
   const need = mode === 'set' ? 3 : 2;
   if (args.length < need) return { text: mode === 'set' ? 'ERROR: Must specify <ipaddr> <port> [udp|tcp] <state>' : 'ERROR: Must specify <ipaddr> <port> [udp|tcp] OR <name> <type>', failed: true };
-  const address = IPAddress.tryParse(args[0]);
+  const address = parseHomeAddress(args[0]);
   if (address === null || !/^\d/.test(args[1])) return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
   let index = 2;
   while (index < args.length && (args[index] === 'udp' || args[index] === 'tcp')) {

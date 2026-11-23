@@ -359,14 +359,27 @@ export class RadiusdService {
       radSecServers.push(server);
     }
     this.radSecServers = radSecServers;
+    const familyOf = (spec: ListenerSpec): 'ipv4' | 'ipv6' => (spec.ipv6 === true ? 'ipv6' : 'ipv4');
+    const familyOfAddress = (address: unknown): 'ipv4' | 'ipv6' => (address instanceof IPv6Address ? 'ipv6' : 'ipv4');
+    const sockets: Array<{ port: number; group: ListenerSpec[] }> = [];
     for (const spec of specs.filter((candidate) => candidate.tls === undefined)) {
+      const shared = sockets.find((entry) => entry.port === spec.port && !entry.group.some((other) => familyOf(other) === familyOf(spec)));
+      if (shared === undefined) sockets.push({ port: spec.port, group: [spec] });
+      else shared.group.push(spec);
+    }
+    for (const { port, group } of sockets) {
       const owner = {
-        ...(spec.ipv6 === true ? { families: ['ipv6' as const] } : {}),
-        ...(spec.address === null ? {} : { acceptsDestination: (destination: { toString(): string }) => destination.toString() === spec.address }),
+        families: group.map(familyOf),
+        acceptsDestination: (destination: { toString(): string }) => {
+          const spec = group.find((candidate) => familyOf(candidate) === familyOfAddress(destination));
+          return spec !== undefined && (spec.address === null || spec.address === destination.toString());
+        },
       };
+      const handlers = new Map(group.map((spec) => [familyOf(spec), handlerOf(spec)]));
+      const dispatch = (dgram: { inPort: string; sourceIP: unknown; udp: never }): void => { handlers.get(familyOfAddress(dgram.sourceIP))?.(dgram); };
       let bindFailed = false;
       try {
-        bindFailed = this.host.udpBind(spec.port, handlerOf(spec) as never, PROCESS_NAME, owner as never) === false;
+        bindFailed = this.host.udpBind(port, dispatch as never, PROCESS_NAME, owner as never) === false;
       } catch (error) {
         if (!(error instanceof Error && error.message.startsWith('EADDRINUSE'))) throw error;
         bindFailed = true;
@@ -375,13 +388,23 @@ export class RadiusdService {
         for (const taken of bound) this.host.udpClose(taken);
         for (const server of radSecServers) server.stop();
         this.radSecServers = [];
+        const spec = group[0];
         const what = spec.type === 'acct' ? 'accounting' : spec.type === 'status' ? 'status' : 'authentication';
         return { ok: false, error: `There appears to be another RADIUS server running on the ${what} port ${spec.port}` };
       }
-      bound.push(spec.port);
+      bound.push(port);
     }
     const authPort = specs.find((spec) => spec.type === 'auth' || spec.type === 'auth+acct')?.port ?? UDP_PORT_RADIUS_AUTH;
     const acctPort = specs.find((spec) => spec.type === 'acct')?.port ?? authPort;
+    if (loaded.proxy.homeServers.some((server) => server.address.includes(':') && server.radSec === null)) {
+      const proxySocket = this.host.udpBind(0, ((dgram: { sourceIP: unknown; udp: never }) => {
+        if (dgram.sourceIP instanceof IPv6Address) this.radiusServer.handleProxyReply(dgram.sourceIP, dgram.udp);
+      }) as never, PROCESS_NAME, { families: ['ipv6'] } as never);
+      if (proxySocket !== false) {
+        bound.push(proxySocket);
+        this.radiusServer.setProxyPort6(proxySocket);
+      }
+    }
     this.activeListeners = specs;
     this.portServers = new Map(specs.map((spec) => [spec.port, spec.server]));
     this.radiusServer.setAnyPort(true);
