@@ -44,6 +44,7 @@ export interface RadiusdCommandPort {
   controlSocketPaths(): readonly { path: string; writable: boolean }[];
   configuredControlSockets(): readonly string[];
   clientListing(verbose: boolean): string[];
+  homeServerStatisticsListing(kind: 'auth' | 'acct', address: string | null, port: number | null): string[] | null;
   clientConfig(address: string): string[] | null;
   moduleListing(): string[];
   statisticsListing(kind: 'auth' | 'acct', clientIp: string | null): string[];

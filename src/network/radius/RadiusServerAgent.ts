@@ -148,10 +148,10 @@ export interface RadiusPacketTrace {
 export interface RadiusStats {
   requests: number; responses: number; accepts: number; rejects: number; challenges: number; dup: number; invalid: number;
   malformed: number; badAuthenticator: number; dropped: number; unknownTypes: number; noRecords: number; conflicts: number;
-  unresponsiveChild: number; lastPacket: number; elapsed: number[];
+  unresponsiveChild: number; lastPacket: number; elapsed: number[]; timeouts: number;
 }
 
-const emptyStats = (): RadiusStats => ({ requests: 0, responses: 0, accepts: 0, rejects: 0, challenges: 0, dup: 0, invalid: 0, malformed: 0, badAuthenticator: 0, dropped: 0, unknownTypes: 0, noRecords: 0, conflicts: 0, unresponsiveChild: 0, lastPacket: 0, elapsed: new Array(8).fill(0) });
+const emptyStats = (): RadiusStats => ({ requests: 0, responses: 0, accepts: 0, rejects: 0, challenges: 0, dup: 0, invalid: 0, malformed: 0, badAuthenticator: 0, dropped: 0, unknownTypes: 0, noRecords: 0, conflicts: 0, unresponsiveChild: 0, lastPacket: 0, elapsed: new Array(8).fill(0), timeouts: 0 });
 
 export interface RequestDebugInfo {
   port: number;
@@ -403,6 +403,33 @@ export class RadiusServerAgent {
       if (stats === undefined) { stats = emptyStats(); this.statistics.set(key, stats); }
       change(stats);
     }
+  }
+
+  private readonly homeStatistics = new Map<string, RadiusStats>();
+
+  private countHome(kind: 'auth' | 'acct', address: string, port: number, change: (stats: RadiusStats) => void): void {
+    for (const key of [`${kind}:*`, `${kind}:${address}:${port}`]) {
+      let stats = this.homeStatistics.get(key);
+      if (stats === undefined) { stats = emptyStats(); this.homeStatistics.set(key, stats); }
+      change(stats);
+    }
+  }
+
+  private countHomeAnswer(kind: 'auth' | 'acct', address: string, port: number, answer: RadiusPacket): void {
+    this.countHome(kind, address, port, (stats) => {
+      stats.responses++;
+      stats.elapsed[0]++;
+      stats.lastPacket = Math.floor(simulationNowMs() / 1000);
+      if (answer.code === 'access-accept') stats.accepts++;
+      else if (answer.code === 'access-reject') stats.rejects++;
+      else if (answer.code === 'access-challenge') stats.challenges++;
+    });
+  }
+
+  homeServerStatistics(kind: 'auth' | 'acct', address: string | null, port: number | null): { stats: RadiusStats; outstanding: number } {
+    const stats = this.homeStatistics.get(`${kind}:${address === null ? '*' : `${address}:${port}`}`) ?? emptyStats();
+    const outstanding = address === null ? 0 : [...this.pendingProxy.values()].filter((pending) => pending.homeServerIp === address && pending.homePort === port).length;
+    return { stats, outstanding };
   }
 
   clientStatistics(kind: 'auth' | 'acct', clientIp: string | null): RadiusStats {
@@ -1505,7 +1532,9 @@ export class RadiusServerAgent {
       outAuthenticator = outbound.authenticator;
     }
 
+    this.countHome(kind, route.homeServerIp, route.homePort, (stats) => { stats.requests++; });
     const onSilence = (): void => {
+      this.countHome(kind, route.homeServerIp, route.homePort, (stats) => { stats.timeouts++; });
       const activity = this.homeActivity.get(`${route.homeServerIp}:${route.homePort}`) ?? { lastReplyMs: null, timedOutAtMs: null };
       if (activity.timedOutAtMs === null) activity.timedOutAtMs = simulationNowMs();
       this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, activity);
@@ -1527,6 +1556,7 @@ export class RadiusServerAgent {
         onSilence();
         return;
       }
+      this.countHomeAnswer(kind, route.homeServerIp, route.homePort, answer);
       this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
       this.finishProxy(context(null), answer);
       return;
@@ -1633,6 +1663,7 @@ export class RadiusServerAgent {
 
     this.pendingProxy.delete(payload.identifier);
     if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
+    this.countHomeAnswer(ctx.kind, ctx.homeServerIp, ctx.homePort, payload);
     this.homeActivity.set(`${ctx.homeServerIp}:${ctx.homePort}`, { lastReplyMs: simulationNowMs(), timedOutAtMs: null });
 
     this.finishProxy(ctx, payload);

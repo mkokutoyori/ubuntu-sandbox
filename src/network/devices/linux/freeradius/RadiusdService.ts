@@ -175,6 +175,21 @@ export class RadiusdService {
     return lines;
   }
 
+  homeServerStatisticsListing(kind: 'auth' | 'acct', address: string | null, port: number | null): string[] | null {
+    if (address !== null && this.proxyConfig.homeServers.find((server) => server.address === address && (kind === 'acct' ? (server.acctPort ?? server.port) : server.port) === port && (kind === 'acct' ? server.type !== 'auth' : server.type !== 'acct')) === undefined) return null;
+    const { stats, outstanding } = this.radiusServer.homeServerStatistics(kind, address, port);
+    const lines = [`requests\t${stats.requests}`, `responses\t${stats.responses}`];
+    if (kind === 'auth') lines.push(`accepts\t\t${stats.accepts}`, `rejects\t\t${stats.rejects}`, `challenges\t${stats.challenges}`);
+    lines.push(
+      `dup\t\t${stats.dup}`, `invalid\t\t${stats.invalid}`, `malformed\t${stats.malformed}`, `bad_authenticator\t${stats.badAuthenticator}`,
+      `dropped\t\t${stats.dropped}`, `unknown_types\t${stats.unknownTypes}`, `no_records\t${stats.noRecords}`, `timeouts\t${stats.timeouts}`,
+      `last_packet\t${stats.lastPacket}`,
+    );
+    ['1us', '10us', '100us', '1ms', '10ms', '100ms', '1s', '10s'].forEach((name, index) => lines.push(`elapsed.${name}\t${stats.elapsed[index]}`));
+    if (address !== null) lines.push(`outstanding\t${outstanding}`);
+    return lines;
+  }
+
   moduleListing(): string[] {
     const loaded = this.loadConfig();
     if (!loaded.ok) return [];

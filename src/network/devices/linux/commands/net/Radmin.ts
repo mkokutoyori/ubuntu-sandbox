@@ -44,6 +44,26 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     if (words.length > 3) return { text: `ERROR: Unknown command ${words[3]}`, failed: true };
     return { text: ctx.radiusd!.moduleListing().join('\n'), failed: false };
   }
+  if (words[0] === 'stats' && words[1] === 'home_server') {
+    const rest = words.slice(2);
+    if (rest.length === 0) return { text: 'ERROR: Must specify [auth|acct|coa|disconnect] OR <ipaddr> <port>', failed: true };
+    if (rest.length === 1) {
+      if (rest[0] === 'auth' || rest[0] === 'acct') return { text: ctx.radiusd!.homeServerStatisticsListing(rest[0], null, null)!.join('\n'), failed: false };
+      return { text: 'ERROR: Should specify [auth|acct|coa|disconnect]', failed: true };
+    }
+    const kindWord = rest[0] === 'auth' || rest[0] === 'acct' ? rest[0] : null;
+    const args = kindWord === null ? rest : rest.slice(1);
+    const address = IPAddress.tryParse(args[0] ?? '');
+    if (address === null || !/^\d/.test(args[1] ?? '')) return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
+    if (args.slice(2).some((option) => option !== 'udp')) return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
+    const port = Number(args[1]);
+    const kinds: ('auth' | 'acct')[] = kindWord === null ? ['auth', 'acct'] : [kindWord];
+    for (const kind of kinds) {
+      const listing = ctx.radiusd!.homeServerStatisticsListing(kind, address.toString(), port);
+      if (listing !== null) return { text: listing.join('\n'), failed: false };
+    }
+    return { text: `ERROR: No such home server - ${args[0]} ${args[1]}`, failed: true };
+  }
   if (words[0] === 'show' && words[1] === 'version') return { text: RADIUSD_VERSION_LINE, failed: false };
   if (words[0] === 'show' && words[1] === 'module' && words[2] === 'status') {
     if (words.length !== 4) return { text: 'ERROR: No module name was given', failed: true };
