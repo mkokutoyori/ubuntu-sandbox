@@ -23,6 +23,7 @@ import { parseClientsConf } from './ClientsConfParser';
 import { readEapModule, EAP_DEFAULT_FRAGMENT_SIZE, type EapModuleConfig } from './EapModuleConfig';
 import type { EapTlsConfig } from '@/network/radius/eaptls/EapTlsConfig';
 import { PeapMd5InnerAuthServer } from '@/network/radius/eaptls/PeapInnerAuth';
+import { PeapMsChapV2InnerAuthServer } from '@/network/radius/eaptls/PeapMsChapV2InnerAuth';
 import { TtlsPapInnerAuthServer } from '@/network/radius/eaptls/TtlsInnerAuth';
 import { protocolOf, type RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
@@ -975,7 +976,7 @@ export class RadiusdService {
       verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => this.wallClock.nowMs() }),
       requireClientCert: module.defaultType === 'tls', eapType: module.defaultType as 'tls' | 'peap' | 'ttls',
       mtu: tls.fragmentSize ?? EAP_DEFAULT_FRAGMENT_SIZE,
-      ...(module.defaultType === 'peap' ? { innerAuth: new PeapMd5InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
+      ...(module.defaultType === 'peap' ? { innerAuth: module.peapInner === 'md5' ? new PeapMd5InnerAuthServer(lookup) : new PeapMsChapV2InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
     };
   }
 

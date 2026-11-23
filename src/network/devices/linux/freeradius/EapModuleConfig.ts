@@ -12,6 +12,7 @@ export interface EapTlsFiles {
 
 export interface EapModuleConfig {
   readonly defaultType: EapDefaultType;
+  readonly peapInner: 'md5' | 'mschapv2';
   readonly tls: EapTlsFiles | null;
 }
 
@@ -53,11 +54,12 @@ export function readEapModule(modules: ConfSection | undefined): EapModuleConfig
       return { error: `${at(section)}: The eap section "${section.name1}" is not implemented in this simulator` };
     }
   }
-  if (defaultType === 'md5') return { defaultType, tls: null };
+  if (defaultType === 'md5') return { defaultType, peapInner: 'mschapv2', tls: null };
   const method = eap.sections.find((section) => section.name1 === defaultType);
   if (method === undefined) return { error: `${at(eap)}: Failed to find a "${defaultType}" section for default_eap_type = ${defaultType}` };
   for (const pair of method.pairs) {
-    if (pair.name !== 'tls' && !(pair.name === 'default_eap_type' && pair.value === 'md5' && defaultType !== 'tls')) {
+    const innerAllowed = pair.name === 'default_eap_type' && (pair.value === 'md5' ? defaultType !== 'tls' : pair.value === 'mschapv2' && defaultType === 'peap');
+    if (pair.name !== 'tls' && !innerAllowed) {
       return { error: `${pair.file}[${pair.line}]: The ${defaultType} setting "${pair.name} = ${pair.value}" is not implemented in this simulator` };
     }
   }
@@ -65,5 +67,6 @@ export function readEapModule(modules: ConfSection | undefined): EapModuleConfig
   if (reference === undefined) return { error: `${at(method)}: Failed to find "tls" in the ${defaultType} section` };
   const tls = tlsConfigs.get(reference);
   if (tls === undefined) return { error: `${at(method)}: Failed to find tls-config "${reference}"` };
-  return { defaultType, tls };
+  const inner = pairOf(method, 'default_eap_type');
+  return { defaultType, peapInner: inner === 'md5' ? 'md5' : 'mschapv2', tls };
 }

@@ -14,8 +14,10 @@
  *
  * Discriminated with git stash on src, in two steps. The eap module commit: 7 of the first 8 cases fall before it; the MD5 witness passes either
  * way. The RFC 3579 commit that follows (the fragmentation of an EAP-Message over repeated attributes, fragment_size defaulting to 1024):
- * 1 of the 10 cases falls before it, the default-fragment_size conversation; the fragment_size = 200 case (one attribute, nothing to split)
- * and the refusals pass either way and are named: they guard that the change did not move what already worked.
+ * 1 of the first 10 cases falls before it, the default-fragment_size conversation; the fragment_size = 200 case (one attribute, nothing to split)
+ * and the refusals pass either way and are named: they guard that the change did not move what already worked. The PEAP EAP-MSCHAPv2 commit
+ * after that adds 3 cases, all of which fall before it (on the base the whole file does not even load, for it imports the new inner peer; the inner method did not exist, and a peap section without default_eap_type
+ * used EAP-MD5 where the real default is mschapv2; the explicit-md5 PEAP case above keeps covering the MD5 inner path).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -35,6 +37,7 @@ import { eapPacketFromWireHex, eapPacketToWireHex } from '@/network/radius/eap';
 import { EapTlsPeerSession } from '@/network/radius/eaptls/EapTlsPeerSession';
 import { TtlsPapInnerAuthPeer } from '@/network/radius/eaptls/TtlsInnerAuth';
 import { PeapMd5InnerAuthPeer } from '@/network/radius/eaptls/PeapInnerAuth';
+import { PeapMsChapV2InnerAuthPeer } from '@/network/radius/eaptls/PeapMsChapV2InnerAuth';
 
 beforeEach(() => { resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset(); });
 
@@ -160,6 +163,25 @@ describe('the eap module: EAP-TLS, PEAP and TTLS', () => {
     expect(await converse(made, peer)).toBe('accept');
     expect(made.lines).toContain('eap: Peer sent packet with method PEAP (25)');
     expect(made.lines).toContain('eap: Calling submodule eap_peap to process data');
+  });
+
+  it('PEAP with the real default inner method (EAP-MSCHAPv2, type 26): the NT-Response is checked and the server proves itself with S=', async () => {
+    const good = await lab(EAP('peap'));
+    const peer = new EapTlsPeerSession(null, good.keys.verifier, { eapType: 'peap', innerAuth: new PeapMsChapV2InnerAuthPeer('alice', 'wonderland') });
+    expect(await converse(good, peer)).toBe('accept');
+    const bad = await lab(EAP('peap'));
+    expect(await converse(bad, new EapTlsPeerSession(null, bad.keys.verifier, { eapType: 'peap', innerAuth: new PeapMsChapV2InnerAuthPeer('alice', 'wrong') }))).toBe('reject');
+  });
+
+  it('PEAP with default_eap_type = mschapv2 written is the same, and an EAP-MD5 peer is no longer served by it', async () => {
+    const made = await lab(EAP('peap', '    default_eap_type = mschapv2\n'));
+    expect(await converse(made, new EapTlsPeerSession(null, made.keys.verifier, { eapType: 'peap', innerAuth: new PeapMsChapV2InnerAuthPeer('alice', 'wonderland') }))).toBe('accept');
+    const other = await lab(EAP('peap', '    default_eap_type = mschapv2\n'));
+    expect(await converse(other, new EapTlsPeerSession(null, other.keys.verifier, { eapType: 'peap', innerAuth: new PeapMd5InnerAuthPeer('alice', 'wonderland') }))).toBe('reject');
+  });
+
+  it('mschapv2 is not an inner method of TTLS: the section is refused naming the setting', async () => {
+    expect((await lab(EAP('ttls', '    default_eap_type = mschapv2\n'))).started).toContain('The ttls setting "default_eap_type = mschapv2" is not implemented in this simulator');
   });
 
   it('with the default fragment_size the server fragments an EAP-Message over several attributes (RFC 3579 section 3.1) and the conversation still succeeds', async () => {
