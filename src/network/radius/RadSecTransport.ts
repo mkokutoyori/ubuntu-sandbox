@@ -6,6 +6,7 @@ import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientS
 import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
 import { runTlsHandshakeOverSocket } from '@/network/http/https/TlsRecordWire';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { SessionTicket } from '@/network/tls/sessionTickets';
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import { peerOf, type PeerAddress } from './sourceAddress';
 import { decodeRadiusPacket, encodeRadiusPacket, isRadiusDecodeError } from './codec';
@@ -94,10 +95,16 @@ export interface RadSecClientOutcome {
   readonly ok: boolean;
   readonly reply?: RadiusPacket;
   readonly reason?: string;
+  readonly resumed?: boolean;
+  readonly ticket?: SessionTicket | null;
 }
 
 export class RadSecClientConnection {
-  private constructor(private readonly socket: TcpSocket, private readonly channel: TlsClientChannel, readonly peerCertificate: X509Certificate | null) {}
+  private constructor(private readonly socket: TcpSocket, private readonly channel: TlsClientChannel, private readonly tls: TlsClientSession, readonly peerCertificate: X509Certificate | null) {}
+
+  get resumed(): boolean { return this.tls.pskResumed; }
+
+  get ticket(): SessionTicket | null { return this.tls.receivedTicket; }
 
   static open(tcp: TcpStack, address: string, port: number, tlsConfig: TlsClientConfig, checkPeer?: (certificate: X509Certificate | null) => string | null): RadSecClientConnection | { reason: string } {
     const socket = tcp.connect(address, port);
@@ -116,7 +123,7 @@ export class RadSecClientConnection {
     }
     const channel = new TlsClientChannel(socket, tls);
     if (trailing.length > 0) channel.receiveRecords(trailing);
-    return new RadSecClientConnection(socket, channel, tls.peerCertificate);
+    return new RadSecClientConnection(socket, channel, tls, tls.peerCertificate);
   }
 
   isOpen(): boolean { return this.socket.state === 'established'; }
@@ -140,6 +147,7 @@ export function radSecExchange(tcp: TcpStack, address: string, port: number, req
   const connection = RadSecClientConnection.open(tcp, address, port, tlsConfig, checkPeer);
   if (!(connection instanceof RadSecClientConnection)) return { ok: false, reason: connection.reason };
   const outcome = connection.exchange(request);
+  const finished = { ...outcome, resumed: connection.resumed, ticket: connection.ticket };
   connection.close();
-  return outcome;
+  return finished;
 }

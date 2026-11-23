@@ -89,6 +89,8 @@ export interface TlsServerConfig {
   readonly alpnMismatch?: 'reject' | 'ignore';
   /** Shared session-ticket registry (§4.6.1) — set to issue tickets and accept PSK/0-RTT resumption. */
   readonly sessionTicketStore?: SessionTicketStore;
+  /** Lifetime written in the NewSessionTicket and enforced by the store; default two hours. */
+  readonly ticketLifetimeSeconds?: number;
   /** RFC 8446 §2.1.12 observability — publishes `tls.*` events (`events.ts`) if set. */
   readonly eventBus?: IEventBus;
   /** Protocol versions this server accepts; RFC 8996 removes 1.0/1.1 from the default. */
@@ -893,7 +895,7 @@ export class TlsServerSession {
       ticketNonce: randomHex(8),
       ticketAgeAdd,
       cipherSuite: this.negotiatedCipherSuite as CipherSuite,
-      ticketLifetime: 7200,
+      ticketLifetime: this.config.ticketLifetimeSeconds ?? 7200,
       issuedAt: simulationNowMs(),
       consumed: false,
     };

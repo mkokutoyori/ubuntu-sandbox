@@ -6,6 +6,20 @@ const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certifica
 const OCSP_KEYS = new Set(['enable', 'url', 'override_cert_url', 'use_nonce', 'timeout', 'softfail']);
 const BOOLEAN_WORD = /^(yes|no|true|false|on|off)$/i;
 
+const CACHE_KEYS = new Set(['enable', 'lifetime']);
+
+function readCache(section: ConfSection): { lifetimeHours: number } | null | { error: string } {
+  const cache = section.sections.find((candidate) => candidate.name1 === 'cache');
+  if (cache === undefined) return null;
+  for (const pair of cache.pairs) {
+    if (!CACHE_KEYS.has(pair.name)) return { error: `${pair.file}[${pair.line}]: The cache setting "${pair.name}" is not implemented in this simulator` };
+    if (pair.name === 'enable' && !BOOLEAN_WORD.test(pair.value)) return { error: `${pair.file}[${pair.line}]: Invalid value "${pair.value}" for variable enable` };
+    if (pair.name === 'lifetime' && !/^\d+$/.test(pair.value)) return { error: `${pair.file}[${pair.line}]: Invalid value "${pair.value}" for variable lifetime` };
+  }
+  if (!/^(yes|true|on)$/i.test(pairValue(cache, 'enable') ?? 'no')) return null;
+  return { lifetimeHours: Number(pairValue(cache, 'lifetime') ?? '24') };
+}
+
 function readOcsp(section: ConfSection): RadSecOcsp | null | { error: string } {
   const ocsp = section.sections.find((candidate) => candidate.name1 === 'ocsp');
   if (ocsp === undefined) return null;
@@ -39,11 +53,15 @@ export function readTlsBody(section: ConfSection): RadSecTls | { error: string }
   const reload = pairValue(section, 'ca_path_reload_interval');
   if (reload !== undefined && !/^\d+$/.test(reload)) return { error: `${where}: Invalid value "${reload}" for variable ca_path_reload_interval` };
   if (reload !== undefined && pairValue(section, 'ca_path') === undefined) return { error: `${where}: ca_path_reload_interval needs a ca_path in the tls section` };
+  const cacheRead = readCache(section);
+  if (cacheRead !== null && 'error' in cacheRead) return cacheRead;
+  const cache: { lifetimeHours: number } | undefined = cacheRead !== null && !('error' in cacheRead) ? cacheRead : undefined;
   const ocspRead = readOcsp(section);
   if (ocspRead !== null && 'error' in ocspRead) return ocspRead;
   const ocsp: RadSecOcsp | undefined = ocspRead !== null && !('error' in ocspRead) ? ocspRead : undefined;
   return {
     ...(ocsp === undefined ? {} : { ocsp }),
+    ...(cache === undefined ? {} : { cache }),
     limits, certificateFile, privateKeyFile, privateKeyPassword: pairValue(section, 'private_key_password') ?? null,
     ...(pairValue(section, 'ca_path') === undefined ? {} : { caPath: pairValue(section, 'ca_path') }),
     ...(pairValue(section, 'dh_file') === undefined ? {} : { dhFile: pairValue(section, 'dh_file') }),

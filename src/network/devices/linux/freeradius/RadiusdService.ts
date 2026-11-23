@@ -45,6 +45,7 @@ import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTra
 import { OcspClient, DEFAULT_OCSP_POLICY } from '@/network/http/ocsp/OcspHttpClient';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { peerOf } from '@/network/radius/sourceAddress';
+import { SessionTicketStore } from '@/network/tls/sessionTickets';
 import { certificateRejection, cipherOptions, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -719,6 +720,14 @@ export class RadiusdService {
     return this.radiusServer.clientTable.find(peerOf(clientIp), 'tls')?.tls;
   }
 
+  private readonly ticketStores = new Map<RadSecTls, SessionTicketStore>();
+
+  private ticketStoreFor(tls: RadSecTls): SessionTicketStore {
+    let store = this.ticketStores.get(tls);
+    if (store === undefined) { store = new SessionTicketStore(); this.ticketStores.set(tls, store); }
+    return store;
+  }
+
   private readonly radSecBuilt = new Map<RadSecTls, { config: TlsServerConfig; atMs: number }>();
 
   private radSecConfigFor(clientIp: string, listener: RadSecTls, listenerConfig: TlsServerConfig): TlsServerConfig | null {
@@ -809,6 +818,7 @@ export class RadiusdService {
     }
     return {
       ...(dhParameters === null ? {} : { dhParameters }),
+      ...(tls.cache === undefined ? {} : { sessionTicketStore: this.ticketStoreFor(tls), ticketLifetimeSeconds: tls.cache.lifetimeHours * 3600 }),
       serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
       requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
       verifier: new CertificateVerifier(verifierOptions(caText as string | null, tls.limits, () => this.wallClock.nowMs())),
