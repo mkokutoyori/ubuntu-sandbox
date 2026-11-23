@@ -1,7 +1,7 @@
 import { readTlsLimits, tlsLimitsError, TLS_LIMIT_KEYS, type RadSecOcsp, type RadSecTls } from '@/network/radius/RadSecTlsPolicy';
 import type { ConfSection } from './FreeradiusConf';
 
-const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert', 'ca_path', 'dh_file', ...TLS_LIMIT_KEYS]);
+const TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', 'require_client_cert', 'ca_path', 'ca_path_reload_interval', 'dh_file', ...TLS_LIMIT_KEYS]);
 
 const OCSP_KEYS = new Set(['enable', 'url', 'override_cert_url', 'use_nonce', 'timeout', 'softfail']);
 const BOOLEAN_WORD = /^(yes|no|true|false|on|off)$/i;
@@ -36,6 +36,9 @@ export function readTlsBody(section: ConfSection): RadSecTls | { error: string }
   const limits = readTlsLimits((name) => pairValue(section, name));
   const limitsError = tlsLimitsError(limits);
   if (limitsError !== null) return { error: `${where}: ${limitsError}` };
+  const reload = pairValue(section, 'ca_path_reload_interval');
+  if (reload !== undefined && !/^\d+$/.test(reload)) return { error: `${where}: Invalid value "${reload}" for variable ca_path_reload_interval` };
+  if (reload !== undefined && pairValue(section, 'ca_path') === undefined) return { error: `${where}: ca_path_reload_interval needs a ca_path in the tls section` };
   const ocspRead = readOcsp(section);
   if (ocspRead !== null && 'error' in ocspRead) return ocspRead;
   const ocsp: RadSecOcsp | undefined = ocspRead !== null && !('error' in ocspRead) ? ocspRead : undefined;
@@ -44,6 +47,7 @@ export function readTlsBody(section: ConfSection): RadSecTls | { error: string }
     limits, certificateFile, privateKeyFile, privateKeyPassword: pairValue(section, 'private_key_password') ?? null,
     ...(pairValue(section, 'ca_path') === undefined ? {} : { caPath: pairValue(section, 'ca_path') }),
     ...(pairValue(section, 'dh_file') === undefined ? {} : { dhFile: pairValue(section, 'dh_file') }),
+    ...(reload === undefined || Number(reload) === 0 ? {} : { caPathReloadSeconds: Number(reload) }),
     caFile: pairValue(section, 'ca_file') ?? null, requireClientCert: /^(yes|true|on)$/i.test(require),
   };
 }

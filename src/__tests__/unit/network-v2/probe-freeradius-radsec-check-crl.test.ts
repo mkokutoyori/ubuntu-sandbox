@@ -142,8 +142,8 @@ describe('check_crl', () => {
     expect(exchange(revokedAllowed).ok).toBe(false);
   });
 
-  it('refuses a value that is not a boolean, and ca_path_reload_interval, naming them', async () => {
+  it('refuses a value that is not a boolean, and random_file, naming them', async () => {
     expect((await crlLab('\t\t\tcheck_crl = maybe\n', false, 'fresh')).started).toContain('Invalid value "maybe" for variable check_crl');
-    expect((await crlLab('\t\t\tca_path_reload_interval = yes\n', false, 'fresh')).started).toContain('The tls setting "ca_path_reload_interval" is not implemented in this simulator');
+    expect((await crlLab('\t\t\trandom_file = x\n', false, 'fresh')).started).toContain('The tls setting "random_file" is not implemented in this simulator');
   });
 });

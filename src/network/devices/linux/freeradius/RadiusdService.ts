@@ -355,6 +355,7 @@ export class RadiusdService {
     for (const spec of specs.filter((candidate) => candidate.tls !== undefined)) {
       const config = this.radSecTlsConfig(spec.tls as RadSecTls);
       if (typeof config === 'string') return { ok: false, error: config };
+      this.radSecBuilt.set(spec.tls as RadSecTls, { config, atMs: this.wallClock.nowMs() });
       const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)) ?? this.ocspRejection(certificate, this.radSecClientTls(clientIp) ?? (spec.tls as RadSecTls)), localIp: spec.ipv6 === true ? '::' : '0.0.0.0', onConnection: (_ip, accepted, reason) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); } });
       server.start({ processName: PROCESS_NAME });
       radSecServers.push(server);
@@ -691,15 +692,33 @@ export class RadiusdService {
     return this.radiusServer.clientTable.find(peerOf(clientIp), 'tls')?.tls;
   }
 
+  private readonly radSecBuilt = new Map<RadSecTls, { config: TlsServerConfig; atMs: number }>();
+
   private radSecConfigFor(clientIp: string, listener: RadSecTls, listenerConfig: TlsServerConfig): TlsServerConfig | null {
     const own = this.radSecClientTls(clientIp);
-    if (own === undefined || own === listener) return listenerConfig;
+    if (own === undefined || own === listener) return this.reloadedConfig(listener, listenerConfig);
     const config = this.radSecTlsConfig(own);
     if (typeof config === 'string') {
       this.writeLogLine('Error', `tls: ${config}`);
       return null;
     }
     return config;
+  }
+
+  private reloadedConfig(tls: RadSecTls, initial: TlsServerConfig): TlsServerConfig {
+    const now = this.wallClock.nowMs();
+    const kept = this.radSecBuilt.get(tls) ?? { config: initial, atMs: now };
+    if (tls.caPathReloadSeconds !== undefined && now - kept.atMs >= tls.caPathReloadSeconds * 1000) {
+      const rebuilt = this.radSecTlsConfig(tls);
+      if (typeof rebuilt !== 'string') {
+        this.writeLogLine('Debug', 'tls: (TLS) Flushing X509 store to re-read data from ca_path dir');
+        const entry = { config: rebuilt, atMs: now };
+        this.radSecBuilt.set(tls, entry);
+        return rebuilt;
+      }
+    }
+    this.radSecBuilt.set(tls, kept);
+    return kept.config;
   }
 
   private ocspRejection(certificate: X509Certificate | null, tls: RadSecTls): string | null {

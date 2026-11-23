@@ -137,7 +137,7 @@ describe('client tls section', () => {
   });
 
   it('refuses an unsupported key and a missing certificate_file in the section, in the words of the listener section', async () => {
-    expect((await lab({ clients: OWN('    ca_path_reload_interval = yes\n') })).started).toContain('The tls setting "ca_path_reload_interval" is not implemented in this simulator');
+    expect((await lab({ clients: OWN('    random_file = x\n') })).started).toContain('The tls setting "random_file" is not implemented in this simulator');
     expect((await lab({ clients: 'client nas {\n  ipaddr = 10.0.0.1\n  proto = tls\n  tls {\n    private_key_file = x\n  }\n}\n' })).started).toContain('Failed to find "certificate_file" in the tls section');
   });
 });

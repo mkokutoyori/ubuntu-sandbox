@@ -35,6 +35,7 @@ export interface RadSecTls {
   readonly caFile: string | null;
   readonly caPath?: string;
   readonly dhFile?: string;
+  readonly caPathReloadSeconds?: number;
   readonly requireClientCert: boolean;
   readonly limits: RadSecTlsLimits;
   readonly ocsp?: RadSecOcsp;

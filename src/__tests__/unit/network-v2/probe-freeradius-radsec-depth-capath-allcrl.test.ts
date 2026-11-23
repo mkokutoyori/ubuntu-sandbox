@@ -2,12 +2,12 @@
  * Probe: verify_depth, check_all_crl and ca_path of a tls section were refused as unknown keys. Source of truth: FreeRADIUS v3.2.x
  * src/main/tls.c (verify_depth bounds the certificate chain, 0 leaving the default; check_all_crl adds X509_V_FLAG_CRL_CHECK_ALL: the CRL
  * of every issuer in the chain is consulted, not just the leaf's; ca_path is a directory of CA certificates and CRLs loaded next to ca_file by
- * X509_STORE_load_locations, "Failed reading ca_path" here when the directory is missing; ca_path_reload_interval is still refused). They
+ * X509_STORE_load_locations, "Failed reading ca_path" here when the directory is missing; ca_path_reload_interval re-reads the directory for the next TLS session once that many seconds have passed, as tls.c does with ca_path_last_reload). They
  * go through the one verifier builder and the one CA material reader.
  *
- * Discriminated with git stash on src: 4 of 6 fall before the fix; two pass either way and are named: the witness (a chain with two
- * intermediates is accepted when no depth is set) and the check_all_crl case (its leaf-only half already worked with check_crl, and its refusal half
- * is satisfied on the base because the base refuses the key and the listener never starts: nobody is served).
+ * Discriminated with git stash on src, in two steps. The verify_depth / check_all_crl / ca_path commit: 4 of the first 6 cases fall before it; the witness and
+ * the check_all_crl case pass either way (named: its leaf-only half already worked and its refusal half is met by the base refusing the key). The
+ * ca_path_reload_interval commit after it: the reload case falls before it (the key was refused); the control (no interval: the directory is read once) passes either way, named.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -153,8 +153,36 @@ describe('verify_depth, check_all_crl and ca_path', () => {
     expect(all.run().ok).toBe(false);
   });
 
-  it('refuses a verify_depth that is not a number and ca_path_reload_interval, naming them', async () => {
+  it('refuses a verify_depth that is not a number and a tls key it does not honour, naming them', async () => {
     expect((await lab({ block: WITH('\t\t\tverify_depth = deep\n') })).started).toContain('Invalid value for variable verify_depth');
-    expect((await lab({ block: WITH('\t\t\tca_path_reload_interval = 60\n') })).started).toContain('The tls setting "ca_path_reload_interval" is not implemented in this simulator');
+    expect((await lab({ block: WITH('\t\t\trandom_file = x\n') })).started).toContain('The tls setting "random_file" is not implemented in this simulator');
+  });
+
+  it('ca_path_reload_interval re-reads the directory once the interval has passed: a CRL added afterwards starts to count, not before', async () => {
+    const setup = (made: Awaited<ReturnType<typeof lab>>) => {
+      vfsOf(made.target).mkdirp(`${DIR}/cas`, 0o755, 0, 0);
+      write(made.target, `${DIR}/cas/root.pem`, certToPem(made.pki.authority.rootCertificate) + crlToPem(made.pki.authority.publishCRL(NOW, DAY)));
+    };
+    const revokeLeaf = (made: Awaited<ReturnType<typeof deepLab>>) => {
+      made.sub2.revoke(made.leaf.cert.serialNumber, NOW);
+      const crls = [made.root.publishCRL(NOW, DAY), made.sub.publishCRL(NOW, DAY), made.sub2.publishCRL(NOW, DAY)].map(crlToPem).join('');
+      write(made.target, `${DIR}/cas/root.pem`, certToPem(made.root.rootCertificate) + crls);
+    };
+    const withReload = await deepLab(`\t\t\tca_path = ${DIR}/cas\n\t\t\tca_path_reload_interval = 60\n\t\t\tcheck_crl = yes\n`, { caFile: false, setup: (made, chain) => { setup(made); write(made.target, `${DIR}/cas/root.pem`, certToPem(chain.root.rootCertificate) + [chain.root.publishCRL(NOW, DAY), chain.sub.publishCRL(NOW, DAY), chain.sub2.publishCRL(NOW, DAY)].map(crlToPem).join('')); } });
+    expect(withReload.run().reply?.code).toBe('access-accept');
+    revokeLeaf(withReload);
+    expect(withReload.run().reply?.code).toBe('access-accept');
+    await withReload.target.executeCommand(`date -s "$(date -d '+2 minutes' '+%Y-%m-%d %H:%M:%S')" >/dev/null`);
+    expect(withReload.run().ok).toBe(false);
+  });
+
+  it('without ca_path_reload_interval the directory is read once: the same CRL change never counts', async () => {
+    const made = await deepLab(`\t\t\tca_path = ${DIR}/cas\n\t\t\tcheck_crl = yes\n`, { caFile: false, setup: (m, chain) => { vfsOf(m.target).mkdirp(`${DIR}/cas`, 0o755, 0, 0); write(m.target, `${DIR}/cas/root.pem`, certToPem(chain.root.rootCertificate) + [chain.root.publishCRL(NOW, DAY), chain.sub.publishCRL(NOW, DAY), chain.sub2.publishCRL(NOW, DAY)].map(crlToPem).join('')); } });
+    expect(made.run().reply?.code).toBe('access-accept');
+    made.sub2.revoke(made.leaf.cert.serialNumber, NOW);
+    write(made.target, `${DIR}/cas/root.pem`, certToPem(made.root.rootCertificate) + [made.root.publishCRL(NOW, DAY), made.sub.publishCRL(NOW, DAY), made.sub2.publishCRL(NOW, DAY)].map(crlToPem).join(''));
+    await made.target.executeCommand(`date -s "$(date -d '+2 minutes' '+%Y-%m-%d %H:%M:%S')" >/dev/null`);
+    expect(made.run().reply?.code).toBe('access-accept');
   });
 });
+
