@@ -1074,23 +1074,31 @@ export class RadiusServerAgent {
    * Access-Request (MS-CHAP-Challenge + MS-CHAP2-Response) — a single
    * accept/reject decision, no challenge round-trip of our own.
    */
+  private postAuth(accepted: boolean, userReply: readonly RadiusAttribute[]): { reply: RadiusAttribute[]; lines: string[] } | null {
+    return this.postAuthHook?.({ port: this.servedPort ?? this.config.port, accepted, userReply }) ?? null;
+  }
+
   private handleMsChapV2Request(
     inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
     username: string, user: RadiusUser | undefined, responseVsa: RadiusAttribute, dedupKey: string,
   ): void {
-    const trace = (accepted: boolean): void => this.emitRequestDebug(request, dstIp, username, user, accepted, [], []);
+    const settle = (shown: boolean, final: boolean): RadiusAttribute[] => {
+      const post = this.postAuth(final, []);
+      this.emitRequestDebug(request, dstIp, username, user, shown, post?.lines ?? [], post?.reply ?? []);
+      return post?.reply ?? [];
+    };
     const challengeVsa = getVsa(request, MICROSOFT_VENDOR_ID, 11);
     const blob = hexToBytes(String(responseVsa.value));
     if (!challengeVsa || blob.length < 50) {
-      trace(false);
+      const extra = settle(false, false);
       this.publishRejected(dstIp.toString(), username, 'bad-password');
-      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
+      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey, null, extra);
       return;
     }
     if (!user) {
-      trace(false);
+      const extra = settle(false, false);
       this.publishRejected(dstIp.toString(), username, 'unknown-user');
-      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
+      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey, null, extra);
       return;
     }
 
@@ -1100,17 +1108,17 @@ export class RadiusServerAgent {
 
     const expected = generateNtResponse(authChallenge, peerChallenge, username, user.password);
     if (bytesToHex(expected) !== bytesToHex(ntResponse)) {
-      trace(false);
+      const extra = settle(false, false);
       this.publishRejected(dstIp.toString(), username, 'bad-password');
-      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
+      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey, null, extra);
       return;
     }
 
     const denial = this.simultaneousUseDenial(user, username);
     if (denial !== null) {
-      trace(true);
+      const extra = settle(true, false);
       this.publishRejected(dstIp.toString(), username, 'simultaneous-use');
-      this.reply(inPort, dstIp, clientPort, request, false, user, dedupKey, denial);
+      this.reply(inPort, dstIp, clientPort, request, false, user, dedupKey, denial, extra);
       return;
     }
     this.replyMsChapV2Success(inPort, dstIp, clientPort, request, username, user, peerChallenge, authChallenge, ntResponse, dedupKey);
@@ -1143,8 +1151,10 @@ export class RadiusServerAgent {
       attr('vendor-specific', encryptMppeKey(sendKey, this.secretFor(dstIp), request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 16 }),
       attr('vendor-specific', encryptMppeKey(recvKey, this.secretFor(dstIp), request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 17 }),
     ];
-    if (user.replyAttributes) attrs.push(...user.replyAttributes);
-    this.emitRequestDebug(request, dstIp, username, user, true, [], attrs);
+    const post = this.postAuth(true, user.replyAttributes ?? []);
+    if (post !== null) attrs.push(...post.reply);
+    else if (user.replyAttributes) attrs.push(...user.replyAttributes);
+    this.emitRequestDebug(request, dstIp, username, user, true, post?.lines ?? [], attrs);
     this.publishDecision(request, dstIp, true);
 
     let response: RadiusPacket = {
@@ -1217,7 +1227,9 @@ export class RadiusServerAgent {
     const attrs: RadiusAttribute[] = [attr('eap-message', eapPacketToWireHex(eapResult))];
     this.publishDecision(request, dstIp, accepted, denial?.note);
     if (denial !== null) attrs.push(...denial.reply);
-    if (accepted && user?.replyAttributes) attrs.push(...user.replyAttributes);
+    const post = this.postAuth(accepted, user?.replyAttributes ?? []);
+    if (post !== null) attrs.push(...post.reply);
+    else if (accepted && user?.replyAttributes) attrs.push(...user.replyAttributes);
     let response: RadiusPacket = {
       type: 'radius', code: accepted ? 'access-accept' : 'access-reject', identifier: request.identifier,
       authenticator: '00'.repeat(16), attributes: attrs,
@@ -1235,7 +1247,7 @@ export class RadiusServerAgent {
     });
     const finalTrace = this.eapTrace;
     this.eapTrace = null;
-    this.emitRequestDebug(request, dstIp, user?.username ?? String(getAttr(request, 'user-name')?.value ?? ''), user, accepted, [], response.attributes, finalTrace ?? undefined);
+    this.emitRequestDebug(request, dstIp, user?.username ?? String(getAttr(request, 'user-name')?.value ?? ''), user, accepted, post?.lines ?? [], response.attributes, finalTrace ?? undefined);
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap',
       `${this.host.name}: ${dstIp} ${response.code} (EAP-${eapResult.code}) for ${user?.username ?? '(unknown)'}`);
