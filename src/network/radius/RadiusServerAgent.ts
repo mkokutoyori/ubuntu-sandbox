@@ -387,9 +387,9 @@ export class RadiusServerAgent {
 
   setSessionHook(hook: ((info: { port: number; username: string; active: number; maximum: number }) => number | null) | null): void { this.sessionHook = hook; }
 
-  private authenticateHook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }) => AuthenticateOutcome | null) | null = null;
+  private authenticateHook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[]; messages?: readonly string[] }) => AuthenticateOutcome | null) | null = null;
 
-  setAuthenticateHook(hook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }) => AuthenticateOutcome | null) | null): void { this.authenticateHook = hook; }
+  setAuthenticateHook(hook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[]; messages?: readonly string[] }) => AuthenticateOutcome | null) | null): void { this.authenticateHook = hook; }
 
   private readonly statistics = new Map<string, RadiusStats>();
 
@@ -1261,6 +1261,12 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
+    const authenticated = this.authenticateHook?.({ port: this.servedPort ?? this.config.port, accepted, user, request: request.attributes, ...(this.eapTrace === null ? {} : { messages: this.eapTrace.lines }) }) ?? null;
+    if (authenticated !== null) {
+      accepted = authenticated.accepted;
+      eapResult = { type: 'eap', code: accepted ? 'success' : 'failure', identifier: eapResult.identifier };
+      if (accepted && user !== undefined && authenticated.reply.length > 0) user = { ...user, replyAttributes: [...(user.replyAttributes ?? []), ...authenticated.reply] };
+    }
     const denial = accepted && user ? this.simultaneousUseDenial(user, user.username) : null;
     if (denial !== null) {
       accepted = false;
@@ -1290,7 +1296,7 @@ export class RadiusServerAgent {
     });
     const finalTrace = this.eapTrace;
     this.eapTrace = null;
-    this.emitRequestDebug(request, dstIp, user?.username ?? String(getAttr(request, 'user-name')?.value ?? ''), user, accepted, post?.lines ?? [], response.attributes, finalTrace ?? undefined);
+    this.emitRequestDebug(request, dstIp, user?.username ?? String(getAttr(request, 'user-name')?.value ?? ''), user, accepted, post?.lines ?? [], response.attributes, finalTrace ?? undefined, authenticated?.trace);
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.authSource(), response);
     Logger.info(this.host.id, 'radius:eap',
       `${this.host.name}: ${dstIp} ${response.code} (EAP-${eapResult.code}) for ${user?.username ?? '(unknown)'}`);

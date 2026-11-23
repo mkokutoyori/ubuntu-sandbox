@@ -391,7 +391,7 @@ export class RadiusdService {
     return outcome.result === 'ok' ? counted : null;
   }
 
-  private runAuthenticate(info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[] }): AuthenticateOutcome | null {
+  private runAuthenticate(info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[]; messages?: readonly string[] }): AuthenticateOutcome | null {
     const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
     const raw = this.lastResolution?.authTypeName ?? null;
     if (pipeline === undefined || raw === null) return null;
@@ -406,6 +406,7 @@ export class RadiusdService {
         if ((name === 'pap' && builtin === 'pap') || (name === 'chap' && builtin === 'chap') || (name === 'mschap' && builtin === 'mschap')) {
           return { result: info.accepted ? 'ok' : 'reject', messages: credentialMessages(builtin === 'pap' ? 'PAP' : builtin === 'chap' ? 'CHAP' : 'MS-CHAP', info.accepted, userName, info.user?.knownGoodName) };
         }
+        if (name === 'eap' && builtin === 'eap') return { result: info.accepted ? 'ok' : 'reject', messages: [...(info.messages ?? [])] };
         if (name === 'ok') return { result: 'ok', messages: [] };
         if (name === 'reject') return { result: 'reject', messages: [] };
         if (this.isRealmInstance(name)) return this.runRealmModule(name, context);
