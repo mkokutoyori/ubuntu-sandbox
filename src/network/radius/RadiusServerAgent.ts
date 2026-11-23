@@ -130,6 +130,7 @@ interface PendingProxyContext {
   realm: string;
   listenPort: number;
   request: RadiusAttribute[];
+  proxyState: string;
 }
 
 /** Extra context a `setUserResolver` callback may need beyond the username itself. */
@@ -1074,6 +1075,10 @@ export class RadiusServerAgent {
    * Access-Request (MS-CHAP-Challenge + MS-CHAP2-Response) — a single
    * accept/reject decision, no challenge round-trip of our own.
    */
+  private proxyStatesOf(request: RadiusPacket): RadiusAttribute[] {
+    return request.attributes.filter((candidate) => candidate.type === 'proxy-state');
+  }
+
   private postAuth(accepted: boolean, userReply: readonly RadiusAttribute[]): { reply: RadiusAttribute[]; lines: string[] } | null {
     return this.postAuthHook?.({ port: this.servedPort ?? this.config.port, accepted, userReply }) ?? null;
   }
@@ -1159,7 +1164,7 @@ export class RadiusServerAgent {
 
     let response: RadiusPacket = {
       type: 'radius', code: 'access-accept', identifier: request.identifier,
-      authenticator: '00'.repeat(16), attributes: attrs,
+      authenticator: '00'.repeat(16), attributes: [...attrs, ...this.proxyStatesOf(request)],
     };
     response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
@@ -1189,7 +1194,7 @@ export class RadiusServerAgent {
     let response: RadiusPacket = {
       type: 'radius', code: 'access-challenge', identifier: request.identifier,
       authenticator: '00'.repeat(16),
-      attributes: [attr('eap-message', eapPacketToWireHex(eapRequest)), attr('state', state)],
+      attributes: [attr('eap-message', eapPacketToWireHex(eapRequest)), attr('state', state), ...this.proxyStatesOf(request)],
     };
     response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
@@ -1232,7 +1237,7 @@ export class RadiusServerAgent {
     else if (accepted && user?.replyAttributes) attrs.push(...user.replyAttributes);
     let response: RadiusPacket = {
       type: 'radius', code: accepted ? 'access-accept' : 'access-reject', identifier: request.identifier,
-      authenticator: '00'.repeat(16), attributes: attrs,
+      authenticator: '00'.repeat(16), attributes: [...attrs, ...this.proxyStatesOf(request)],
     };
     response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
@@ -1277,7 +1282,7 @@ export class RadiusServerAgent {
     let response: RadiusPacket = {
       type: 'radius', code: 'access-challenge', identifier: request.identifier,
       authenticator: '00'.repeat(16),
-      attributes: [attr('state', state), attr('reply-message', user.challenge!.prompt)],
+      attributes: [attr('state', state), attr('reply-message', user.challenge!.prompt), ...this.proxyStatesOf(request)],
     };
     response = withMessageAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
@@ -1321,7 +1326,7 @@ export class RadiusServerAgent {
       code: accepted ? 'access-accept' : 'access-reject',
       identifier: request.identifier,
       authenticator: '00'.repeat(16), // placeholder — replaced below once Message-Authenticator is finalized
-      attributes: replyAttrs,
+      attributes: [...replyAttrs, ...this.proxyStatesOf(request)],
     };
     // RFC 2869 §5.14: Message-Authenticator must be computed and folded in
     // before the Response Authenticator itself is computed over the packet.
@@ -1364,7 +1369,7 @@ export class RadiusServerAgent {
     if (!srcIp) return;
     let response: RadiusPacket = {
       type: 'radius', code: 'accounting-response', identifier: request.identifier,
-      authenticator: '00'.repeat(16), attributes: [],
+      authenticator: '00'.repeat(16), attributes: this.proxyStatesOf(request),
     };
     response = withResponseAuthenticator(response, request.authenticator, this.secretFor(dstIp));
     this.recentAcctReplies.set(dedupKey, { response, sentAt: simulationNowMs() });
@@ -1405,6 +1410,7 @@ export class RadiusServerAgent {
     const attrs: RadiusAttribute[] = kind === 'acct'
       ? [attr('user-name', username), ...request.attributes.filter((candidate) => candidate.type !== 'user-name' && candidate.type !== 'message-authenticator')]
       : [attr('user-name', username)];
+    const ownProxyState = attr('proxy-state', this.requestNumber.toString(16).padStart(8, '0'));
     const chapAttr = kind === 'acct' ? undefined : getAttr(request, 'chap-password');
     if (chapAttr) {
       // CHAP-Password doesn't depend on the RADIUS shared secret — safe to forward verbatim across hops.
@@ -1419,7 +1425,8 @@ export class RadiusServerAgent {
         attrs.push(attr('user-password', encryptUserPassword(decrypted, route.homeSecret, outAuthenticator)));
       }
     }
-    if (kind === 'auth') attrs.push(attr('nas-ip-address', homeSrcIp.toString()));
+    if (kind === 'auth') attrs.push(attr('nas-ip-address', homeSrcIp.toString()), ...this.proxyStatesOf(request));
+    attrs.push(ownProxyState);
     const listenPort = this.servedPort ?? (kind === 'acct' ? this.config.acctPort : this.config.port);
     const staged = this.proxyHooks === null ? attrs : this.proxyHooks.pre({ kind, port: listenPort, realm, request: request.attributes, outbound: attrs });
     if (staged === null) {
@@ -1452,7 +1459,7 @@ export class RadiusServerAgent {
       originalIdentifier: request.identifier, originalAuthenticator: request.authenticator,
       nasSecret: this.secretFor(nasIp),
       homeServerIp: route.homeServerIp, homePort: route.homePort, homeSecret: route.homeSecret,
-      outAuthenticator, dedupKey, timer, kind, realm, listenPort, request: [...request.attributes],
+      outAuthenticator, dedupKey, timer, kind, realm, listenPort, request: [...request.attributes], proxyState: String(ownProxyState.value),
     });
     if (route.radSec === true) {
       this.getBus().publish({ topic: 'radius.proxy.forwarded', payload: { deviceId: this.host.id, hostname: this.host.getHostname(), username, realm, homeServerIp: route.homeServerIp } });
@@ -1566,7 +1573,7 @@ export class RadiusServerAgent {
     if (!nasSrcIp) return;
 
     let forwardedAttrs = payload.attributes.filter(
-      (a) => a.type !== 'message-authenticator' && a.type !== 'state',
+      (a) => a.type !== 'message-authenticator' && a.type !== 'state' && !(a.type === 'proxy-state' && String(a.value) === ctx.proxyState),
     );
     let replyCode = payload.code;
     if (this.proxyHooks !== null) {
