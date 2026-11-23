@@ -2,7 +2,7 @@
  * Probe: check_crl and allow_expired_crl of a tls section were refused as unknown keys, so a revoked client certificate could not be
  * refused. Source of truth: FreeRADIUS v3.2.x src/main/tls.c (check_crl = yes sets X509_V_FLAG_CRL_CHECK on the store: the CRL of the
  * certificate's issuer must be there, loaded from ca_file / ca_path, and a certificate it lists is refused; a missing CRL fails
- * verification as "unable to get certificate CRL"; allow_expired_crl keeps an expired CRL usable; check_all_crl, which extends the check
+ * verification as "unable to get certificate CRL"; allow_expired_crl keeps an expired CRL usable; check_all_crl (now evaluated, see the depth probe) extends the check
  * to the whole chain, is not implemented and stays refused). The same options now serve the RadSec listener, the RadSec home server and
  * the eap module's tls-config through one verifier builder.
  *
@@ -142,8 +142,8 @@ describe('check_crl', () => {
     expect(exchange(revokedAllowed).ok).toBe(false);
   });
 
-  it('refuses a value that is not a boolean, and check_all_crl, naming them', async () => {
+  it('refuses a value that is not a boolean, and ca_path_reload_interval, naming them', async () => {
     expect((await crlLab('\t\t\tcheck_crl = maybe\n', false, 'fresh')).started).toContain('Invalid value "maybe" for variable check_crl');
-    expect((await crlLab('\t\t\tcheck_all_crl = yes\n', false, 'fresh')).started).toContain('The tls setting "check_all_crl" is not implemented in this simulator');
+    expect((await crlLab('\t\t\tca_path_reload_interval = yes\n', false, 'fresh')).started).toContain('The tls setting "ca_path_reload_interval" is not implemented in this simulator');
   });
 });

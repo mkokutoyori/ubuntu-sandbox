@@ -677,7 +677,8 @@ export class RadiusdService {
   private ocspRejection(certificate: X509Certificate | null, tls: RadSecTls): string | null {
     const ocsp = tls.ocsp;
     if (ocsp === undefined || certificate === null) return null;
-    const anchors = pemToCertChain(tls.caFile === null ? '' : this.files.read(tls.caFile) ?? '');
+    const material = this.caMaterial(tls);
+    const anchors = pemToCertChain(typeof material === 'string' ? material : '');
     const client = new OcspClient({ tcpStack: () => this.host.getTcpStack(), now: () => this.wallClock.nowMs() }, {
       ...DEFAULT_OCSP_POLICY, responderUrl: ocsp.url, overrideResponder: ocsp.overrideCertUrl, trusted: anchors, useNonce: ocsp.useNonce,
       cacheMs: 0, timeoutMs: ocsp.timeoutSeconds === 0 ? null : ocsp.timeoutSeconds * 1000,
@@ -696,6 +697,20 @@ export class RadiusdService {
     return '(TLS) ocsp: Certificate has been expired/revoked';
   }
 
+  private caMaterial(tls: { caFile: string | null; caPath?: string }): string | null | { error: string } {
+    let text: string | null = null;
+    if (tls.caFile !== null) {
+      text = this.files.read(tls.caFile);
+      if (text === null) return { error: `Failed reading ca_file "${tls.caFile}": No such file or directory` };
+    }
+    if (tls.caPath !== undefined) {
+      const names = this.files.list?.(tls.caPath);
+      if (names === null || names === undefined) return { error: `Failed reading ca_path "${tls.caPath}": No such file or directory` };
+      text = (text ?? '') + [...names].sort().map((name) => this.files.read(`${tls.caPath}/${name}`) ?? '').join('\n');
+    }
+    return text;
+  }
+
   private radSecLimitsFor(clientIp: string, listener: RadSecTls): RadSecTls['limits'] {
     return (this.radSecClientTls(clientIp) ?? listener).limits;
   }
@@ -709,15 +724,12 @@ export class RadiusdService {
     if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
     const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
     if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
-    let caText: string | null = null;
-    if (tls.caFile !== null) {
-      caText = this.files.read(tls.caFile);
-      if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
-    }
+    const caText = this.caMaterial(tls);
+    if (typeof caText === 'object' && caText !== null) return caText.error;
     return {
       serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
       requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
-      verifier: new CertificateVerifier(verifierOptions(caText, tls.limits, () => this.wallClock.nowMs())),
+      verifier: new CertificateVerifier(verifierOptions(caText as string | null, tls.limits, () => this.wallClock.nowMs())),
       protocols: tlsProtocolsOf(tls.limits), ...cipherOptions(tls.limits),
     };
   }

@@ -144,8 +144,8 @@ describe('RadSec (RADIUS over TLS)', () => {
   });
 
   it('refuses a tls key it cannot honour, naming it', async () => {
-    const made = await lab({ block: TLS_BLOCK('\t\t\tcheck_all_crl = yes\n') });
-    expect(made.started).toContain('The tls setting "check_all_crl" is not implemented in this simulator');
+    const made = await lab({ block: TLS_BLOCK('\t\t\tca_path_reload_interval = yes\n') });
+    expect(made.started).toContain('The tls setting "ca_path_reload_interval" is not implemented in this simulator');
   });
 
   it('refuses a tls section without proto = tcp, and a missing certificate file', async () => {

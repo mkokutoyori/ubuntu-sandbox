@@ -13,6 +13,8 @@ export interface RadSecTlsLimits {
   readonly checkCertCn: string | null;
   readonly checkCrl: boolean;
   readonly allowExpiredCrl: boolean;
+  readonly checkAllCrl: boolean;
+  readonly verifyDepth: number;
   readonly cipherList: string | null;
   readonly cipherSuites: string | null;
   readonly invalidBoolean?: { readonly name: string; readonly value: string };
@@ -31,26 +33,28 @@ export interface RadSecTls {
   readonly privateKeyFile: string;
   readonly privateKeyPassword: string | null;
   readonly caFile: string | null;
+  readonly caPath?: string;
   readonly requireClientCert: boolean;
   readonly limits: RadSecTlsLimits;
   readonly ocsp?: RadSecOcsp;
 }
 
-export const NO_TLS_LIMITS: RadSecTlsLimits = { minVersion: null, maxVersion: null, checkCertIssuer: null, checkCertCn: null, checkCrl: false, allowExpiredCrl: false, cipherList: null, cipherSuites: null };
+export const NO_TLS_LIMITS: RadSecTlsLimits = { minVersion: null, maxVersion: null, checkCertIssuer: null, checkCertCn: null, checkCrl: false, allowExpiredCrl: false, checkAllCrl: false, verifyDepth: 0, cipherList: null, cipherSuites: null };
 
-export const TLS_LIMIT_KEYS: readonly string[] = ['tls_min_version', 'tls_max_version', 'check_cert_issuer', 'check_cert_cn', 'check_crl', 'allow_expired_crl', 'cipher_list', 'cipher_suites'];
+export const TLS_LIMIT_KEYS: readonly string[] = ['tls_min_version', 'tls_max_version', 'check_cert_issuer', 'check_cert_cn', 'check_crl', 'allow_expired_crl', 'check_all_crl', 'verify_depth', 'cipher_list', 'cipher_suites'];
 
 const VERSIONS: readonly TlsProtocolVersion[] = ['1.0', '1.1', '1.2', '1.3'];
 
 const BOOLEAN_WORD = /^(yes|no|true|false|on|off)$/i;
 
 export function readTlsLimits(valueOf: (name: string) => string | undefined): RadSecTlsLimits {
-  const bad = ['check_crl', 'allow_expired_crl'].find((name) => valueOf(name) !== undefined && !BOOLEAN_WORD.test(valueOf(name)!));
+  const bad = ['check_crl', 'allow_expired_crl', 'check_all_crl'].find((name) => valueOf(name) !== undefined && !BOOLEAN_WORD.test(valueOf(name)!));
   return {
     ...(bad === undefined ? {} : { invalidBoolean: { name: bad, value: valueOf(bad)! } }),
     minVersion: valueOf('tls_min_version') ?? null, maxVersion: valueOf('tls_max_version') ?? null,
     checkCertIssuer: valueOf('check_cert_issuer') ?? null, checkCertCn: valueOf('check_cert_cn') ?? null,
     checkCrl: /^(yes|true|on)$/i.test(valueOf('check_crl') ?? 'no'), allowExpiredCrl: /^(yes|true|on)$/i.test(valueOf('allow_expired_crl') ?? 'no'),
+    checkAllCrl: /^(yes|true|on)$/i.test(valueOf('check_all_crl') ?? 'no'), verifyDepth: /^\d+$/.test(valueOf('verify_depth') ?? '0') ? Number(valueOf('verify_depth') ?? '0') : -1,
     cipherList: valueOf('cipher_list') ?? null, cipherSuites: valueOf('cipher_suites') ?? null,
   };
 }
@@ -66,6 +70,7 @@ export function tlsLimitsError(limits: RadSecTlsLimits): string | null {
   if (limits.checkCertCn !== null && limits.checkCertCn.includes('%')) {
     return 'The check_cert_cn value "' + limits.checkCertCn + '" is an expansion: a RadSec handshake has no request to expand it against in this simulator';
   }
+  if (limits.verifyDepth < 0) return 'Invalid value for variable verify_depth';
   if (limits.cipherList !== null && limits.cipherList !== '' && resolveCipherList(limits.cipherList).ok === false) return 'Failed setting cipher_list';
   if (limits.cipherSuites !== null && limits.cipherSuites !== '' && parseTls13Ciphersuites(limits.cipherSuites).length === 0) return 'Failed setting cipher_suites';
   const { low, high } = versionBounds(limits);
@@ -96,11 +101,12 @@ export function certificateRejection(certificate: X509Certificate | null, limits
   return null;
 }
 
-export function verifierOptions(caText: string | null, limits: Pick<RadSecTlsLimits, 'checkCrl' | 'allowExpiredCrl'>, clock: () => number): CertificateVerifierOptions {
+export function verifierOptions(caText: string | null, limits: Pick<RadSecTlsLimits, 'checkCrl' | 'allowExpiredCrl'> & Partial<Pick<RadSecTlsLimits, 'checkAllCrl' | 'verifyDepth'>>, clock: () => number): CertificateVerifierOptions {
   const text = caText ?? '';
   return {
     trustAnchors: pemToCertChain(text), clock,
-    ...(limits.checkCrl ? { crls: pemToCrls(text), revocationCheck: 'crl-strict' as const, revocationScope: 'leaf' as const, allowStaleCrl: limits.allowExpiredCrl } : {}),
+    ...(limits.verifyDepth !== undefined && limits.verifyDepth > 0 ? { maxDepth: limits.verifyDepth + 1 } : {}),
+    ...(limits.checkCrl ? { crls: pemToCrls(text), revocationCheck: 'crl-strict' as const, revocationScope: limits.checkAllCrl === true ? 'chain' as const : 'leaf' as const, allowStaleCrl: limits.allowExpiredCrl } : {}),
   };
 }
 

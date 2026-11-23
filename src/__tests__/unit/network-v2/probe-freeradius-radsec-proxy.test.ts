@@ -132,6 +132,6 @@ describe('proxying a realm over RadSec', () => {
   it('refuses a secret other than radsec, a missing file and an unsupported tls key', async () => {
     expect((await lab(PROXY_CONF(`\tproto = tcp\n\tsecret = other\n${HOME_TLS()}`))).started).toContain('must be "radsec"');
     expect((await lab(PROXY_CONF(`\tproto = tcp\n${HOME_TLS(`${DIR}/certs/absent.pem`)}`))).started).toContain('Failed reading ca_file');
-    expect((await lab(PROXY_CONF(`\tproto = tcp\n${HOME_TLS().replace('\t}\n', '\t\tcheck_all_crl = yes\n\t}\n')}`))).started).toContain('The tls setting "check_all_crl" is not implemented');
+    expect((await lab(PROXY_CONF(`\tproto = tcp\n${HOME_TLS().replace('\t}\n', '\t\tca_path_reload_interval = yes\n\t}\n')}`))).started).toContain('The tls setting "ca_path_reload_interval" is not implemented');
   });
 });
