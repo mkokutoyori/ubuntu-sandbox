@@ -369,6 +369,22 @@ export class RadiusdService {
     this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique') ? acctUniqueFor(record) : null), ~settings.permissions & 0o777);
   }
 
+  private runStatus(info: { port: number; accounting: boolean; request: readonly RadiusAttribute[] }): { verdict: 'ok' | 'reject' | 'drop'; reply: RadiusAttribute[] } | null {
+    const server = this.portServers.get(info.port) ?? 'default';
+    const pipeline = this.pipelines.get(server);
+    const section = info.accounting ? pipeline?.accounting : pipeline?.authorize;
+    const wanted = info.accounting ? 'Acct-Type Status-Server' : 'Autz-Type Status-Server';
+    const group = section?.find((statement) => statement.kind === 'typed' && statement.name === wanted);
+    if (group === undefined || group.kind !== 'typed') return null;
+    const context = newContext(String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? ''), info.request, null, this.wallClock.nowMs());
+    const lines: string[] = [];
+    const host: UnlangHost = { runModule: (name): ModuleOutcome => (name === 'ok' ? { result: 'ok', messages: [] } : name === 'reject' ? { result: 'reject', messages: [] } : { result: 'noop', messages: [] }) };
+    const outcome = run(group.body, context, host, lines, 3);
+    this.radiusServer.emitDebugLines([`# Executing group from file ${group.file} line ${group.line}`, `  ${wanted} {`, ...lines, `  } # ${wanted} = ${outcome.result}`]);
+    const verdict = outcome.result === 'ok' || outcome.result === 'updated' ? 'ok' : outcome.result === 'fail' || outcome.result === 'handled' ? 'drop' : 'reject';
+    return { verdict, reply: context.reply };
+  }
+
   private runSession(info: { port: number; username: string; active: number; maximum: number }): number | null {
     const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
     const program = pipeline?.session;
@@ -892,6 +908,7 @@ export class RadiusdService {
     this.proxyConfig = loaded.proxy;
     this.radiusServer.setAuthenticateHook((info) => this.runAuthenticate(info));
     this.radiusServer.setSessionHook((info) => this.runSession(info));
+    this.radiusServer.setStatusHook((info) => this.runStatus(info));
     this.radiusServer.setRadSecClient((address, port, request) => this.radSecRequest(address, port, request));
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
     this.radiusServer.setProxyHooks({

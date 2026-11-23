@@ -383,6 +383,10 @@ export class RadiusServerAgent {
 
   setRadSecClient(client: ((address: string, port: number, request: RadiusPacket) => RadiusPacket | null) | null): void { this.radSecClient = client; }
 
+  private statusHook: ((info: { port: number; accounting: boolean; request: readonly RadiusAttribute[] }) => { verdict: 'ok' | 'reject' | 'drop'; reply: RadiusAttribute[] } | null) | null = null;
+
+  setStatusHook(hook: ((info: { port: number; accounting: boolean; request: readonly RadiusAttribute[] }) => { verdict: 'ok' | 'reject' | 'drop'; reply: RadiusAttribute[] } | null) | null): void { this.statusHook = hook; }
+
   private sessionHook: ((info: { port: number; username: string; active: number; maximum: number }) => number | null) | null = null;
 
   setSessionHook(hook: ((info: { port: number; username: string; active: number; maximum: number }) => number | null) | null): void { this.sessionHook = hook; }
@@ -943,8 +947,11 @@ export class RadiusServerAgent {
       this.requestNumber++;
       this.traceReceived(request, srcIp, udp.sourcePort, udp.destinationPort, inPort, false);
     }
+    const decided = cached ? null : this.statusHook?.({ port: udp.destinationPort, accounting: replyCode === 'accounting-response', request: request.attributes }) ?? null;
+    if (decided?.verdict === 'drop' || (decided?.verdict === 'reject' && replyCode === 'accounting-response')) return;
     let response: RadiusPacket = cached?.response ?? {
-      type: 'radius', code: replyCode, identifier: request.identifier, authenticator: '00'.repeat(16), attributes: [],
+      type: 'radius', code: decided?.verdict === 'reject' ? 'access-reject' : replyCode, identifier: request.identifier, authenticator: '00'.repeat(16),
+      attributes: [...(decided?.reply ?? []), ...this.proxyStatesOf(request)],
     };
     if (!cached) {
       response = withMessageAuthenticator(response, request.authenticator, secret);
