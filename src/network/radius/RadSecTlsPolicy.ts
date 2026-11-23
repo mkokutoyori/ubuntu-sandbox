@@ -1,5 +1,7 @@
 import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { pemToCertChain, pemToCrls } from '@/network/pki/pem';
+import type { CertificateVerifierOptions } from '@/network/pki/CertificateVerifier';
 import { slashDistinguishedName, splitDistinguishedName } from '@/network/pki/der/DistinguishedName';
 
 export interface RadSecTlsLimits {
@@ -7,6 +9,9 @@ export interface RadSecTlsLimits {
   readonly maxVersion: string | null;
   readonly checkCertIssuer: string | null;
   readonly checkCertCn: string | null;
+  readonly checkCrl: boolean;
+  readonly allowExpiredCrl: boolean;
+  readonly invalidBoolean?: { readonly name: string; readonly value: string };
 }
 
 export interface RadSecTls {
@@ -18,20 +23,26 @@ export interface RadSecTls {
   readonly limits: RadSecTlsLimits;
 }
 
-export const NO_TLS_LIMITS: RadSecTlsLimits = { minVersion: null, maxVersion: null, checkCertIssuer: null, checkCertCn: null };
+export const NO_TLS_LIMITS: RadSecTlsLimits = { minVersion: null, maxVersion: null, checkCertIssuer: null, checkCertCn: null, checkCrl: false, allowExpiredCrl: false };
 
-export const TLS_LIMIT_KEYS: readonly string[] = ['tls_min_version', 'tls_max_version', 'check_cert_issuer', 'check_cert_cn'];
+export const TLS_LIMIT_KEYS: readonly string[] = ['tls_min_version', 'tls_max_version', 'check_cert_issuer', 'check_cert_cn', 'check_crl', 'allow_expired_crl'];
 
 const VERSIONS: readonly TlsProtocolVersion[] = ['1.0', '1.1', '1.2', '1.3'];
 
+const BOOLEAN_WORD = /^(yes|no|true|false|on|off)$/i;
+
 export function readTlsLimits(valueOf: (name: string) => string | undefined): RadSecTlsLimits {
+  const bad = ['check_crl', 'allow_expired_crl'].find((name) => valueOf(name) !== undefined && !BOOLEAN_WORD.test(valueOf(name)!));
   return {
+    ...(bad === undefined ? {} : { invalidBoolean: { name: bad, value: valueOf(bad)! } }),
     minVersion: valueOf('tls_min_version') ?? null, maxVersion: valueOf('tls_max_version') ?? null,
     checkCertIssuer: valueOf('check_cert_issuer') ?? null, checkCertCn: valueOf('check_cert_cn') ?? null,
+    checkCrl: /^(yes|true|on)$/i.test(valueOf('check_crl') ?? 'no'), allowExpiredCrl: /^(yes|true|on)$/i.test(valueOf('allow_expired_crl') ?? 'no'),
   };
 }
 
 export function tlsLimitsError(limits: RadSecTlsLimits): string | null {
+  if (limits.invalidBoolean !== undefined) return `Invalid value "${limits.invalidBoolean.value}" for variable ${limits.invalidBoolean.name}`;
   if (limits.maxVersion !== null && limits.maxVersion !== '' && !VERSIONS.includes(limits.maxVersion as TlsProtocolVersion)) {
     return `Invalid value for tls_max_version '${limits.maxVersion}'`;
   }
@@ -67,4 +78,12 @@ export function certificateRejection(certificate: X509Certificate | null, limits
     if (commonName !== limits.checkCertCn) return `Certificate CN (${commonName}) does not match specified value (${limits.checkCertCn})!`;
   }
   return null;
+}
+
+export function verifierOptions(caText: string | null, limits: Pick<RadSecTlsLimits, 'checkCrl' | 'allowExpiredCrl'>, clock: () => number): CertificateVerifierOptions {
+  const text = caText ?? '';
+  return {
+    trustAnchors: pemToCertChain(text), clock,
+    ...(limits.checkCrl ? { crls: pemToCrls(text), revocationCheck: 'crl-strict' as const, revocationScope: 'leaf' as const, allowStaleCrl: limits.allowExpiredCrl } : {}),
+  };
 }

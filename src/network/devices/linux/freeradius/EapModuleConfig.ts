@@ -8,6 +8,8 @@ export interface EapTlsFiles {
   readonly caFile: string | null;
   readonly privateKeyPassword: string | null;
   readonly fragmentSize: number | null;
+  readonly checkCrl: boolean;
+  readonly allowExpiredCrl: boolean;
 }
 
 export interface EapModuleConfig {
@@ -17,7 +19,7 @@ export interface EapModuleConfig {
 }
 
 const EAP_KEYS = new Set(['default_eap_type']);
-const TLS_CONFIG_KEYS = new Set(['private_key_file', 'certificate_file', 'ca_file', 'private_key_password', 'fragment_size']);
+const TLS_CONFIG_KEYS = new Set(['private_key_file', 'certificate_file', 'ca_file', 'private_key_password', 'fragment_size', 'check_crl', 'allow_expired_crl']);
 const TYPES: ReadonlySet<string> = new Set(['md5', 'tls', 'peap', 'ttls']);
 const isEapType = (text: string): text is EapDefaultType => TYPES.has(text);
 export const EAP_DEFAULT_FRAGMENT_SIZE = 1024;
@@ -49,6 +51,7 @@ export function readEapModule(modules: ConfSection | undefined): EapModuleConfig
       tlsConfigs.set(section.name2 ?? '', {
         privateKeyFile, certificateFile, caFile: pairOf(section, 'ca_file') ?? null,
         privateKeyPassword: pairOf(section, 'private_key_password') ?? null, fragmentSize: fragment === undefined ? null : Number(fragment),
+        checkCrl: /^(yes|true|on)$/i.test(pairOf(section, 'check_crl') ?? 'no'), allowExpiredCrl: /^(yes|true|on)$/i.test(pairOf(section, 'allow_expired_crl') ?? 'no'),
       });
     } else if (!TYPES.has(section.name1)) {
       return { error: `${at(section)}: The eap section "${section.name1}" is not implemented in this simulator` };

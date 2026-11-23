@@ -42,7 +42,7 @@ import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusForm
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
 import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTransport';
-import { certificateRejection, tlsProtocolsOf } from '@/network/radius/RadSecTlsPolicy';
+import { certificateRejection, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
 import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { pemToCertChain, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
@@ -652,7 +652,7 @@ export class RadiusdService {
     const caText = this.files.read(tls.caFile);
     if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
     return {
-      verifier: new CertificateVerifier({ trustAnchors: pemToCertChain(caText), clock: () => this.wallClock.nowMs() }),
+      verifier: new CertificateVerifier(verifierOptions(caText, tls.limits, () => this.wallClock.nowMs())),
       clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: tlsProtocolsOf(tls.limits),
     };
   }
@@ -685,16 +685,15 @@ export class RadiusdService {
     if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
     const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
     if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
-    let anchors: ReturnType<typeof pemToCertChain> = [];
+    let caText: string | null = null;
     if (tls.caFile !== null) {
-      const caText = this.files.read(tls.caFile);
+      caText = this.files.read(tls.caFile);
       if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
-      anchors = pemToCertChain(caText);
     }
     return {
       serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
       requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
-      verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => this.wallClock.nowMs() }),
+      verifier: new CertificateVerifier(verifierOptions(caText, tls.limits, () => this.wallClock.nowMs())),
       protocols: tlsProtocolsOf(tls.limits),
     };
   }
@@ -1046,16 +1045,15 @@ export class RadiusdService {
     if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
     const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
     if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
-    let anchors: ReturnType<typeof pemToCertChain> = [];
+    let caText: string | null = null;
     if (tls.caFile !== null) {
-      const caText = this.files.read(tls.caFile);
+      caText = this.files.read(tls.caFile);
       if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
-      anchors = pemToCertChain(caText);
     }
     const lookup = (username: string): RadiusUser | undefined => this.resolveUser(entries, username, []);
     return {
       serverCert: chain[0], serverPrivateKey: key,
-      verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => this.wallClock.nowMs() }),
+      verifier: new CertificateVerifier(verifierOptions(caText, tls, () => this.wallClock.nowMs())),
       requireClientCert: module.defaultType === 'tls', eapType: module.defaultType as 'tls' | 'peap' | 'ttls',
       mtu: tls.fragmentSize ?? EAP_DEFAULT_FRAGMENT_SIZE,
       ...(module.defaultType === 'peap' ? { innerAuth: module.peapInner === 'md5' ? new PeapMd5InnerAuthServer(lookup) : new PeapMsChapV2InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
