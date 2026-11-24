@@ -91,6 +91,8 @@ export class LinuxServer extends LinuxMachine {
         this.sendUdpDatagram(request),
       sendUdpDatagramTo: (destination: IPAddress | IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
         this.sendUdpDatagramTo(destination, destinationPort, sourcePort, payload, payloadBytes),
+      sendUdpDatagramFrom: (source: IPv6Address, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
+        this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes, { sourceIp: source }),
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
     };
     this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());

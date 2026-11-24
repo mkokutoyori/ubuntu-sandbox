@@ -659,6 +659,24 @@ export function radiusServerSubmodeSpecs(ctx: CiscoSecurityShellContext): Comman
       },
     },
     {
+      ...base, id: 'radius-server-address-ipv6',
+      path: ['address', 'ipv6',
+        place('address', 'IPV6_ADDR', 'IPv6 address of the RADIUS server')],
+      options: [
+        portOption('auth-port', 'UDP port for RADIUS authentication server'),
+        portOption('acct-port', 'UDP port for RADIUS accounting server'),
+      ],
+      description: 'IPv6 address of the RADIUS server',
+      run: (_session, args) => {
+        const entry = server();
+        if (!entry) return '';
+        entry.address = args.address;
+        if (args['auth-port'] !== undefined) entry.authPort = Number(args['auth-port']);
+        if (args['acct-port'] !== undefined) entry.acctPort = Number(args['acct-port']);
+        return '';
+      },
+    },
+    {
       ...base, id: 'radius-server-key',
       path: ['key', place('key', 'REST', 'The shared key itself', { literal: 'LINE' })],
       description: 'Radius key',

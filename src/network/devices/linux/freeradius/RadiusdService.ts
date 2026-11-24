@@ -384,6 +384,8 @@ export class RadiusdService {
       if (!(dgram.sourceIP instanceof IPAddress) && !(dgram.sourceIP instanceof IPv6Address)) return;
       if ((dgram.sourceIP instanceof IPv6Address) !== (spec.ipv6 === true)) return;
       const udp = dgram.udp as { payload?: { code?: string } };
+      const destination = (dgram as { destinationIP?: unknown }).destinationIP;
+      if (destination instanceof IPv6Address) this.radiusServer.noteLocalAddress(dgram.sourceIP, destination);
       if (spec.type === 'auth') this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
       else if (spec.type === 'acct') this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
       else if (spec.type === 'status') this.radiusServer.handleStatusUdp(dgram.inPort, dgram.sourceIP, dgram.udp, tables.get(spec.server) ?? this.radiusServer.clientTable);

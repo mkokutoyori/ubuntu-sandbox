@@ -64,7 +64,7 @@ import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
-import type { EthernetFrame, IPv4Packet, IPv6Packet, IPv6Address, UDPPacket } from '../core/types';
+import { IPv6Address, type EthernetFrame, type IPv4Packet, type IPv6Packet, type UDPPacket } from '../core/types';
 import type { IPAddress } from '../core/types';
 import { IP_PROTO_TCP } from '../core/types';
 import { dispatchControlPlaneIpv4 } from './router/controlPlaneIpv4';
@@ -229,6 +229,10 @@ export class CiscoRouter extends Router {
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
       sendIpv4Packet: (request: Ipv4SendRequest) => this.sendIpv4Packet(request),
       sendUdpDatagram: (request: UdpSendRequest) => this.sendUdpDatagram(request),
+      sendUdpDatagramTo: (destination: IPAddress | IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
+        destination instanceof IPv6Address
+          ? this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes)
+          : this.sendUdpDatagram({ destination, destinationPort, sourcePort, payload, payloadBytes: payloadBytes ?? 0 }),
       sendUdpDatagram6: (destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
         this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes),
       joinMulticastGroup: (iface: string, group: string) => { this.joinLocalMulticast(iface, group); },
@@ -481,7 +485,16 @@ export class CiscoRouter extends Router {
   getCoaClient(): CoaClient { return this.coaClient; }
 
   protected override handleLocalUdp6(ipv6: IPv6Packet, udp: UDPPacket): boolean {
-    return this.coaListener.handleUdp6(ipv6.sourceIP, udp);
+    if (this.coaListener.handleUdp6(ipv6.sourceIP, udp)) return true;
+    if (udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
+      this.radiusClient.handleUdp('', ipv6.sourceIP, udp);
+      return true;
+    }
+    if (udp.sourcePort === UDP_PORT_RADIUS_ACCT) {
+      this.radiusAccountingClient.handleUdp('', ipv6.sourceIP, udp);
+      return true;
+    }
+    return false;
   }
   getRadiusTcpClient(): RadiusTcpClient { return this.radiusTcpClient; }
   getRadiusTcpServer(): RadiusTcpServer { return this.radiusTcpServer; }

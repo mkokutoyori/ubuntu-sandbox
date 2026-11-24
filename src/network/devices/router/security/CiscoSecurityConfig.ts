@@ -865,7 +865,7 @@ export class CiscoSecurityConfig {
       }
       lines.push(`radius server ${r.name}`);
       if (r.address) {
-        lines.push(` address ipv4 ${r.address}`
+        lines.push(` address ${r.address.includes(':') ? 'ipv6' : 'ipv4'} ${r.address}`
           + ` auth-port ${radiusAuthPort(r, this.radiusDefaults)}`
           + ` acct-port ${radiusAcctPort(r, this.radiusDefaults)}`);
       }

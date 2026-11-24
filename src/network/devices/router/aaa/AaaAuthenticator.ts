@@ -511,6 +511,7 @@ export class AaaAuthenticator {
       for (const vrf of vrfs.values()) if (vrf.interfaces.has(egress)) return vrf.name;
       return null;
     }
+    if (address.includes(':')) return null;
     for (const vrf of vrfs.values()) {
       if (host.lookupVrfDestination?.(vrf.name, new IPAddress(address)) != null) return vrf.name;
     }

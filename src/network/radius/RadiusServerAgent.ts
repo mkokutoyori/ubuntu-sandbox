@@ -94,6 +94,7 @@ export interface RadiusServerHost {
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
   sendUdpDatagramTo?(destination: PeerAddress, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
+  sendUdpDatagramFrom?(source: IPv6Address, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
   /** Real RIB lookup (LPM) — needed to reach a proxy realm's home server on another subnet (mirrors `RadiusClientHost`). */
 }
@@ -653,6 +654,10 @@ export class RadiusServerAgent {
 
   private secretOverride: string | null = null;
   private streamSink: ((response: RadiusPacket) => void) | null = null;
+
+  private requestLocal: { peer: string; local: PeerAddress } | null = null;
+
+  noteLocalAddress(peer: PeerAddress, local: PeerAddress): void { this.requestLocal = { peer: peer.toString(), local }; }
 
   handleAcctUdp(inPort: string, srcIp: PeerAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
@@ -1836,6 +1841,8 @@ export class RadiusServerAgent {
     inPort: string, port: Port, srcIp: PeerAddress, dstIp: PeerAddress,
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
+    const local = dstIp instanceof IPv6Address && this.requestLocal?.peer === dstIp.toString() && this.requestLocal.local instanceof IPv6Address ? this.requestLocal.local : null;
+    if (local !== null) srcIp = local;
     this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
     this.count(response.code === 'accounting-response' ? 'acct' : 'auth', dstIp.toString(), (stats) => {
       stats.responses++;
@@ -1846,6 +1853,10 @@ export class RadiusServerAgent {
     });
     if (this.streamSink !== null) {
       this.streamSink(response);
+      return;
+    }
+    if (local !== null && dstIp instanceof IPv6Address && this.host.sendUdpDatagramFrom !== undefined) {
+      this.host.sendUdpDatagramFrom(local, dstIp, clientPort, sourcePort, response, 20 + 16 - 8);
       return;
     }
     if (dstIp instanceof IPv6Address || srcIp instanceof IPv6Address) {

@@ -2175,6 +2175,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * interface up/down, and protocol packets arriving from the wire.
    */
   egressInterfaceFor(address: string): string | null {
+    if (address.includes(':')) return this.ipv6Engine.resolvePath(new IPv6Address(address))?.iface ?? null;
     return this.lookupRoute(new IPAddress(address))?.iface ?? null;
   }
 
