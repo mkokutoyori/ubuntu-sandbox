@@ -4530,6 +4530,11 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  public sourceAddress6For(destination: IPv6Address): IPv6Address | null {
+    const route = this.resolveIPv6Route(destination);
+    return route === null ? null : selectIpv6SourceAddress(route.port, destination);
+  }
+
   public sendUdpDatagram6(
     destinationIP: IPv6Address,
     destinationPort: number,

@@ -3369,13 +3369,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected handleLocalUdp6(_ipv6: IPv6Packet, _udp: UDPPacket): boolean { return false; }
 
+  sourceAddress6For(destination: IPv6Address): IPv6Address | null {
+    const path = this.ipv6Engine.resolvePath(destination);
+    return path === null || path === undefined ? null : selectIpv6SourceAddress(path.port, destination);
+  }
+
   sendUdpDatagram6(
     destination: IPv6Address, destinationPort: number, sourcePort: number,
-    payload: unknown, payloadBytes = 0,
+    payload: unknown, payloadBytes = 0, sourceIp?: IPv6Address,
   ): boolean {
     const path = this.ipv6Engine.resolvePath(destination);
     if (!path) return false;
-    const source = selectIpv6SourceAddress(path.port, destination);
+    const source = sourceIp ?? selectIpv6SourceAddress(path.port, destination);
     if (!source) return false;
     const udp: UDPPacket = {
       type: 'udp', sourcePort, destinationPort,

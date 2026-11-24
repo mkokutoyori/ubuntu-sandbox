@@ -91,6 +91,7 @@ export class LinuxServer extends LinuxMachine {
         this.sendUdpDatagram(request),
       sendUdpDatagramTo: (destination: IPAddress | IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
         this.sendUdpDatagramTo(destination, destinationPort, sourcePort, payload, payloadBytes),
+      sourceAddress6For: (destination: IPv6Address) => this.sourceAddress6For(destination),
       sendUdpDatagramFrom: (source: IPv6Address, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
         this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes, { sourceIp: source }),
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),

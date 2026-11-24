@@ -233,6 +233,9 @@ export class CiscoRouter extends Router {
         destination instanceof IPv6Address
           ? this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes)
           : this.sendUdpDatagram({ destination, destinationPort, sourcePort, payload, payloadBytes: payloadBytes ?? 0 }),
+      sourceAddress6For: (destination: IPv6Address) => this.sourceAddress6For(destination),
+      sendUdpDatagramFrom: (source: IPv6Address, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
+        this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes, source),
       sendUdpDatagram6: (destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
         this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes),
       joinMulticastGroup: (iface: string, group: string) => { this.joinLocalMulticast(iface, group); },

@@ -10,7 +10,8 @@
  * selection prefers: the reply of the lab came from a random temporary address of the interface, which no NAS can match with its configured server.
  *
  * Accounting from the NAS over IPv6 (Acct-Start, interim, Acct-Stop) did not leave the NAS: the accounting client built an IPv4 address from the server and omits
- * NAS-IP-Address now that the datagram has no IPv4 source (NAS-IPv6-Address is not written: the host picks the source address on egress).
+ * NAS-IP-Address now that the datagram has no IPv4 source; both clients write NAS-IPv6-Address (RFC 3162, the address the host would pick on egress) and send from it, so the attribute
+ * and the datagram's source cannot disagree.
  *
  * Discriminated with git stash on src/network against the commit that added address ipv6: the accounting case is the only one that falls (the first four were
  * discriminated when that commit was made: 3 of them fell before it, the witness passed either way). The witness (the same lab authenticates over IPv4) passes either way.
@@ -101,5 +102,20 @@ describe('a Cisco NAS and a RADIUS server over IPv6', () => {
     accounting.stopSession(session);
     await clock.advanceBy(10);
     expect(accounting.acknowledgedCount('fd00::2')).toBe(3);
+  });
+
+  it('the Access-Request and the Acct-Start carry NAS-IPv6-Address, the address the datagram was sent from', async () => {
+    const { nas, aaa } = await lab(['address ipv6 fd00::2 auth-port 1812 acct-port 1813']);
+    const lines: string[] = [];
+    aaa.followRadiusDebug((line: string) => lines.push(line.trim()));
+    expect(await login(nas)).toBe(true);
+    const accounting = nas.getRadiusAccountingClient();
+    accounting.start();
+    accounting.addServer('fd00::2', 'shared', { port: 1813 });
+    accounting.startSession('alice', 'fd00::2');
+    await clock.advanceBy(10);
+    expect(lines.filter((line) => /NAS-IPv6-Address = fd00::1$/.test(line.replace(/^\(\d+\) /, ''))).length).toBeGreaterThanOrEqual(2);
+    expect(lines.some((line) => /Received Access-Request Id \d+ from fd00::1:\d+/.test(line))).toBe(true);
+    expect(lines.some((line) => /Received Accounting-Request Id \d+ from fd00::1:\d+/.test(line))).toBe(true);
   });
 });

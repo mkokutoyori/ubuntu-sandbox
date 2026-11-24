@@ -1,4 +1,4 @@
-import { peerOf, type PeerAddress } from './sourceAddress';
+import { peerOf, ipv6SourceFor, type PeerAddress, type Ipv6EgressHost } from './sourceAddress';
 import { clientSourceAddress } from './sourceAddress';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -23,7 +23,7 @@ import { NAS_PORT_TYPE_ETHERNET } from './eap';
 import { MICROSOFT_VENDOR_ID } from './dictionary';
 import { generateNtResponse, generateAuthenticatorResponse } from './mschapv2';
 import {
-  MACAddress, IPAddress,
+  MACAddress, IPAddress, type IPv6Address,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
@@ -33,7 +33,7 @@ import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 const SERVICE_TYPE_LOGIN = 1;
 
-export interface RadiusClientHost {
+export interface RadiusClientHost extends Ipv6EgressHost {
   readonly id: string;
   readonly name: string;
   getHostname(): string;
@@ -388,6 +388,11 @@ export class RadiusClientAgent {
 
   private sendToServer(server: RadiusServerConfig, srcIp: IPAddress | null, sourcePort: number, payload: RadiusPacket, payloadBytes: number): void {
     if (srcIp === null) {
+      const source6 = ipv6SourceFor(this.host, peerOf(server.ip));
+      if (source6 !== null && this.host.sendUdpDatagramFrom !== undefined) {
+        this.host.sendUdpDatagramFrom(source6, peerOf(server.ip) as IPv6Address, server.authPort, sourcePort, payload, payloadBytes);
+        return;
+      }
       this.host.sendUdpDatagramTo?.(peerOf(server.ip), server.authPort, sourcePort, payload, payloadBytes);
       return;
     }
@@ -830,6 +835,8 @@ export class RadiusClientAgent {
       attrs.push(attr('user-password', encryptUserPassword(pending.password, server.sharedSecret, pending.authenticator)));
     }
     if (srcIp !== null) attrs.push(attr('nas-ip-address', this.attributePolicy.nasIpAddress ?? srcIp.toString()));
+    const source6 = ipv6SourceFor(this.host, peerOf(server.ip));
+    if (source6 !== null) attrs.push(attr('nas-ipv6-address', source6.toString()));
     if (this.attributePolicy.serviceTypeInLoginRequest) attrs.push(attr('service-type', SERVICE_TYPE_LOGIN));
     if (pending.state) attrs.push(attr('state', pending.state));
     const identifier = this.attributePolicy.nasIdentifier?.(srcIp === null ? '' : srcIp.toString()) ?? this.config.nasIdentifier;
