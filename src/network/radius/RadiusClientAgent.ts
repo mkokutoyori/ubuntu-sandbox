@@ -405,12 +405,18 @@ export class RadiusClientAgent {
     return { srcIp, usable: srcIp !== null };
   }
 
+  private nasIpv6Attribute(server: RadiusServerConfig): RadiusAttribute[] {
+    const source6 = ipv6SourceFor(this.host, peerOf(server.ip));
+    return source6 === null ? [] : [attr('nas-ipv6-address', source6.toString())];
+  }
+
   private transmitEap(server: RadiusServerConfig, pending: PendingEapRound): void {
     const { srcIp, usable } = this.sourceFor(server);
     if (!usable) return;
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
       ...(srcIp === null ? [] : [attr('nas-ip-address', srcIp.toString())]),
+      ...this.nasIpv6Attribute(server),
       attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
       ...eapMessageAttributes(pending.eapMessageHex),
     ];
@@ -502,6 +508,7 @@ export class RadiusClientAgent {
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
       ...(srcIp === null ? [] : [attr('nas-ip-address', srcIp.toString())]),
+      ...this.nasIpv6Attribute(server),
       attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
       attr('vendor-specific', bytesToHex(pending.authChallenge), { id: MICROSOFT_VENDOR_ID, type: 11 }),
       attr('vendor-specific', bytesToHex(msChap2Response), { id: MICROSOFT_VENDOR_ID, type: 25 }),
@@ -835,8 +842,7 @@ export class RadiusClientAgent {
       attrs.push(attr('user-password', encryptUserPassword(pending.password, server.sharedSecret, pending.authenticator)));
     }
     if (srcIp !== null) attrs.push(attr('nas-ip-address', this.attributePolicy.nasIpAddress ?? srcIp.toString()));
-    const source6 = ipv6SourceFor(this.host, peerOf(server.ip));
-    if (source6 !== null) attrs.push(attr('nas-ipv6-address', source6.toString()));
+    attrs.push(...this.nasIpv6Attribute(server));
     if (this.attributePolicy.serviceTypeInLoginRequest) attrs.push(attr('service-type', SERVICE_TYPE_LOGIN));
     if (pending.state) attrs.push(attr('state', pending.state));
     const identifier = this.attributePolicy.nasIdentifier?.(srcIp === null ? '' : srcIp.toString()) ?? this.config.nasIdentifier;

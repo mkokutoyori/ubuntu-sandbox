@@ -25,6 +25,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { installVirtualClock } from '@/__tests__/support/ntpTime';
 import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { eapPacketToWireHex } from '@/network/radius/eap';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { CLIENTS_CONF_PATH, USERS_FILE_PATH } from '@/network/devices/linux/freeradius/RadiusdService';
 
@@ -117,5 +118,16 @@ describe('a Cisco NAS and a RADIUS server over IPv6', () => {
     expect(lines.filter((line) => /NAS-IPv6-Address = fd00::1$/.test(line.replace(/^\(\d+\) /, ''))).length).toBeGreaterThanOrEqual(2);
     expect(lines.some((line) => /Received Access-Request Id \d+ from fd00::1:\d+/.test(line))).toBe(true);
     expect(lines.some((line) => /Received Accounting-Request Id \d+ from fd00::1:\d+/.test(line))).toBe(true);
+  });
+
+  it('an EAP round carries NAS-IPv6-Address too', async () => {
+    const { nas, aaa } = await lab(['address ipv6 fd00::2 auth-port 1812 acct-port 1813']);
+    expect(await login(nas)).toBe(true);
+    const lines: string[] = [];
+    aaa.followRadiusDebug((line: string) => lines.push(line.replace(/^\(\d+\) /, '').trim()));
+    const identity = eapPacketToWireHex({ type: 'eap', code: 'response', identifier: 1, eapType: 'identity', payload: 'alice' });
+    await clock.advanceUntilSettled(nas.getRadiusClient().sendEapRound('alice', identity, null, {}, 'fd00::2'));
+    expect(lines.some((line) => /EAP-Message = 0x/.test(line))).toBe(true);
+    expect(lines.filter((line) => line === 'NAS-IPv6-Address = fd00::1').length).toBeGreaterThanOrEqual(1);
   });
 });
