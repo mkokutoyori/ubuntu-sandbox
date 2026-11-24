@@ -13,7 +13,7 @@ import {
   errorCauseAttr, readSessionIdentifiers,
 } from './coa';
 import {
-  IPAddress,
+  IPAddress, IPv6Address,
   type EthernetFrame, type UDPPacket,
   type IPv4Packet,
 } from '../core/types';
@@ -36,6 +36,7 @@ export interface CoaListenerHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendUdpDatagram6?(destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
 }
 
 const DEDUP_TTL_MS = 30_000;
@@ -62,7 +63,16 @@ export class CoaListener {
   setPort(port: number): void { this.port = port; }
   setSessionHandler(handler: CoaSessionHandler | null): void { this.sessionHandler = handler; }
 
-  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleUdp6(srcIp: IPv6Address, udp: UDPPacket): boolean {
+    if (!this.running || !this.enabled || udp.destinationPort !== this.port) return false;
+    const payload = udp.payload as RadiusPacket | undefined;
+    if (!payload || payload.type !== 'radius') return false;
+    if (payload.code !== 'disconnect-request' && payload.code !== 'coa-request') return false;
+    this.handleUdp('', srcIp, udp);
+    return true;
+  }
+
+  handleUdp(inPort: string, srcIp: IPAddress | IPv6Address, udp: UDPPacket): void {
     if (!this.running || !this.enabled) return;
     if (udp.destinationPort !== this.port) return;
     const payload = udp.payload as RadiusPacket | undefined;
@@ -121,7 +131,7 @@ export class CoaListener {
   }
 
   private reply(
-    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    inPort: string, dstIp: IPAddress | IPv6Address, clientPort: number, request: RadiusPacket,
     ok: boolean, errorCause: ErrorCause | null, dedupKey: string,
   ): void {
     const isDisconnect = request.code === 'disconnect-request';
@@ -138,7 +148,11 @@ export class CoaListener {
     this.send(inPort, dstIp, clientPort, response);
   }
 
-  private send(inPort: string, dstIp: IPAddress, clientPort: number, response: RadiusPacket): void {
+  private send(inPort: string, dstIp: IPAddress | IPv6Address, clientPort: number, response: RadiusPacket): void {
+    if (dstIp instanceof IPv6Address) {
+      this.host.sendUdpDatagram6?.(dstIp, clientPort, this.port, response, 12);
+      return;
+    }
     const port = this.host.getPort(inPort);
     if (!port) return;
     const srcIp = port.getIPAddress();

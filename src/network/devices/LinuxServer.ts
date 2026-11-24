@@ -131,7 +131,7 @@ export class LinuxServer extends LinuxMachine {
     this.coaClient.start();
     this.coaClient.setFixedSourcePort(RADCLIENT_COA_SOURCE_PORT);
     this.udpBind(RADCLIENT_COA_SOURCE_PORT, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
     this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);

@@ -3360,10 +3360,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
     if (verdict.accepted === false) return true;
     const udp = verdict.datagram;
+    if (this.handleLocalUdp6(ipv6, udp)) return true;
     return this.udpEndpoint?.deliver6(
       ipv6.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
     ) ?? false;
   }
+
+  protected handleLocalUdp6(_ipv6: IPv6Packet, _udp: UDPPacket): boolean { return false; }
 
   sendUdpDatagram6(
     destination: IPv6Address, destinationPort: number, sourcePort: number,
