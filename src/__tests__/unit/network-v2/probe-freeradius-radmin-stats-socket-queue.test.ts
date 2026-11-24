@@ -6,7 +6,7 @@
  * and queue_pps_in / out). Packets are counted per listener as they are per client and globally; the three statistics forms now share one
  * formatter (the client, home server and socket listings had two copies of the same lines). The simulator handles every request
  * synchronously in the receiving call, so there is no queue: its queue lengths and rates are the true value 0, not a placeholder.
- * `stats threads` has no meaning without worker threads and is still refused.
+ * `stats threads` has its own probe (probe-freeradius-radmin-stats-threads).
  *
  * Discriminated with git stash on src: 5 of 6 fall before the fix; the witness (stats client auth still answers) passes either way.
  */

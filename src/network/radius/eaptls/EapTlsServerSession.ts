@@ -34,7 +34,7 @@ import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/
 import type { EapTlsConfig } from './EapTlsConfig';
 
 type State =
-  | 'sent-start' | 'sending' | 'awaiting-client-flight' | 'awaiting-inner-response' | 'done';
+  | 'sent-start' | 'sending' | 'awaiting-client-flight' | 'awaiting-inner-response' | 'awaiting-ticket-ack' | 'done';
 
 export type EapTlsSessionResult = 'accept' | 'reject' | null;
 
@@ -49,12 +49,19 @@ export class EapTlsServerSession {
 
   result: EapTlsSessionResult = null;
 
+  get resumed(): boolean { return this.tls.sessionReused; }
+
+  get authenticatedUser(): string | null {
+    return this.tls.resumedSubject ?? this.config.innerAuth?.authenticatedUser() ?? null;
+  }
+
   constructor(private readonly config: EapTlsConfig) {
     this.mtu = config.mtu ?? DEFAULT_EAP_TLS_MTU;
     this.eapType = config.eapType ?? 'tls';
     this.tls = new TlsServerSession({
       serverCert: config.serverCert, serverPrivateKey: config.serverPrivateKey,
       requestClientCert: config.requireClientCert ?? true, verifier: config.verifier, protocols: ['1.3'],
+      ...(config.resumption === undefined ? {} : { sessionTicketStore: config.resumption.store, ticketLifetimeSeconds: config.resumption.lifetimeSeconds, deferTicket: config.innerAuth !== undefined }),
     });
   }
 
@@ -101,15 +108,26 @@ export class EapTlsServerSession {
       } catch {
         return this.reject(nextId);
       }
-      this.tls.handle(records);
+      const tail = this.tls.handle(records);
       if (this.tls.result !== 'accept') return this.reject(nextId);
-      if (!this.config.innerAuth) {
+      if (!this.config.innerAuth || this.tls.sessionReused) {
+        const issued = this.config.innerAuth === undefined ? tail : this.tls.issueTicket(this.tls.resumedSubject ?? undefined);
+        if (this.config.innerAuth !== undefined && this.tls.resumedSubject === null && this.tls.sessionReused) return this.reject(nextId);
+        if (issued !== null && issued.length > 0 && this.config.resumption !== undefined) {
+          return this.sendFlight(nextId, issued, 'awaiting-ticket-ack');
+        }
         this.state = 'done';
         this.result = 'accept';
         return { type: 'eap', code: 'success', identifier: nextId };
       }
       const innerRequest = fragmentAsRecords('application_data', this.config.innerAuth.start(), true);
       return this.sendFlight(nextId, innerRequest, 'awaiting-inner-response');
+    }
+
+    if (this.state === 'awaiting-ticket-ack') {
+      this.state = 'done';
+      this.result = 'accept';
+      return { type: 'eap', code: 'success', identifier: nextId };
     }
 
     if (this.state === 'awaiting-inner-response') {
@@ -123,6 +141,9 @@ export class EapTlsServerSession {
       }
       const { next, result } = this.config.innerAuth!.handle(innerBytes);
       if (result !== null) {
+        const subject = result === 'accept' ? this.config.innerAuth!.authenticatedUser() : null;
+        const ticket = subject === null ? null : this.tls.issueTicket(subject);
+        if (ticket !== null && ticket.length > 0) return this.sendFlight(nextId, ticket, 'awaiting-ticket-ack');
         this.state = 'done';
         this.result = result;
         return { type: 'eap', code: result === 'accept' ? 'success' : 'failure', identifier: nextId };

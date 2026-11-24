@@ -225,6 +225,10 @@ export class RadiusServerAgent {
   /** RFC 5216 EAP-TLS sessions, keyed by the (single, reused-for-the-whole-conversation) opaque State. Only one EAP method is offered per server — no NAK negotiation — selected by whether `eapTlsConfig` is set. */
   private readonly eapTlsSessions = new Map<string, { session: EapTlsServerSession; username: string; expiresAt: number; previousMore: boolean; received: number }>();
   private eapTlsConfig: EapTlsConfig | null = null;
+  private currentSessionState = new Map<string, string>();
+  private readonly sessionStates = new Map<string, { attributes: Map<string, string>; expiresAt: number }>();
+
+  get sessionState(): Map<string, string> { return this.currentSessionState; }
   /** RFC 2607 §2 — realm → home-server route, keyed by the realm suffix in `user@realm`. */
   private readonly realms = new Map<string, RealmRoute>();
   /** Forwarded Access-Requests awaiting the home server's Access-Accept/Reject, keyed by the identifier this proxy issued to the home server (its own space, distinct from the NAS's). */
@@ -874,6 +878,7 @@ export class RadiusServerAgent {
       return;
     }
 
+    this.loadSessionState(getAttr(payload, 'state'));
     const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes, listenPort: this.servedPort ?? this.config.port, packet: { sourceIp: senderIp, sourcePort: udp.sourcePort, destinationIp: srcIpOfPort(this.host.getPort(inPort)), destinationPort: udp.destinationPort, type: RADIUS_PACKET_NAME[payload.code], authenticator: payload.authenticator } });
     if (resolved?.proxy !== undefined) {
       const { realm: proxiedRealm, forwardName, fallbacks, ...route } = resolved.proxy;
@@ -1184,6 +1189,14 @@ export class RadiusServerAgent {
     return lines;
   }
 
+  private loadSessionState(state: RadiusAttribute | undefined): void {
+    const now = simulationNowMs();
+    for (const [key, entry] of this.sessionStates) if (entry.expiresAt < now) this.sessionStates.delete(key);
+    const kept = state === undefined ? undefined : this.sessionStates.get(String(state.value));
+    if (state !== undefined) this.sessionStates.delete(String(state.value));
+    this.currentSessionState = kept?.attributes ?? new Map();
+  }
+
   private pruneEapTlsSessions(): void {
     const now = simulationNowMs();
     for (const [key, entry] of this.eapTlsSessions) {
@@ -1217,12 +1230,14 @@ export class RadiusServerAgent {
       return;
     }
     this.eapTlsSessions.delete(state);
-    const accepted = ctx.session.result === 'accept';
-    lines.push(`eap: Sending EAP ${accepted ? 'Success (code 3)' : 'Failure (code 4)'} ID ${nextRequest.identifier} length ${encodeEapPacket(nextRequest).length}`, 'eap: Freeing handler');
+    const eapName = ctx.session.authenticatedUser ?? ctx.username;
+    const eapUser = this.config.users.get(eapName) ?? this.userResolver?.(eapName, { nasIp: dstIp.toString(), attributes: request.attributes });
+    const accepted = ctx.session.result === 'accept' && !(ctx.session.resumed && eapUser === undefined);
+    const outgoing: EapPacket = accepted || ctx.session.result !== 'accept' ? nextRequest : { type: 'eap', code: 'failure', identifier: nextRequest.identifier };
+    lines.push(`eap: Sending EAP ${accepted ? 'Success (code 3)' : 'Failure (code 4)'} ID ${outgoing.identifier} length ${encodeEapPacket(outgoing).length}`, 'eap: Freeing handler');
     this.eapTrace = { result: accepted ? 'ok' : 'reject', lines };
-    const eapUser = this.config.users.get(ctx.username) ?? this.userResolver?.(ctx.username, { nasIp: dstIp.toString(), attributes: request.attributes });
     if (!accepted) this.publishRejected(dstIp.toString(), ctx.username, 'bad-password');
-    this.replyEap(inPort, dstIp, clientPort, request, nextRequest, accepted, eapUser, dedupKey);
+    this.replyEap(inPort, dstIp, clientPort, request, outgoing, accepted, eapUser, dedupKey);
   }
 
   /**
@@ -1352,6 +1367,7 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = this.sourceOnPort(port, dstIp);
     if (!srcIp) return;
+    this.sessionStates.set(state, { attributes: this.currentSessionState, expiresAt: simulationNowMs() + CHALLENGE_TTL_MS });
     let response: RadiusPacket = {
       type: 'radius', code: 'access-challenge', identifier: request.identifier,
       authenticator: '00'.repeat(16),

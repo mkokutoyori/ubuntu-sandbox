@@ -81,6 +81,7 @@ function commandOutput(ctx: LinuxCommandContext, command: string, writable: bool
     const value = ctx.radiusd!.configValue(words[2]);
     return value === null ? { text: '', failed: true } : { text: value, failed: false };
   }
+  if (words[0] === 'stats' && words[1] === 'threads') return { text: ctx.radiusd!.threadStatisticsListing().join('\n'), failed: false };
   if (words[0] === 'stats' && words[1] === 'queue') return { text: ctx.radiusd!.queueStatisticsListing().join('\n'), failed: false };
   if (words[0] === 'stats' && words[1] === 'socket') {
     const rest = words.slice(2);

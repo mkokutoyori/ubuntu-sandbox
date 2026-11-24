@@ -33,6 +33,7 @@ import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { InnerAuthPeer } from './InnerAuth';
 import { TlsClientSession } from '@/network/tls/TlsClientSession';
+import type { SessionTicket } from '@/network/tls/sessionTickets';
 import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
 
 type State =
@@ -46,6 +47,8 @@ export interface EapTlsPeerOptions {
   readonly innerAuth?: InnerAuthPeer;
   /** Signs `CertificateVerify` when `clientCert` is set and the server requests it (RFC 8446 §4.4.2) — the real engine needs it even though the old ad hoc model didn't. */
   readonly clientPrivateKey?: PkiPrivateKey;
+  /** A ticket kept from an earlier conversation: offered in the ClientHello so the server may resume (RFC 9190 section 2.1.2). */
+  readonly resumptionTicket?: SessionTicket;
 }
 
 export class EapTlsPeerSession {
@@ -71,8 +74,13 @@ export class EapTlsPeerSession {
     this.innerAuth = opts.innerAuth;
     this.tls = new TlsClientSession({
       verifier, clientCert: clientCert ?? undefined, clientPrivateKey: opts.clientPrivateKey, versions: ['1.3'],
+      ...(opts.resumptionTicket === undefined ? {} : { resumptionTicket: opts.resumptionTicket }),
     });
   }
+
+  get ticket(): SessionTicket | null { return this.tls.receivedTicket; }
+
+  get resumed(): boolean { return this.tls.pskResumed; }
 
   /** Process the server's latest EAP-Request; returns the EAP-Response to send back. */
   handle(request: EapPacket): EapPacket {
@@ -110,6 +118,11 @@ export class EapTlsPeerSession {
     if (this.state === 'awaiting-inner-request') {
       const flightBytes = this.incoming.feed({ tlsData, tlsFlags });
       if (flightBytes === null) return this.ackResponse(id);
+      try {
+        if (this.tls.receiveSessionTicket(decodeFlight(flightBytes)) > 0) return this.ackResponse(id);
+      } catch {
+        return this.fail(id);
+      }
       let innerBytes: Uint8Array;
       try {
         innerBytes = reassembleRecords(decodeFlight(flightBytes), true).plaintext;
@@ -121,6 +134,12 @@ export class EapTlsPeerSession {
       return this.sendFlight(id, fragmentAsRecords('application_data', next, true), 'awaiting-inner-request');
     }
 
+    if (this.state === 'done' && this.eapType === 'tls' && tlsData !== '') {
+      const flightBytes = this.incoming.feed({ tlsData, tlsFlags });
+      if (flightBytes !== null) {
+        try { this.tls.receiveSessionTicket(decodeFlight(flightBytes)); } catch { return this.ackResponse(id); }
+      }
+    }
     return this.ackResponse(id);
   }
 

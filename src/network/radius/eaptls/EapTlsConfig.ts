@@ -2,6 +2,7 @@ import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { InnerAuthServer } from './InnerAuth';
+import type { SessionTicketStore } from '@/network/tls/sessionTickets';
 
 /**
  * RADIUS-server-side EAP-TLS/PEAP/EAP-TTLS configuration (mirrors
@@ -23,4 +24,6 @@ export interface EapTlsConfig {
   readonly eapType?: 'tls' | 'peap' | 'ttls';
   /** When set, the outer tunnel doesn't conclude in accept/reject on its own — it hands off to this inner method once established (PEAP/EAP-TTLS). Absent for plain EAP-TLS. */
   readonly innerAuth?: InnerAuthServer;
+  /** RFC 9190 section 2.1.2: EAP-TLS tickets. When set (plain EAP-TLS only) the server issues a ticket after a full handshake, delivers it in one more EAP round before the success, and resumes a peer that presents a live one without a certificate exchange. */
+  readonly resumption?: { readonly store: SessionTicketStore; readonly lifetimeSeconds: number };
 }

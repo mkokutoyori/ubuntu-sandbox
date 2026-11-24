@@ -24,7 +24,11 @@ export class PeapMd5InnerAuthServer implements InnerAuthServer {
   private challengeHex: string | null = null;
   private username: string | null = null;
 
+  private accepted = false;
+
   constructor(private readonly lookupUser: (username: string) => RadiusUser | undefined) {}
+
+  authenticatedUser(): string | null { return this.accepted ? this.username : null; }
 
   start(): Uint8Array {
     const req: EapPacket = { type: 'eap', code: 'request', identifier: this.identifier, eapType: 'identity', payload: '' };
@@ -50,6 +54,7 @@ export class PeapMd5InnerAuthServer implements InnerAuthServer {
       const user = this.lookupUser(this.username);
       const accepted = !!user && !!eap.md5Response
         && verifyEapMd5Response(eap.identifier, eap.md5Response, user.password, this.challengeHex);
+      this.accepted = accepted;
       return { next: null, result: accepted ? 'accept' : 'reject' };
     }
 

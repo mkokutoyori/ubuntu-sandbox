@@ -28,6 +28,7 @@ export interface SessionTicket {
   readonly maxEarlyDataSize?: number;
   readonly verifyResult?: number;
   readonly serverName?: string;
+  readonly subject?: string;
   consumed: boolean;
 }
 

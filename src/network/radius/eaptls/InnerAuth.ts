@@ -10,6 +10,7 @@ export interface InnerAuthServer {
   start(): Uint8Array;
   /** Process the peer's tunneled response; `result` stays null while more rounds are needed. */
   handle(incoming: Uint8Array): { next: Uint8Array | null; result: 'accept' | 'reject' | null };
+  authenticatedUser(): string | null;
 }
 
 export interface InnerAuthPeer {

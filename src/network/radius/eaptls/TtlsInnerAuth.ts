@@ -18,7 +18,11 @@ interface TtlsCredentials {
 const CREDENTIALS_PROMPT = 'send-credentials';
 
 export class TtlsPapInnerAuthServer implements InnerAuthServer {
+  private accepted: string | null = null;
+
   constructor(private readonly lookupUser: (username: string) => RadiusUser | undefined) {}
+
+  authenticatedUser(): string | null { return this.accepted; }
 
   start(): Uint8Array {
     return utf8ToBytes(CREDENTIALS_PROMPT);
@@ -29,6 +33,7 @@ export class TtlsPapInnerAuthServer implements InnerAuthServer {
       const creds = JSON.parse(bytesToUtf8(incoming)) as TtlsCredentials;
       const user = this.lookupUser(creds.username);
       const accepted = !!user && user.password === creds.password;
+      this.accepted = accepted ? creds.username : null;
       return { next: null, result: accepted ? 'accept' : 'reject' };
     } catch {
       return { next: null, result: 'reject' };

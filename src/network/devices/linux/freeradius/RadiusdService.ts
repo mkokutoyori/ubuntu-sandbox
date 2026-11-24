@@ -33,6 +33,7 @@ import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader, type ConfSection } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
+import { readRadiusdThreadPool, settledThreadCount, type RadiusdThreadPool } from './RadiusdThreadPool';
 import { requestDebugLines, knownGoodDisplayName, credentialMessages, type ResolutionTrace } from './RequestDebug';
 import type { RadiusUserResolverContext, AccountingRun, AuthenticateOutcome } from '@/network/radius/RadiusServerAgent';
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
@@ -113,7 +114,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null; root: ConfSection }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null; root: ConfSection }
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
@@ -202,6 +203,16 @@ export class RadiusdService {
     if (spec === undefined) return null;
     const kind = spec.type === 'acct' ? 'acct' : 'auth';
     return this.statisticsLines(kind, this.radiusServer.listenerStatistics(kind, port), false);
+  }
+
+  private threadPool: RadiusdThreadPool | null = null;
+  private threadPoolStartedMs = 0;
+
+  threadStatisticsListing(): string[] {
+    const pool = this.threadPool;
+    if (pool === null) return ['threads_active\t0', 'threads_total\t\t0', 'threads_max\t\t0'];
+    const total = settledThreadCount(pool, (this.wallClock.nowMs() - this.threadPoolStartedMs) / 1000);
+    return ['threads_active\t0', `threads_total\t\t${total}`, `threads_max\t\t${pool.maxServers}`];
   }
 
   queueStatisticsListing(): string[] {
@@ -520,7 +531,7 @@ export class RadiusdService {
     const wanted = info.accounting ? 'Acct-Type Status-Server' : 'Autz-Type Status-Server';
     const group = section?.find((statement) => statement.kind === 'typed' && statement.name === wanted);
     if (group === undefined || group.kind !== 'typed') return null;
-    const context = newContext(String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? ''), info.request, null, this.wallClock.nowMs());
+    const context = this.newRequestContext(String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? ''), info.request, null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = { runModule: (name): ModuleOutcome => (name === 'ok' ? { result: 'ok', messages: [] } : name === 'reject' ? { result: 'reject', messages: [] } : { result: 'noop', messages: [] }) };
     const outcome = run(group.body, context, host, lines, 3);
@@ -534,7 +545,7 @@ export class RadiusdService {
     const program = pipeline?.session;
     if (program === undefined || program === null) return pipeline !== undefined && pipeline.sections.has('session') && !pipeline.sections.get('session')!.has('radutmp') ? null : info.active;
     let counted = 0;
-    const context = newContext(info.username, [], null, this.wallClock.nowMs());
+    const context = this.newRequestContext(info.username, [], null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
       runModule: (name): ModuleOutcome => {
@@ -559,7 +570,7 @@ export class RadiusdService {
     const group = pipeline.authGroups.get(builtin === 'mschap' ? 'ms-chap' : builtin);
     if (group === undefined) return null;
     const userName = String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
-    const context = newContext(userName, info.request, null, this.wallClock.nowMs());
+    const context = this.newRequestContext(userName, info.request, null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
       runModule: (name): ModuleOutcome => {
@@ -588,7 +599,7 @@ export class RadiusdService {
     const keep = section === 'pre-proxy' ? outbound : reply;
     if (program === null || program === undefined || program.length === 0) return { attributes: keep };
     const username = String(request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
-    const context = newContext(username, request, null, this.wallClock.nowMs());
+    const context = this.newRequestContext(username, request, null, this.wallClock.nowMs());
     context.proxyRequest = [...outbound];
     context.proxyReply = [...reply];
     const lines: string[] = [];
@@ -606,7 +617,7 @@ export class RadiusdService {
     const pipeline = this.pipelines.get(this.portServers.get(info.destinationPort) ?? 'default');
     const attributes = info.packet.attributes;
     const username = String(attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '');
-    const context = newContext(username, attributes, {
+    const context = this.newRequestContext(username, attributes, {
       sourceIp: info.sourceIp, sourcePort: info.sourcePort, destinationIp: info.destinationIp, destinationPort: info.destinationPort,
       server: this.portServers.get(info.destinationPort) ?? 'default', type: 'Accounting-Request', authenticator: info.packet.authenticator,
     }, this.wallClock.nowMs());
@@ -723,6 +734,8 @@ export class RadiusdService {
   private radSecClientTls(clientIp: string): RadSecTls | undefined {
     return this.radiusServer.clientTable.find(peerOf(clientIp), 'tls')?.tls;
   }
+
+  private readonly eapTicketStore = new SessionTicketStore();
 
   private resumedRadSecConnections = 0;
 
@@ -907,11 +920,17 @@ export class RadiusdService {
     return { reply: context.reply, lines };
   }
 
+  private newRequestContext(...args: Parameters<typeof newContext>): ReturnType<typeof newContext> {
+    const context = newContext(...args);
+    context.sessionState = this.radiusServer.sessionState;
+    return context;
+  }
+
   private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH, packet?: RadiusUserResolverContext['packet']): RadiusUser | undefined {
     const groupsOf = (name: string) => this.wallClock.groupsOf(name);
     const pipeline = this.pipelines.get(this.portServers.get(listenPort) ?? 'default');
     const program: readonly Statement[] = pipeline?.authorize ?? DEFAULT_AUTHORIZE_PROGRAM;
-    const context = newContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' }, this.wallClock.nowMs());
+    const context = this.newRequestContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' }, this.wallClock.nowMs());
     this.lastContext = context;
     this.proxyDecision = null;
     const lines: string[] = [];
@@ -1139,6 +1158,8 @@ export class RadiusdService {
     if ('error' in log) return { ok: false, error: log.error };
     const security = readRadiusdSecurityConfig(main.root);
     if ('error' in security) return { ok: false, error: security.error };
+    const threadPool = readRadiusdThreadPool(main.root);
+    if ('error' in threadPool) return { ok: false, error: threadPool.error };
     const site = readSiteConfig(main.root);
     if ('error' in site) return { ok: false, error: site.error };
     for (const spec of site.listeners) {
@@ -1169,7 +1190,7 @@ export class RadiusdService {
     if (eapModule !== null && 'error' in eapModule) return { ok: false, error: eapModule.error };
     const eapTls = eapModule === null ? null : this.eapTlsConfig(eapModule as EapModuleConfig, users.entries);
     if (typeof eapTls === 'string') return { ok: false, error: eapTls };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls, root: main.root };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, threadPool, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls, root: main.root };
   }
 
   private eapTlsConfig(module: EapModuleConfig, entries: UsersEntry[]): EapTlsConfig | string | null {
@@ -1194,12 +1215,15 @@ export class RadiusdService {
       verifier: new CertificateVerifier(verifierOptions(caText, tls, () => this.wallClock.nowMs())),
       requireClientCert: module.defaultType === 'tls', eapType: module.defaultType as 'tls' | 'peap' | 'ttls',
       mtu: tls.fragmentSize ?? EAP_DEFAULT_FRAGMENT_SIZE,
+      ...(tls.cache === undefined ? {} : { resumption: { store: this.eapTicketStore, lifetimeSeconds: tls.cache.lifetimeHours * 3600 } }),
       ...(module.defaultType === 'peap' ? { innerAuth: module.peapInner === 'md5' ? new PeapMd5InnerAuthServer(lookup) : new PeapMsChapV2InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
     };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
     this.logConfig = loaded.log;
+    this.threadPool = loaded.threadPool;
+    this.threadPoolStartedMs = this.wallClock.nowMs();
     this.radiusServer.setEapTlsConfig(loaded.eapTls);
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;

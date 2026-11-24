@@ -762,9 +762,9 @@ export class TlsClientSession {
    */
   receiveSessionTicket(records: readonly TlsRecord[]): number {
     if (this.result !== 'success' || !this.resumptionMasterSecret || !this.negotiatedCipherSuite || this.ticketAttempted) return 0;
-    this.ticketAttempted = true;
     const opened = openLeadingHandshake(this.serverApplicationTrafficSecret!, this.negotiatedCipherSuite as CipherSuite, this.serverApplicationSequenceBase, records);
     if (opened === null) return 0;
+    this.ticketAttempted = true;
     this.serverApplicationSequenceBase += opened.consumed;
     const message = decodeHandshakeMessage(opened.plaintext) as NewSessionTicket;
     if (message.kind !== 'new_session_ticket') return opened.consumed;
