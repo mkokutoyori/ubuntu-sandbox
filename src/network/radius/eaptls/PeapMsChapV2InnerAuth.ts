@@ -39,6 +39,8 @@ export class PeapMsChapV2InnerAuthServer implements InnerAuthServer {
 
   constructor(private readonly lookupUser: (username: string) => RadiusUser | undefined) {}
 
+  authenticatedUser(): string | null { return this.state === 'success' ? this.username : null; }
+
   start(): Uint8Array {
     return encodeEapPacket({ type: 'eap', code: 'request', identifier: this.identifier, eapType: 'identity', payload: '' });
   }

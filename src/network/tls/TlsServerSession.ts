@@ -91,6 +91,7 @@ export interface TlsServerConfig {
   readonly sessionTicketStore?: SessionTicketStore;
   /** Lifetime written in the NewSessionTicket and enforced by the store; default two hours. */
   readonly ticketLifetimeSeconds?: number;
+  readonly deferTicket?: boolean;
   /** RFC 8446 §2.1.12 observability — publishes `tls.*` events (`events.ts`) if set. */
   readonly eventBus?: IEventBus;
   /** Protocol versions this server accepts; RFC 8996 removes 1.0/1.1 from the default. */
@@ -170,6 +171,7 @@ interface RedeemedPsk {
   readonly cipherSuite: CipherSuite;
   readonly ageAcceptable: boolean;
   readonly peerCertificates?: readonly X509Certificate[];
+  readonly subject?: string;
 }
 
 function groupOf(keyShare: string): string {
@@ -657,7 +659,7 @@ export class TlsServerSession {
       if (!ticket) continue;
       const clientAge = ((offer.obfuscatedAge - Number.parseInt(candidate.ticketAgeAdd ?? '0', 16)) >>> 0);
       const ageAcceptable = Math.abs(clientAge - Math.max(0, now - candidate.issuedAt)) <= TICKET_AGE_ALLOWANCE_MS;
-      return { psk, hash, index, identity: offer.identity, cipherSuite: candidate.cipherSuite, ageAcceptable, ...(ticket.peerCertificates === undefined ? {} : { peerCertificates: ticket.peerCertificates }) };
+      return { psk, hash, index, identity: offer.identity, cipherSuite: candidate.cipherSuite, ageAcceptable, ...(ticket.peerCertificates === undefined ? {} : { peerCertificates: ticket.peerCertificates }), ...(ticket.subject === undefined ? {} : { subject: ticket.subject }) };
     }
     return null;
   }
@@ -740,6 +742,7 @@ export class TlsServerSession {
     this.serverHandshakeTrafficSecret = handshakePhase.serverHandshakeTrafficSecret;
     if (pskAccepted) {
       this.sessionResumed = true;
+      this.resumedSubject = redeemed!.subject ?? null;
       const original = redeemed!.peerCertificates;
       if (original !== undefined && original.length > 0) {
         this.peerCertificate = original[0];
@@ -894,7 +897,14 @@ export class TlsServerSession {
       },
     });
 
-    if (!this.config.sessionTicketStore) return null;
+    if (!this.config.sessionTicketStore || this.config.deferTicket === true) return null;
+    return this.issueTicket();
+  }
+
+  resumedSubject: string | null = null;
+
+  issueTicket(subject?: string): readonly TlsRecord[] | null {
+    if (!this.config.sessionTicketStore || this.state !== 'done' || this.result !== 'accept') return null;
     const ticketAgeAdd = randomHex(4);
     const ticket: SessionTicket = {
       ticket: randomHex(16),
@@ -905,6 +915,7 @@ export class TlsServerSession {
       ...(this.peerVerified && this.peerCertificate !== null ? { peerCertificates: this.peerCertificateChain.length > 0 ? this.peerCertificateChain : [this.peerCertificate] } : {}),
       ticketLifetime: this.config.ticketLifetimeSeconds ?? 7200,
       issuedAt: simulationNowMs(),
+      ...(subject === undefined ? {} : { subject }),
       consumed: false,
     };
     this.config.sessionTicketStore.issue(ticket);

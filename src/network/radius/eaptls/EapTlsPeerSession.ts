@@ -118,6 +118,11 @@ export class EapTlsPeerSession {
     if (this.state === 'awaiting-inner-request') {
       const flightBytes = this.incoming.feed({ tlsData, tlsFlags });
       if (flightBytes === null) return this.ackResponse(id);
+      try {
+        if (this.tls.receiveSessionTicket(decodeFlight(flightBytes)) > 0) return this.ackResponse(id);
+      } catch {
+        return this.fail(id);
+      }
       let innerBytes: Uint8Array;
       try {
         innerBytes = reassembleRecords(decodeFlight(flightBytes), true).plaintext;

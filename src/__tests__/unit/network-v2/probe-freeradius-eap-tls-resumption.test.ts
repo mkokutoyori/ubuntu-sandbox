@@ -7,8 +7,10 @@
  * inner authentication and receive no ticket (their resumption skips the inner phase: not done, TODO.md). Both ends of the exchange are real: the peer is
  * the project's EAP-TLS peer, driven round by round through radclient against the daemon.
  *
- * Discriminated with git stash on src/network: all 6 fall before the fix. The witness and the PEAP case fall only because the peer has no ticket accessor on the base;
- * what they pin (no ticket without a cache, none for PEAP) is a non-regression that the fix keeps true.
+ * PEAP and TTLS: the ticket is issued only once the inner method has accepted (a ticket granted at the end of the tunnel handshake would let a peer that
+ * failed its inner authentication resume), carries the authenticated inner user, and a resumed conversation skips the inner phase and acts as that user.
+ * Discriminated with git stash on src/network: every case falls before the fix (the peer has no ticket accessor on the base); the cases pinning
+ * 'no ticket' (no cache, failed inner) are non-regressions the fix keeps true and are the witnesses of the lab.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -158,10 +160,38 @@ describe('EAP-TLS resumption (RFC 9190)', () => {
     expect(again.resumed).toBe(false);
   });
 
-  it('PEAP keeps its inner authentication and receives no ticket, whatever the cache says', async () => {
-    const made = await lab(EAP('peap', '    default_eap_type = md5\n', CACHE()));
-    const peer = new EapTlsPeerSession(null, made.keys.verifier, { eapType: 'peap', innerAuth: new PeapMd5InnerAuthPeer('alice', 'wonderland') });
-    expect(await converse(made, peer)).toBe('accept');
-    expect(peer.ticket).toBeNull();
-  });
+  const tunnelled = (made: Awaited<ReturnType<typeof lab>>, type: 'peap' | 'ttls', user: string, password: string, ticket?: import('@/network/tls/sessionTickets').SessionTicket) =>
+    new EapTlsPeerSession(null, made.keys.verifier, {
+      eapType: type,
+      innerAuth: type === 'peap' ? new PeapMd5InnerAuthPeer(user, password) : new TtlsPapInnerAuthPeer(user, password),
+      ...(ticket === undefined ? {} : { resumptionTicket: ticket }),
+    });
+
+  for (const type of ['peap', 'ttls'] as const) {
+    it(`${type}: the ticket comes after the inner authentication and a peer presenting it resumes without the inner phase`, async () => {
+      const made = await lab(EAP(type, '    default_eap_type = md5\n', CACHE()));
+      const first = tunnelled(made, type, 'alice', 'wonderland');
+      expect(await converse(made, first)).toBe('accept');
+      expect(first.ticket).not.toBeNull();
+      const fullRounds = roundsOf.value;
+      const second = tunnelled(made, type, 'alice', 'wrong-password', first.ticket!);
+      expect(await converse(made, second)).toBe('accept');
+      expect(second.resumed).toBe(true);
+      expect(roundsOf.value).toBeLessThan(fullRounds);
+    });
+
+    it(`${type}: a failed inner authentication yields no ticket`, async () => {
+      const made = await lab(EAP(type, '    default_eap_type = md5\n', CACHE()));
+      const peer = tunnelled(made, type, 'alice', 'wrong-password');
+      expect(await converse(made, peer)).toBe('reject');
+      expect(peer.ticket).toBeNull();
+    });
+
+    it(`${type}: without the cache no ticket is issued`, async () => {
+      const made = await lab(EAP(type, '    default_eap_type = md5\n'));
+      const peer = tunnelled(made, type, 'alice', 'wonderland');
+      expect(await converse(made, peer)).toBe('accept');
+      expect(peer.ticket).toBeNull();
+    });
+  }
 });

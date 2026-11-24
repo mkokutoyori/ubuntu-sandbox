@@ -49,13 +49,17 @@ export class EapTlsServerSession {
 
   result: EapTlsSessionResult = null;
 
+  get authenticatedUser(): string | null {
+    return this.tls.resumedSubject ?? this.config.innerAuth?.authenticatedUser() ?? null;
+  }
+
   constructor(private readonly config: EapTlsConfig) {
     this.mtu = config.mtu ?? DEFAULT_EAP_TLS_MTU;
     this.eapType = config.eapType ?? 'tls';
     this.tls = new TlsServerSession({
       serverCert: config.serverCert, serverPrivateKey: config.serverPrivateKey,
       requestClientCert: config.requireClientCert ?? true, verifier: config.verifier, protocols: ['1.3'],
-      ...(config.resumption === undefined || this.eapType !== 'tls' ? {} : { sessionTicketStore: config.resumption.store, ticketLifetimeSeconds: config.resumption.lifetimeSeconds }),
+      ...(config.resumption === undefined ? {} : { sessionTicketStore: config.resumption.store, ticketLifetimeSeconds: config.resumption.lifetimeSeconds, deferTicket: config.innerAuth !== undefined }),
     });
   }
 
@@ -105,8 +109,10 @@ export class EapTlsServerSession {
       const tail = this.tls.handle(records);
       if (this.tls.result !== 'accept') return this.reject(nextId);
       if (!this.config.innerAuth || this.tls.sessionReused) {
-        if (tail !== null && tail.length > 0 && this.config.resumption !== undefined && this.eapType === 'tls') {
-          return this.sendFlight(nextId, tail, 'awaiting-ticket-ack');
+        const issued = this.config.innerAuth === undefined ? tail : this.tls.issueTicket(this.tls.resumedSubject ?? undefined);
+        if (this.config.innerAuth !== undefined && this.tls.resumedSubject === null && this.tls.sessionReused) return this.reject(nextId);
+        if (issued !== null && issued.length > 0 && this.config.resumption !== undefined) {
+          return this.sendFlight(nextId, issued, 'awaiting-ticket-ack');
         }
         this.state = 'done';
         this.result = 'accept';
@@ -133,6 +139,9 @@ export class EapTlsServerSession {
       }
       const { next, result } = this.config.innerAuth!.handle(innerBytes);
       if (result !== null) {
+        const subject = result === 'accept' ? this.config.innerAuth!.authenticatedUser() : null;
+        const ticket = subject === null ? null : this.tls.issueTicket(subject);
+        if (ticket !== null && ticket.length > 0) return this.sendFlight(nextId, ticket, 'awaiting-ticket-ack');
         this.state = 'done';
         this.result = result;
         return { type: 'eap', code: result === 'accept' ? 'success' : 'failure', identifier: nextId };
