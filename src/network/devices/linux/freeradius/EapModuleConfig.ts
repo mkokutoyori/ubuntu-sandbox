@@ -1,4 +1,5 @@
 import type { ConfSection } from './FreeradiusConf';
+import { readCache } from './RadSecTlsSection';
 
 export type EapDefaultType = 'md5' | 'tls' | 'peap' | 'ttls';
 
@@ -10,6 +11,7 @@ export interface EapTlsFiles {
   readonly fragmentSize: number | null;
   readonly checkCrl: boolean;
   readonly allowExpiredCrl: boolean;
+  readonly cache?: { readonly lifetimeHours: number };
 }
 
 export interface EapModuleConfig {
@@ -48,7 +50,11 @@ export function readEapModule(modules: ConfSection | undefined): EapModuleConfig
       if (privateKeyFile === undefined) return { error: `${at(section)}: Failed to find "private_key_file" in the tls-config section` };
       const fragment = pairOf(section, 'fragment_size');
       if (fragment !== undefined && (!/^\d+$/.test(fragment) || Number(fragment) < 1)) return { error: `${at(section)}: Invalid value "${fragment}" for variable fragment_size` };
+      const cacheRead = readCache(section);
+      if (cacheRead !== null && 'error' in cacheRead) return cacheRead;
+      const cache: { lifetimeHours: number } | undefined = cacheRead !== null && !('error' in cacheRead) ? cacheRead : undefined;
       tlsConfigs.set(section.name2 ?? '', {
+        ...(cache === undefined ? {} : { cache }),
         privateKeyFile, certificateFile, caFile: pairOf(section, 'ca_file') ?? null,
         privateKeyPassword: pairOf(section, 'private_key_password') ?? null, fragmentSize: fragment === undefined ? null : Number(fragment),
         checkCrl: /^(yes|true|on)$/i.test(pairOf(section, 'check_crl') ?? 'no'), allowExpiredCrl: /^(yes|true|on)$/i.test(pairOf(section, 'allow_expired_crl') ?? 'no'),

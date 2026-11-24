@@ -8,7 +8,7 @@ const BOOLEAN_WORD = /^(yes|no|true|false|on|off)$/i;
 
 const CACHE_KEYS = new Set(['enable', 'lifetime']);
 
-function readCache(section: ConfSection): { lifetimeHours: number } | null | { error: string } {
+export function readCache(section: ConfSection): { lifetimeHours: number } | null | { error: string } {
   const cache = section.sections.find((candidate) => candidate.name1 === 'cache');
   if (cache === undefined) return null;
   for (const pair of cache.pairs) {

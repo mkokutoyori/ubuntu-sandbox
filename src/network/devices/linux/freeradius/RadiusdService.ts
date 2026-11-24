@@ -724,6 +724,8 @@ export class RadiusdService {
     return this.radiusServer.clientTable.find(peerOf(clientIp), 'tls')?.tls;
   }
 
+  private readonly eapTicketStore = new SessionTicketStore();
+
   private resumedRadSecConnections = 0;
 
   radSecResumedConnections(): number { return this.resumedRadSecConnections; }
@@ -1194,6 +1196,7 @@ export class RadiusdService {
       verifier: new CertificateVerifier(verifierOptions(caText, tls, () => this.wallClock.nowMs())),
       requireClientCert: module.defaultType === 'tls', eapType: module.defaultType as 'tls' | 'peap' | 'ttls',
       mtu: tls.fragmentSize ?? EAP_DEFAULT_FRAGMENT_SIZE,
+      ...(tls.cache === undefined ? {} : { resumption: { store: this.eapTicketStore, lifetimeSeconds: tls.cache.lifetimeHours * 3600 } }),
       ...(module.defaultType === 'peap' ? { innerAuth: module.peapInner === 'md5' ? new PeapMd5InnerAuthServer(lookup) : new PeapMsChapV2InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
     };
   }
