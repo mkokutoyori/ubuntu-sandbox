@@ -731,7 +731,10 @@ export class RadiusServerAgent {
           packet: payload, sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort,
           destinationPort: udp.destinationPort, atMs: at, recordUtmp: () => undefined,
         });
-        if (answered === false) return;
+        if (answered === false) {
+          this.count('acct', senderIp, (stats) => { stats.dropped++; });
+          return;
+        }
       } else {
         this.accountingListener?.({
           sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
@@ -805,7 +808,10 @@ export class RadiusServerAgent {
         this.forwardToRealm(inPort, srcIp, udp.sourcePort, payload, forwardName, proxiedRealm, route, dedupKey, fallbacks, 'acct');
         return;
       }
-      if (!answered) return;
+      if (!answered) {
+        this.count('acct', senderIp, (stats) => { stats.dropped++; });
+        return;
+      }
     } else {
       if (this.allows('accounting-utmp')) recordUtmp(payload.attributes);
       this.accountingListener?.({
@@ -1657,6 +1663,7 @@ export class RadiusServerAgent {
       this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, activity);
       this.startProbing(route, kind === 'acct');
       if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1), kind);
+      else this.count(kind, nasIp.toString(), (stats) => { stats.dropped++; });
     };
     const context = (timer: TimerHandle | null): PendingProxyContext => ({
       nasInPort: inPort, nasIp: nasIp.toString(), nasPort,
