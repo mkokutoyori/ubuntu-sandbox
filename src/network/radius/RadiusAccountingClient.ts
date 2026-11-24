@@ -369,10 +369,12 @@ export class RadiusAccountingClient {
   }
 
   private transmit(pending: PendingAcct): void {
-    const srcIp = clientSourceAddress(this.host, new IPAddress(pending.server.ip));
-    if (!srcIp) return;
+    const overIpv6 = pending.server.ip.includes(':');
+    const srcIp = overIpv6 ? null : clientSourceAddress(this.host, new IPAddress(pending.server.ip));
+    if (!overIpv6 && !srcIp) return;
+    if (overIpv6 && this.host.sendUdpDatagramTo === undefined) return;
     const record: AcctRecord = {
-      ...pending.record, nasIp: srcIp.toString(),
+      ...pending.record, nasIp: srcIp === null ? '' : srcIp.toString(),
       delaySec: elapsedSeconds(pending.firstAttemptAt),
     };
     let payload: RadiusPacket = {
@@ -382,12 +384,7 @@ export class RadiusAccountingClient {
     };
     payload = withAccountingRequestAuthenticator(payload, pending.server.sharedSecret);
     pending.authenticator = payload.authenticator;
-    const datagram = {
-      destination: new IPAddress(pending.server.ip),
-      destinationPort: pending.server.acctPort, sourcePort: 49200 + (pending.identifier & 0x3fff),
-      payload, payloadBytes: 12,
-      source: srcIp,
-    };
+    const sourcePort = 49200 + (pending.identifier & 0x3fff);
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -404,7 +401,16 @@ export class RadiusAccountingClient {
     else sent.interims++;
     pending.transmissions++;
     pending.sentAtMs = PathClock.now();
-    this.host.sendUdpDatagram(datagram);
+    if (srcIp === null) {
+      this.host.sendUdpDatagramTo!(peerOf(pending.server.ip), pending.server.acctPort, sourcePort, payload, 12);
+      return;
+    }
+    this.host.sendUdpDatagram({
+      destination: new IPAddress(pending.server.ip),
+      destinationPort: pending.server.acctPort, sourcePort,
+      payload, payloadBytes: 12,
+      source: srcIp,
+    });
   }
 
 }

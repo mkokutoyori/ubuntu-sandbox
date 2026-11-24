@@ -9,7 +9,11 @@
  * The server replies from the address the request was sent to (FreeRADIUS answers from the datagram's destination), not from whichever address the host's source
  * selection prefers: the reply of the lab came from a random temporary address of the interface, which no NAS can match with its configured server.
  *
- * Discriminated with git stash on src/network: 3 of 4 fall before the fix; the witness (the same lab authenticates over IPv4) passes either way.
+ * Accounting from the NAS over IPv6 (Acct-Start, interim, Acct-Stop) did not leave the NAS: the accounting client built an IPv4 address from the server and omits
+ * NAS-IP-Address now that the datagram has no IPv4 source (NAS-IPv6-Address is not written: the host picks the source address on egress).
+ *
+ * Discriminated with git stash on src/network against the commit that added address ipv6: the accounting case is the only one that falls (the first four were
+ * discriminated when that commit was made: 3 of them fell before it, the witness passed either way). The witness (the same lab authenticates over IPv4) passes either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -42,7 +46,7 @@ async function lab(serverLines: string[]) {
   for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0', 'no shutdown', 'end']) await nas.executeCommand(c);
   write(aaa, CLIENTS_CONF_PATH, 'client nas6 {\n  ipv6addr = fd00::1\n  secret = shared\n}\nclient nas4 {\n  ipaddr = 10.0.0.1\n  secret = shared\n}\n');
   write(aaa, USERS_FILE_PATH, 'alice Cleartext-Password := "pw"\n');
-  write(aaa, SITE, (vfsOf(aaa).readFile(SITE) ?? '').replace('\tlisten {\n\t\ttype = auth\n', '\tlisten {\n\t\ttype = auth\n\t\tipv6addr = ::\n\t}\n\tlisten {\n\t\ttype = auth\n'));
+  write(aaa, SITE, (vfsOf(aaa).readFile(SITE) ?? '').replace('\tlisten {\n\t\ttype = auth\n', '\tlisten {\n\t\ttype = auth\n\t\tipv6addr = ::\n\t}\n\tlisten {\n\t\ttype = acct\n\t\tipv6addr = ::\n\t}\n\tlisten {\n\t\ttype = auth\n'));
   const started = await aaa.executeCommand('systemctl restart freeradius');
   nas.getRadiusClient().start();
   for (const c of [
@@ -83,5 +87,19 @@ describe('a Cisco NAS and a RADIUS server over IPv6', () => {
     const out = await nas.executeCommand('show aaa servers');
     expect(out).toMatch(/Response: accept 0, reject 1, challenge 0/);
     expect(out).toMatch(/timeouts 0/);
+  });
+
+  it('accounting over IPv6: Acct-Start, interim update and Acct-Stop are acknowledged by the server', async () => {
+    const { nas } = await lab(['address ipv6 fd00::2 auth-port 1812 acct-port 1813']);
+    const accounting = nas.getRadiusAccountingClient();
+    accounting.start();
+    accounting.addServer('fd00::2', 'shared', { port: 1813 });
+    const session = accounting.startSession('alice', 'fd00::2')!;
+    await clock.advanceBy(10);
+    accounting.interimUpdate(session, { inputOctets: 10, outputOctets: 20 });
+    await clock.advanceBy(10);
+    accounting.stopSession(session);
+    await clock.advanceBy(10);
+    expect(accounting.acknowledgedCount('fd00::2')).toBe(3);
   });
 });

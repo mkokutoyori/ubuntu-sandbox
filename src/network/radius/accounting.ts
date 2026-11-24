@@ -58,8 +58,9 @@ export function acctAttributesFor(record: AcctRecord, policy?: RadiusAttributePo
     attr('acct-status-type', ACCT_STATUS_TYPE[record.status]),
     attr('acct-authentic', ACCT_AUTHENTIC.radius),
     attr('acct-delay-time', record.delaySec),
-    attr('nas-ip-address', policy?.nasIpAddress ?? record.nasIp),
   ];
+  const nasIpAddress = policy?.nasIpAddress ?? record.nasIp;
+  if (nasIpAddress !== '') attrs.push(attr('nas-ip-address', nasIpAddress));
   const identifier = policy?.nasIdentifier?.(record.nasIp);
   if (identifier !== undefined) attrs.push(attr('nas-identifier', identifier));
   if (policy?.eventTimestampInAccounting) attrs.push(attr('event-timestamp', Math.floor((policy.nowMs ?? simulationNowMs)() / 1000)));
