@@ -222,8 +222,10 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
   `TcpStack` déjà utilisé par TACACS+) — scope volontairement réduit au PAP,
   une requête par connexion (RFC 6613 §2.4 : TCP gère déjà la fiabilité, pas
   de retransmission côté RADIUS), sans les rondes CHAP/EAP/challenge/
-  accounting de la machinerie UDP ; **RadSec (TLS, RFC 6614) reste hors
-  périmètre** — coût disproportionné pour la valeur pédagogique. Voir
+  accounting de la machinerie UDP. **RadSec (TLS, RFC 6614) est implémenté
+  côté serveur FreeRADIUS** (`RadSecTransport.ts` : TLS 1.3 mutuel sur le
+  `TcpStack`, port 2083, secret constant `radsec`, plusieurs requêtes par
+  connexion) ; voir `probe-freeradius-radsec.test.ts` et `TODO.md`. Voir
   `radius-tcp.test.ts`.
 - ~~**Proxy/roaming RADIUS** (RFC 2607) : chaînes de proxys inter-domaines.~~
   🟡 **Un saut de proxy implémenté** : `RadiusServerAgent.addRealm(realm,

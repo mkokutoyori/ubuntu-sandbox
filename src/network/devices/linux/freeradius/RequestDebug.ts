@@ -7,7 +7,17 @@ export type { ModuleResult };
 export interface ResolutionTrace {
   lines: string[];
   result: ModuleResult;
-  authType: 'PAP' | 'CHAP' | 'Accept' | null;
+  authType: 'PAP' | 'CHAP' | 'MS-CHAP' | 'EAP' | 'Accept' | null;
+  authTypeName: string | null;
+}
+
+export interface AuthenticateTrace {
+  type: string;
+  name: string;
+  file: string;
+  line: number;
+  lines: string[];
+  result: ModuleResult;
 }
 
 export interface DebugInput {
@@ -21,6 +31,8 @@ export interface DebugInput {
   receivedLines: string[];
   replyLines: string[];
   postAuthLines: string[];
+  eap?: { lines: string[]; result: ModuleResult };
+  authenticate?: AuthenticateTrace;
 }
 
 const KNOWN_GOOD_NAMES: Record<string, string> = {
@@ -28,6 +40,20 @@ const KNOWN_GOOD_NAMES: Record<string, string> = {
   'sha-password': 'SHA-Password', 'ssha-password': 'SSHA-Password', 'sha2-password': 'SHA2-Password', 'nt-password': 'NT-Password',
   'crypt-password': 'Crypt-Password', 'password-with-header': 'Password-With-Header',
 };
+
+export function credentialMessages(authType: 'PAP' | 'CHAP' | 'MS-CHAP', accepted: boolean, userName: string, knownGoodName: string | undefined): string[] {
+  if (authType === 'MS-CHAP') return ['mschap: Creating challenge hash with username: ' + userName, 'mschap: Client is using MS-CHAPv2', accepted ? 'mschap: Adding MS-CHAPv2 MPPE keys' : 'mschap: ERROR: MS-CHAP2-Response is incorrect'];
+  if (authType === 'PAP') {
+    const name = knownGoodName ?? 'Cleartext-Password';
+    const lines = ['pap: Login attempt with password', name === 'Cleartext-Password' ? 'pap: Comparing with "known good" Cleartext-Password' : `pap: Comparing with "known-good" ${name}`];
+    if (accepted) lines.push('pap: User authenticated successfully');
+    else lines.push(name === 'Cleartext-Password' ? 'pap: ERROR: Cleartext password does not match "known good" password' : `pap: ERROR: ${name} does not match "known good" digest`, "pap: Passwords don't match");
+    return lines;
+  }
+  return accepted
+    ? ['chap: Comparing with "known good" Cleartext-Password', `chap: CHAP user "${userName}" authenticated successfully`]
+    : ['chap: Comparing with "known good" Cleartext-Password', 'chap: ERROR: Password comparison failed: password is incorrect'];
+}
 
 export function knownGoodDisplayName(itemName: string): string {
   return KNOWN_GOOD_NAMES[itemName.toLowerCase()] ?? itemName;
@@ -52,15 +78,35 @@ export function requestDebugLines(input: DebugInput): string[] {
     if (authType === 'Accept') {
       inner('Found Auth-Type = Accept', 1);
       inner('Auth-Type = Accept, accepting the user', 1);
-    } else if (authType === null) {
+    } else if (authType === null && input.authenticate === undefined) {
       inner('ERROR: No Auth-Type found: rejecting the user via Post-Auth-Type = Reject', 1);
       inner('Failed to authenticate the user', 1);
+    } else if (input.authenticate !== undefined) {
+      const trace = input.authenticate;
+      inner(`Found Auth-Type = ${trace.type}`, 1);
+      inner(`# Executing group from file ${trace.file} line ${trace.line}`, 1);
+      inner(`Auth-Type ${trace.name} {`, 2);
+      lines.push(...trace.lines);
+      inner(`} # Auth-Type ${trace.name} = ${trace.result}`, 2);
+      if (trace.result !== 'ok' && trace.result !== 'handled' && trace.result !== 'updated') inner('Failed to authenticate the user', 1);
+    } else if (authType === 'EAP') {
+      inner('Found Auth-Type = eap', 1);
+      if (input.eap !== undefined) {
+        const place = pipeline?.locations.get('authenticate');
+        inner(`# Executing group from file ${place?.file ?? ''} line ${place?.line ?? 0}`.replace(' from file  line 0', ''), 1);
+        inner('authenticate {', 2);
+        for (const text of input.eap.lines) inner(text, 3);
+        inner(`[eap] = ${input.eap.result}`, 3);
+        inner(`} # authenticate = ${input.eap.result}`, 2);
+        if (input.eap.result === 'reject') inner('Failed to authenticate the user', 1);
+      }
     } else {
       inner(`Found Auth-Type = ${authType}`, 1);
       const place = pipeline?.authTypes.get(authType);
       inner(`# Executing group from file ${place?.file ?? ''} line ${place?.line ?? 0}`.replace(' from file  line 0', ''), 1);
       inner(`Auth-Type ${authType} {`, 2);
-      const module = authType === 'PAP' ? 'pap' : 'chap';
+      const module = authType === 'PAP' ? 'pap' : authType === 'CHAP' ? 'chap' : 'mschap';
+      const userName = String(request.attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '');
       if (authType === 'PAP') {
         inner('pap: Login attempt with password', 4);
         const name = user?.knownGoodName ?? 'Cleartext-Password';
@@ -70,6 +116,10 @@ export function requestDebugLines(input: DebugInput): string[] {
           inner(name === 'Cleartext-Password' ? 'pap: ERROR: Cleartext password does not match "known good" password' : `pap: ERROR: ${name} does not match "known good" digest`, 4);
           inner("pap: Passwords don't match", 4);
         }
+      } else if (authType === 'MS-CHAP') {
+        inner(`mschap: Creating challenge hash with username: ${userName}`, 4);
+        inner('mschap: Client is using MS-CHAPv2', 4);
+        inner(input.accepted ? 'mschap: Adding MS-CHAPv2 MPPE keys' : 'mschap: ERROR: MS-CHAP2-Response is incorrect', 4);
       } else if (input.accepted) {
         inner('chap: Comparing with "known good" Cleartext-Password', 4);
         inner(`chap: CHAP user "${String(request.attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '')}" authenticated successfully`, 4);

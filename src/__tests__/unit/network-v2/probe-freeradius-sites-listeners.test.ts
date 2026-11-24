@@ -166,4 +166,10 @@ describe('virtual servers and listeners', () => {
     await client.executeCommand(`${ALICE} | radclient -t 1 -r 1 10.0.0.2 auth shared`);
     expect(vfsOf(target).readFile('/var/log/freeradius/radius.log') ?? '').toContain('Ignoring request to auth address * port 1812 bound to server default from unknown client 10.0.0.1');
   });
+
+  it('an ipv6addr that is not an IPv6 address is refused in the words of the source', async () => {
+    const { target } = await lab();
+    write(target, SITES, site(target).replace('type = auth\n', 'type = auth\n\t\tipv6addr = 10.0.0.1\n'));
+    expect(target.getRadiusd().checkConfig()).toEqual({ ok: false, error: '/etc/freeradius/3.0/sites-enabled/default[59]: Failed finding address for 10.0.0.1' });
+  });
 });

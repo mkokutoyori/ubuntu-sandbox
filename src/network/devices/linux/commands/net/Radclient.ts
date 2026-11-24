@@ -1,10 +1,10 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { attr, RADIUS_PACKET_NAME, type RadiusAttribute, type RadiusCode } from '@/network/radius/types';
+import { attr, splitEapMessages, RADIUS_PACKET_NAME, type RadiusAttribute, type RadiusCode } from '@/network/radius/types';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import type { RadiusExchange } from '@/network/radius/RadiusClientAgent';
 import type { RawRequestCode } from '@/network/radius/RadiusAccountingClient';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { parsePairList, usersPairToAttribute, type UsersPair } from '../../freeradius/UsersFileParser';
 
 const VERSION = '3.2.11';
@@ -120,7 +120,7 @@ function nameOf(pair: UsersPair): string {
 
 function describe(exchange: RadiusExchange, shown: string[], debug: boolean): string[] {
   return [
-    `Sent Access-Request Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`,
+    `Sent Access-Request Id ${exchange.request.identifier} from ${exchange.serverIp.includes(':') ? '::' : '0.0.0.0'}:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`,
     ...(debug ? ['\tMessage-Authenticator = 0x', ...shown.map((line) => `\t${line}`)] : []),
   ];
 }
@@ -172,7 +172,7 @@ async function runCoa(
       for (const pair of packet.pairs) {
         const attribute = usersPairToAttribute(pair);
         if (attribute === null) return { output: `radclient: Failed to parse attribute "${pair.name}"`, exitCode: 1 };
-        attributes.push(attribute);
+        attributes.push(...splitEapMessages([attribute]));
       }
       for (let repeat = 0; repeat < run.count; repeat++, number++) {
         const result = await client.sendAttributes(run.server, code, attributes);
@@ -180,7 +180,7 @@ async function runCoa(
         if (exchange === null) { lost++; continue; }
         if (!run.quiet) {
           for (let attempt = 0; attempt < Math.max(1, exchange.transmissions); attempt++) {
-            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from ${exchange.serverIp.includes(':') ? '::' : '0.0.0.0'}:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
             if (run.debug) lines.push(...attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
           }
         }
@@ -225,7 +225,7 @@ async function runRaw(
       for (const pair of packet.pairs) {
         const attribute = usersPairToAttribute(pair);
         if (attribute === null) return { output: `radclient: Failed to parse attribute "${pair.name}"`, exitCode: 1 };
-        attributes.push(attribute);
+        attributes.push(...splitEapMessages([attribute]));
       }
       for (let repeat = 0; repeat < run.count; repeat++, number++) {
         const exchange = await client.sendAttributes(run.server, attributes, {
@@ -234,7 +234,7 @@ async function runRaw(
         const autoMessageAuthenticator = code === 'status-server' && !attributes.some((attribute) => attribute.type === 'message-authenticator');
         if (!run.quiet) {
           for (let attempt = 0; attempt < Math.max(1, exchange.transmissions); attempt++) {
-            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from 0.0.0.0:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
+            lines.push(`Sent ${nameOfCode(code)} Id ${exchange.request.identifier} from ${exchange.serverIp.includes(':') ? '::' : '0.0.0.0'}:${exchange.sourcePort} to ${exchange.serverIp}:${exchange.serverPort} length ${exchange.length}`);
             if (run.debug && autoMessageAuthenticator) lines.push('\tMessage-Authenticator = 0x');
             if (run.debug) lines.push(...attributes.map((attribute) => `\t${formatRadiusAttribute(attribute)}`));
           }
@@ -300,19 +300,23 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
     secret = content.split('\n')[0].trim();
   }
 
-  const [serverName, portText] = serverArg.split(':');
+  const bracket = /^\[([^\]]+)\](?::(\d+))?$/.exec(serverArg);
+  const bareV6 = !bracket && serverArg.split(':').length > 2;
+  const [serverName, portText] = bracket ? [bracket[1], bracket[2]] : bareV6 ? [serverArg, undefined] : serverArg.split(':');
   const port = portText === undefined ? (command === 'acct' ? 1813 : command === 'auth' || command === 'status' ? 1812 : 3799) : Number(portText);
   if (!serverName || !Number.isInteger(port) || port <= 0 || port > 65535) return { output: RADCLIENT_USAGE, exitCode: 1 };
-  const server = IPAddress.tryParse(serverName) ?? (await ctx.net.resolveHostname(serverName));
+  const server = IPv6Address.tryParse(serverName) ?? IPAddress.tryParse(serverName) ?? (await ctx.net.resolveHostname(serverName));
   if (server === null) return { output: `radclient: Failed to find IP address for host ${serverName}: Name or service not known`, exitCode: 1 };
 
   let input = stdin ?? '';
   const fileArgument = options.values.get('f');
   if (fileArgument !== undefined) {
     const file = fileArgument.split(':')[0];
-    const content = ctx.executor.vfs.readFile(file);
-    if (content === null) return { output: `radclient: Error opening ${file}: No such file or directory`, exitCode: 1 };
-    input = content;
+    if (file !== '-') {
+      const content = ctx.executor.vfs.readFile(file);
+      if (content === null) return { output: `radclient: Error opening ${file}: No such file or directory`, exitCode: 1 };
+      input = content;
+    }
   }
   const packets = readPackets(input);
   if ('error' in packets) return { output: packets.error, exitCode: 1 };
@@ -321,6 +325,9 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   const quiet = options.flags.has('q');
   if (command === 'coa' || command === 'disconnect') {
     return runCoa(ctx, packets, command, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') });
+  }
+  if (command === 'auth' && packets.every((packet) => packet.pairs.some((pair) => pair.name.toLowerCase() === 'eap-message') && !packet.pairs.some((pair) => /password$/i.test(pair.name)))) {
+    return runRaw(ctx, packets, { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') }, 'access-request', null);
   }
   if (command === 'acct' || command === 'status') {
     const run = { server: server.toString(), port, secret, count, retries, timeoutMs, quiet, debug: options.debugLevel > 0, summary: options.flags.has('s') };
@@ -356,7 +363,7 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
           else {
             const attribute = usersPairToAttribute(pair);
             if (attribute === null) return { output: `radclient: Failed to parse attribute "${pair.name}"`, exitCode: 1 };
-            extras.push(attribute);
+            extras.push(...splitEapMessages([attribute]));
           }
           shown.push(key === 'user-name' || key.endsWith('password') ? `${pair.name} = "${pair.value}"` : formatRadiusAttribute(usersPairToAttribute(pair) ?? attr('user-name', pair.value)));
         }

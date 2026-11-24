@@ -206,6 +206,24 @@ export interface RadiusServerConfig {
   retransmit: number;
 }
 
+export interface StatusCheck {
+  intervalMs: number;
+  timeoutMs: number;
+  answers: number;
+}
+
+export interface ProxyRoute {
+  realm: string;
+  forwardName: string;
+  homeServerIp: string;
+  homePort: number;
+  homeSecret: string;
+  timeoutMs: number;
+  statusCheck?: StatusCheck;
+  radSec?: boolean;
+  fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number; statusCheck?: StatusCheck; radSec?: boolean }[];
+}
+
 export interface RadiusUser {
   username: string;
   password: string;
@@ -218,7 +236,7 @@ export interface RadiusUser {
   replyAttributes?: RadiusAttribute[];
   /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
   challenge?: { prompt: string };
-  proxy?: { realm: string; forwardName: string; homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number; fallbacks: { homeServerIp: string; homePort: number; homeSecret: string; timeoutMs: number }[] };
+  proxy?: ProxyRoute;
 }
 
 export interface RadiusAttributePolicy {
@@ -292,6 +310,23 @@ export function getVsa(pkt: RadiusPacket, vendorId: number, vendorType: number):
   return pkt.attributes.find(
     (a) => a.type === 'vendor-specific' && a.vendor?.id === vendorId && a.vendor?.type === vendorType,
   );
+}
+
+export const EAP_MESSAGE_FRAGMENT_HEX = 253 * 2;
+
+export function eapMessageAttributes(hex: string): RadiusAttribute[] {
+  const pieces: RadiusAttribute[] = [];
+  for (let at = 0; at === 0 || at < hex.length; at += EAP_MESSAGE_FRAGMENT_HEX) pieces.push({ type: 'eap-message', value: hex.slice(at, at + EAP_MESSAGE_FRAGMENT_HEX) });
+  return pieces;
+}
+
+export function splitEapMessages(attributes: readonly RadiusAttribute[]): RadiusAttribute[] {
+  return attributes.flatMap((attribute) => attribute.type === 'eap-message' && String(attribute.value).length > EAP_MESSAGE_FRAGMENT_HEX ? eapMessageAttributes(String(attribute.value)) : [attribute]);
+}
+
+export function eapMessageHex(attributes: readonly RadiusAttribute[]): string | null {
+  const pieces = attributes.filter((attribute) => attribute.type === 'eap-message');
+  return pieces.length === 0 ? null : pieces.map((piece) => String(piece.value)).join('');
 }
 
 export function getAttr(pkt: RadiusPacket, type: RadiusAttrType): RadiusAttribute | undefined {

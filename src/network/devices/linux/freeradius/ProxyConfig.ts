@@ -1,12 +1,28 @@
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+import { readTlsLimits, tlsLimitsError, TLS_LIMIT_KEYS, type RadSecTlsLimits } from '@/network/radius/RadSecTlsPolicy';
 import type { ConfSection } from './FreeradiusConf';
 
+export interface RadSecHomeTls {
+  readonly certificateFile: string;
+  readonly privateKeyFile: string;
+  readonly privateKeyPassword: string | null;
+  readonly caFile: string;
+  readonly limits: RadSecTlsLimits;
+}
+
 export interface HomeServer {
+  readonly radSec: RadSecHomeTls | null;
   readonly name: string;
   readonly address: string;
   readonly port: number;
+  readonly type: 'auth' | 'acct' | 'auth+acct';
+  readonly acctPort: number | null;
   readonly secret: string;
   readonly responseWindowMs: number;
+  readonly pingIntervalMs: number;
+  readonly zombiePeriodMs: number;
+  readonly reviveIntervalMs: number;
+  readonly statusCheck: { intervalMs: number; timeoutMs: number; answers: number } | null;
 }
 
 export interface HomePool {
@@ -20,6 +36,7 @@ export interface RealmDefinition {
   readonly pattern: RegExp | null;
   readonly strip: boolean;
   readonly authPool: HomePool | null;
+  readonly acctPool: HomePool | null;
 }
 
 export interface RadiusFormat {
@@ -27,18 +44,22 @@ export interface RadiusFormat {
   readonly delimiter: string;
   readonly ignoreDefault: boolean;
   readonly ignoreNull: boolean;
+  readonly returnNotfound: boolean;
 }
 
 export interface ProxyConfig {
   readonly realms: readonly RealmDefinition[];
+  readonly homeServers: readonly HomeServer[];
   readonly instances: ReadonlyMap<string, RadiusFormat>;
 }
 
-export const NO_PROXY: ProxyConfig = { realms: [], instances: new Map() };
+export const NO_PROXY: ProxyConfig = { realms: [], homeServers: [], instances: new Map() };
 
-const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'port', 'secret', 'response_window', 'proto']);
+const HOME_SERVER_KEYS = new Set(['type', 'ipaddr', 'ipv4addr', 'ipv6addr', 'port', 'secret', 'response_window', 'proto', 'ping_interval', 'zombie_period', 'revive_interval', 'status_check', 'check_interval', 'check_timeout', 'num_answers_to_alive']);
+const REALM_MODULE_KEYS = new Set(['format', 'delimiter', 'ignore_default', 'ignore_null', 'return_notfound']);
+const HOME_TLS_KEYS = new Set(['private_key_password', 'private_key_file', 'certificate_file', 'ca_file', ...TLS_LIMIT_KEYS]);
 const POOL_KEYS = new Set(['type', 'home_server']);
-const REALM_KEYS = new Set(['type', 'auth_pool', 'nostrip', 'authhost', 'secret']);
+const REALM_KEYS = new Set(['type', 'auth_pool', 'acct_pool', 'nostrip', 'authhost', 'accthost', 'secret']);
 const POOL_TYPES = new Set(['fail-over', 'load-balance', 'client-balance', 'client-port-balance', 'keyed-balance']);
 
 function located(section: { file: string; line: number }): string {
@@ -63,27 +84,77 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
   const instances = new Map<string, RadiusFormat>();
   const modules = root.sections.find((section) => section.name1 === 'modules') ?? root;
   for (const section of modules.sections.filter((candidate) => candidate.name1 === 'realm' && candidate.name2 !== null)) {
+    const unknownKey = section.pairs.find((pair) => !REALM_MODULE_KEYS.has(pair.name));
+    if (unknownKey !== undefined) return { error: `${located(unknownKey)}: The realm module setting "${unknownKey.name}" is not implemented in this simulator` };
     const format = value(section, 'format') ?? 'suffix';
     if (format !== 'suffix' && format !== 'prefix') return { error: `${located(section)}: The realm format "${format}" is not implemented in this simulator` };
     const delimiter = value(section, 'delimiter') ?? '@';
     if (delimiter.length === 0) return { error: `${located(section)}: Invalid empty delimiter` };
     const flag = (key: string) => /^(yes|true|on)$/i.test(value(section, key) ?? 'no');
-    instances.set(section.name2 as string, { format, delimiter: delimiter[0], ignoreDefault: flag('ignore_default'), ignoreNull: flag('ignore_null') });
+    instances.set(section.name2 as string, { format, delimiter: delimiter[0], ignoreDefault: flag('ignore_default'), ignoreNull: flag('ignore_null'), returnNotfound: flag('return_notfound') });
   }
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'home_server')) {
     const refusal = refuseUnknown(section, HOME_SERVER_KEYS, 'home_server');
     if (refusal !== null) return { error: refusal };
     const name = section.name2 ?? '';
-    const type = value(section, 'type') ?? 'auth';
+    const type = value(section, 'type') ?? 'auth+acct';
     if (type !== 'auth' && type !== 'auth+acct' && type !== 'acct') return { error: `${located(section)}: Invalid type "${type}" for home server ${name}` };
-    if ((value(section, 'proto') ?? 'udp') !== 'udp') return { error: `${located(section)}: The home server protocol "${value(section, 'proto')}" is not implemented in this simulator` };
-    const address = value(section, 'ipaddr') ?? value(section, 'ipv4addr');
-    if (address === undefined || IPAddress.tryParse(address) === null) return { error: `${located(section)}: No valid ipaddr found for home server ${name}` };
-    const secret = value(section, 'secret');
+    const proto = value(section, 'proto') ?? 'udp';
+    const tlsSection = section.sections.find((candidate) => candidate.name1 === 'tls');
+    if (proto !== 'udp' && proto !== 'tcp') return { error: `${located(section)}: The home server protocol "${proto}" is not implemented in this simulator` };
+    if (proto === 'tcp' && tlsSection === undefined) return { error: `${located(section)}: The home server ${name} uses proto = tcp without a tls section: plain RADIUS/TCP proxying is not implemented in this simulator` };
+    if (proto === 'udp' && tlsSection !== undefined) return { error: `${located(tlsSection)}: A tls section needs proto = tcp in the home_server ${name}` };
+    let radSec: RadSecHomeTls | null = null;
+    if (tlsSection !== undefined) {
+      for (const pair of tlsSection.pairs) {
+        if (!HOME_TLS_KEYS.has(pair.name)) return { error: `${located(pair)}: The tls setting "${pair.name}" is not implemented in this simulator` };
+      }
+      const certificateFile = value(tlsSection, 'certificate_file');
+      const privateKeyFile = value(tlsSection, 'private_key_file');
+      const caFile = value(tlsSection, 'ca_file');
+      if (certificateFile === undefined || privateKeyFile === undefined || caFile === undefined) {
+        return { error: `${located(tlsSection)}: A tls section of a home server needs certificate_file, private_key_file and ca_file` };
+      }
+      const limits = readTlsLimits((name) => value(tlsSection, name));
+      const limitsError = tlsLimitsError(limits);
+      if (limitsError !== null) return { error: `${located(tlsSection)}: ${limitsError}` };
+      radSec = { certificateFile, privateKeyFile, privateKeyPassword: value(tlsSection, 'private_key_password') ?? null, caFile, limits };
+    }
+    const rawAddress = value(section, 'ipaddr') ?? value(section, 'ipv4addr') ?? value(section, 'ipv6addr');
+    const parsedAddress = rawAddress === undefined ? null : IPv6Address.tryParse(rawAddress) ?? IPAddress.tryParse(rawAddress);
+    const familyOk = parsedAddress !== null
+      && (value(section, 'ipv4addr') === undefined || parsedAddress instanceof IPAddress)
+      && (value(section, 'ipv6addr') === undefined || parsedAddress instanceof IPv6Address);
+    if (rawAddress === undefined || parsedAddress === null || !familyOk) return { error: `${located(section)}: No valid ipaddr found for home server ${name}` };
+    const address = parsedAddress.toString();
+    let secret = value(section, 'secret');
+    if (radSec !== null) {
+      if (secret !== undefined && secret !== 'radsec') return { error: `${located(section)}: The shared secret of a TLS home server must be "radsec" (RFC 6614)` };
+      secret = 'radsec';
+    }
     if (secret === undefined || secret === '') return { error: `${located(section)}: No shared secret defined for home server ${name}` };
-    const port = Number(value(section, 'port') ?? (type === 'acct' ? 1813 : 1812));
+    const port = Number(value(section, 'port') ?? (radSec !== null ? 2083 : type === 'acct' ? 1813 : 1812));
+    const acctPort = type === 'auth' ? null : type === 'acct' || radSec !== null ? port : port + 1;
     const windowSeconds = Number(value(section, 'response_window') ?? 20);
-    homeServers.set(name, { name, address: IPAddress.tryParse(address)!.toString(), port, secret, responseWindowMs: windowSeconds * 1000 });
+    const bounded = (key: string, fallback: number, min: number, max: number): number | string => {
+      const text = value(section, key);
+      if (text === undefined) return fallback;
+      const number = Number(text);
+      return Number.isInteger(number) && number >= min && number <= max ? number : `${located(section)}: Invalid value "${text}" for variable ${key}`;
+    };
+    const ping = bounded('ping_interval', 30, 6, 120);
+    const zombie = bounded('zombie_period', 40, 1, 120);
+    const revive = bounded('revive_interval', 120, 60, 3600);
+    const checkInterval = bounded('check_interval', 30, 6, 120);
+    const checkTimeout = bounded('check_timeout', 4, 1, 10);
+    const answers = bounded('num_answers_to_alive', 3, 1, 10);
+    for (const checked of [ping, zombie, revive, checkInterval, checkTimeout, answers]) if (typeof checked === 'string') return { error: checked };
+    const check = value(section, 'status_check') ?? 'none';
+    if (check !== 'none' && check !== 'status-server') {
+      return { error: `${located(section)}: ${check === 'request' ? 'The home_server status_check "request" is not implemented in this simulator: it needs a username and password to build an Access-Request' : `Invalid status_check "${check}" for home server ${name}`}` };
+    }
+    if (check === 'status-server' && type !== 'auth' && type !== 'acct' && type !== 'auth+acct') return { error: `${located(section)}: status_check = status-server is not valid for a home server of type ${type}` };
+    homeServers.set(name, { radSec, name, address, port, type, acctPort, secret, responseWindowMs: windowSeconds * 1000, pingIntervalMs: (ping as number) * 1000, zombiePeriodMs: (zombie as number) * 1000, reviveIntervalMs: (revive as number) * 1000, statusCheck: check === 'status-server' ? { intervalMs: (checkInterval as number) * 1000, timeoutMs: (checkTimeout as number) * 1000, answers: answers as number } : null });
   }
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'home_server_pool')) {
     const refusal = refuseUnknown(section, POOL_KEYS, 'home_server_pool');
@@ -104,27 +175,30 @@ export function readProxyConfig(root: ConfSection): ProxyConfig | { error: strin
     const refusal = refuseUnknown(section, REALM_KEYS, 'realm');
     if (refusal !== null) return { error: refusal };
     const name = section.name2 ?? '';
-    let authPool: HomePool | null = null;
-    const poolName = value(section, 'auth_pool');
-    if (poolName !== undefined) {
-      authPool = pools.get(poolName) ?? null;
-      if (authPool === null) return { error: `${located(section)}: Failed to find home_server_pool "${poolName}"` };
-    }
-    const host = value(section, 'authhost');
-    if (host !== undefined && host !== 'LOCAL') {
+    const poolFor = (poolKey: string, hostKey: string, suffix: string, defaultPort: number): HomePool | null | string => {
+      const poolName = value(section, poolKey);
+      if (poolName !== undefined) return pools.get(poolName) ?? `${located(section)}: Failed to find home_server_pool "${poolName}"`;
+      const host = value(section, hostKey);
+      if (host === undefined || host === 'LOCAL') return null;
       const [address, portText] = host.split(':');
       const secret = value(section, 'secret');
-      if (IPAddress.tryParse(address) === null || secret === undefined) return { error: `${located(section)}: Invalid authhost "${host}" or missing secret for realm ${name}` };
-      const server: HomeServer = { name: `${name}-auth`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? 1812 : Number(portText), secret, responseWindowMs: 20000 };
-      authPool = { name: `${name}-auth`, type: 'fail-over', servers: [server] };
-    }
+      if (IPAddress.tryParse(address) === null || secret === undefined) return `${located(section)}: Invalid ${hostKey} "${host}" or missing secret for realm ${name}`;
+      const server: HomeServer = { radSec: null, name: `${name}-${suffix}`, address: IPAddress.tryParse(address)!.toString(), port: portText === undefined ? defaultPort : Number(portText), type: suffix === 'acct' ? 'acct' : 'auth', acctPort: suffix === 'acct' ? (portText === undefined ? defaultPort : Number(portText)) : null, secret, responseWindowMs: 20000, pingIntervalMs: 30000, zombiePeriodMs: 40000, reviveIntervalMs: 120000, statusCheck: null };
+      return { name: server.name, type: 'fail-over', servers: [server] };
+    };
+    const authPool = poolFor('auth_pool', 'authhost', 'auth', 1812);
+    if (typeof authPool === 'string') return { error: authPool };
+    const acctPool = poolFor('acct_pool', 'accthost', 'acct', 1813);
+    if (typeof acctPool === 'string') return { error: acctPool };
+    const misused = authPool?.servers.find((server) => server.type === 'acct') ?? acctPool?.servers.find((server) => server.type === 'auth');
+    if (misused !== undefined) return { error: `${located(section)}: Home server "${misused.name}" of type ${misused.type} cannot be used in an ${misused.type === 'acct' ? 'auth_pool' : 'acct_pool'}` };
     let pattern: RegExp | null = null;
     if (name.startsWith('~')) {
       try { pattern = new RegExp(name.slice(1), 'i'); } catch { return { error: `${located(section)}: Invalid regular expression in realm name "${name}"` }; }
     }
-    realms.push({ name, pattern, strip: !section.pairs.some((pair) => pair.name === 'nostrip'), authPool });
+    realms.push({ name, pattern, strip: !section.pairs.some((pair) => pair.name === 'nostrip'), authPool, acctPool });
   }
-  return { realms, instances };
+  return { realms, homeServers: [...homeServers.values()], instances };
 }
 
 export function findRealm(config: ProxyConfig, name: string | null): RealmDefinition | null {

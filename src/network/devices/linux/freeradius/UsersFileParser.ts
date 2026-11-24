@@ -237,6 +237,7 @@ function encodeValue(valueType: RadiusValueType, type: RadiusAttrType, raw: stri
     if (named !== undefined) return named;
     return /^\d+$/.test(raw) ? Number(raw) : null;
   }
+  if (valueType === 'octets' && /^0x([0-9a-fA-F]{2})*$/.test(raw)) return raw.slice(2).toLowerCase();
   return raw;
 }
 

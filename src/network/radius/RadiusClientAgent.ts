@@ -1,3 +1,4 @@
+import { peerOf, type PeerAddress } from './sourceAddress';
 import { clientSourceAddress } from './sourceAddress';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -11,6 +12,7 @@ import {
   createDefaultClientConfig, defaultServerEntry, attr, getAttr, getVsa,
   encryptUserPassword,
   UDP_PORT_RADIUS_AUTH,
+  eapMessageAttributes, eapMessageHex,
 } from './types';
 import {
   randomRequestAuthenticator, randomOpaqueToken, withMessageAuthenticator,
@@ -41,6 +43,7 @@ export interface RadiusClientHost {
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
   sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
+  sendUdpDatagramTo?(destination: PeerAddress, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
 }
 
@@ -259,7 +262,7 @@ export class RadiusClientAgent {
     };
   }
 
-  private recordReply(reply: RadiusPacket, srcIp: IPAddress): void {
+  private recordReply(reply: RadiusPacket, srcIp: PeerAddress): void {
     const exchange = this.lastExchange;
     if (exchange === null || exchange.reply !== null || exchange.serverIp !== srcIp.toString()) return;
     if (exchange.request.identifier !== reply.identifier) return;
@@ -383,14 +386,28 @@ export class RadiusClientAgent {
     });
   }
 
-  private transmitEap(server: RadiusServerConfig, pending: PendingEapRound): void {
+  private sendToServer(server: RadiusServerConfig, srcIp: IPAddress | null, sourcePort: number, payload: RadiusPacket, payloadBytes: number): void {
+    if (srcIp === null) {
+      this.host.sendUdpDatagramTo?.(peerOf(server.ip), server.authPort, sourcePort, payload, payloadBytes);
+      return;
+    }
+    this.host.sendUdpDatagram({ destination: new IPAddress(server.ip), destinationPort: server.authPort, sourcePort, payload, payloadBytes, source: srcIp });
+  }
+
+  private sourceFor(server: RadiusServerConfig): { srcIp: IPAddress | null; usable: boolean } {
+    if (server.ip.includes(':')) return { srcIp: null, usable: this.host.sendUdpDatagramTo !== undefined };
     const srcIp = clientSourceAddress(this.host, new IPAddress(server.ip));
-    if (!srcIp) return;
+    return { srcIp, usable: srcIp !== null };
+  }
+
+  private transmitEap(server: RadiusServerConfig, pending: PendingEapRound): void {
+    const { srcIp, usable } = this.sourceFor(server);
+    if (!usable) return;
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
-      attr('nas-ip-address', srcIp.toString()),
+      ...(srcIp === null ? [] : [attr('nas-ip-address', srcIp.toString())]),
       attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
-      attr('eap-message', pending.eapMessageHex),
+      ...eapMessageAttributes(pending.eapMessageHex),
     ];
     if (pending.callingStationId) attrs.push(attr('calling-station-id', pending.callingStationId));
     if (pending.calledStationId) attrs.push(attr('called-station-id', pending.calledStationId));
@@ -401,12 +418,7 @@ export class RadiusClientAgent {
       authenticator: pending.authenticator, attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const datagram = {
-      destination: new IPAddress(server.ip),
-      destinationPort: server.authPort, sourcePort: 49180 + (pending.identifier & 0x3fff),
-      payload, payloadBytes: 12,
-      source: srcIp,
-    };
+    const datagramSourcePort = this.fixedSourcePort ?? (49180 + (pending.identifier & 0x3fff));
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -415,8 +427,8 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    this.recordRequest(payload, server, datagram.sourcePort);
-    this.host.sendUdpDatagram(datagram);
+    this.recordRequest(payload, server, datagramSourcePort);
+    this.sendToServer(server, srcIp, datagramSourcePort, payload, 12);
   }
 
   private armEapTimeout(server: RadiusServerConfig, pending: PendingEapRound): void {
@@ -435,7 +447,7 @@ export class RadiusClientAgent {
     }, server.timeoutMs);
   }
 
-  private handleEapUdp(payload: RadiusPacket, srcIp: IPAddress, pending: PendingEapRound): void {
+  private handleEapUdp(payload: RadiusPacket, srcIp: PeerAddress, pending: PendingEapRound): void {
     if (pending.serverIp !== srcIp.toString()) return;
     if (!verifyResponseAuthenticator(payload, pending.authenticator, pending.secret)) {
       Logger.warn(this.host.id, 'radius:bad-response-authenticator',
@@ -459,24 +471,23 @@ export class RadiusClientAgent {
         fromIp: srcIp.toString(), code: payload.code, identifier: payload.identifier,
       },
     });
-    const eapAttr = getAttr(payload, 'eap-message');
-    const eapMessageHex = eapAttr ? String(eapAttr.value) : null;
+    const eapMessageHexValue = eapMessageHex(payload.attributes);
     const stateAttr = getAttr(payload, 'state');
     const state = stateAttr ? String(stateAttr.value) : null;
     if (payload.code === 'access-challenge') {
-      pending.resolve({ kind: 'challenge', eapMessageHex: eapMessageHex ?? '', state });
+      pending.resolve({ kind: 'challenge', eapMessageHex: eapMessageHexValue ?? '', state });
       return;
     }
     if (payload.code === 'access-accept') {
-      pending.resolve({ kind: 'accept', eapMessageHex, attributes: payload.attributes });
+      pending.resolve({ kind: 'accept', eapMessageHex: eapMessageHexValue, attributes: payload.attributes });
       return;
     }
-    pending.resolve({ kind: 'reject', eapMessageHex });
+    pending.resolve({ kind: 'reject', eapMessageHex: eapMessageHexValue });
   }
 
   private transmitMsChap(server: RadiusServerConfig, pending: PendingMsChapRound): void {
-    const srcIp = clientSourceAddress(this.host, new IPAddress(server.ip));
-    if (!srcIp) return;
+    const { srcIp, usable } = this.sourceFor(server);
+    if (!usable) return;
     const msChap2Response = new Uint8Array(50);
     msChap2Response[0] = pending.identifier & 0xff; // Ident
     msChap2Response[1] = 0; // Flags
@@ -485,7 +496,7 @@ export class RadiusClientAgent {
     msChap2Response.set(pending.ntResponse, 26);
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
-      attr('nas-ip-address', srcIp.toString()),
+      ...(srcIp === null ? [] : [attr('nas-ip-address', srcIp.toString())]),
       attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
       attr('vendor-specific', bytesToHex(pending.authChallenge), { id: MICROSOFT_VENDOR_ID, type: 11 }),
       attr('vendor-specific', bytesToHex(msChap2Response), { id: MICROSOFT_VENDOR_ID, type: 25 }),
@@ -497,13 +508,7 @@ export class RadiusClientAgent {
       authenticator: pending.authenticator, attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const datagram = {
-      destination: new IPAddress(server.ip),
-      destinationPort: server.authPort,
-      sourcePort: this.fixedSourcePort ?? (49180 + (pending.identifier & 0x3fff)),
-      payload, payloadBytes: 12,
-      source: srcIp,
-    };
+    const datagramSourcePort = this.fixedSourcePort ?? (49180 + (pending.identifier & 0x3fff));
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -512,8 +517,8 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    this.recordRequest(payload, server, datagram.sourcePort);
-    this.host.sendUdpDatagram(datagram);
+    this.recordRequest(payload, server, datagramSourcePort);
+    this.sendToServer(server, srcIp, datagramSourcePort, payload, 12);
   }
 
   private armMsChapTimeout(server: RadiusServerConfig, pending: PendingMsChapRound): void {
@@ -532,7 +537,7 @@ export class RadiusClientAgent {
     }, server.timeoutMs);
   }
 
-  private handleMsChapUdp(payload: RadiusPacket, srcIp: IPAddress, pending: PendingMsChapRound): void {
+  private handleMsChapUdp(payload: RadiusPacket, srcIp: PeerAddress, pending: PendingMsChapRound): void {
     if (pending.serverIp !== srcIp.toString()) return;
     if (!verifyResponseAuthenticator(payload, pending.authenticator, pending.secret)) {
       Logger.warn(this.host.id, 'radius:bad-response-authenticator',
@@ -677,7 +682,7 @@ export class RadiusClientAgent {
     this.armTimeout(server, pending);
   }
 
-  handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleUdp(_inPort: string, srcIp: PeerAddress, udp: UDPPacket): void {
     if (!this.config.enabled) return;
     const fromConfiguredPort = this.config.servers.some((s) => s.ip === srcIp.toString() && s.authPort === udp.sourcePort);
     if (udp.sourcePort !== UDP_PORT_RADIUS_AUTH && udp.destinationPort !== UDP_PORT_RADIUS_AUTH && !fromConfiguredPort) return;
@@ -813,8 +818,8 @@ export class RadiusClientAgent {
   }
 
   private transmit(server: RadiusServerConfig, pending: PendingRequest): void {
-    const srcIp = clientSourceAddress(this.host, new IPAddress(server.ip));
-    if (!srcIp) return;
+    const { srcIp, usable } = this.sourceFor(server);
+    if (!usable) return;
     const attrs: RadiusAttribute[] = [attr('user-name', pending.username)];
     if (pending.authMethod === 'chap') {
       const challenge = hexToBytes(pending.authenticator);
@@ -824,10 +829,10 @@ export class RadiusClientAgent {
     } else {
       attrs.push(attr('user-password', encryptUserPassword(pending.password, server.sharedSecret, pending.authenticator)));
     }
-    attrs.push(attr('nas-ip-address', this.attributePolicy.nasIpAddress ?? srcIp.toString()));
+    if (srcIp !== null) attrs.push(attr('nas-ip-address', this.attributePolicy.nasIpAddress ?? srcIp.toString()));
     if (this.attributePolicy.serviceTypeInLoginRequest) attrs.push(attr('service-type', SERVICE_TYPE_LOGIN));
     if (pending.state) attrs.push(attr('state', pending.state));
-    const identifier = this.attributePolicy.nasIdentifier?.(srcIp.toString()) ?? this.config.nasIdentifier;
+    const identifier = this.attributePolicy.nasIdentifier?.(srcIp === null ? '' : srcIp.toString()) ?? this.config.nasIdentifier;
     if (identifier) attrs.push(attr('nas-identifier', identifier));
     this.mergeRequestAttributes(attrs);
     let payload: RadiusPacket = {
@@ -836,13 +841,8 @@ export class RadiusClientAgent {
       attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const datagram = {
-      destination: new IPAddress(server.ip),
-      destinationPort: server.authPort,
-      sourcePort: this.fixedSourcePort ?? (49152 + (pending.identifier & 0x3fff)),
-      payload, payloadBytes: 20 + 32 + pending.username.length + pending.password.length - 8,
-      source: srcIp,
-    };
+    const datagramSourcePort = this.fixedSourcePort ?? (49152 + (pending.identifier & 0x3fff));
+    const datagramBytes = 20 + 32 + pending.username.length + pending.password.length - 8;
     // Published before the actual send: delivery is synchronous, so a
     // multi-round exchange (e.g. an Access-Challenge round-trip) can run to
     // completion *inside* this call — publishing after would report this
@@ -860,8 +860,8 @@ export class RadiusClientAgent {
     if (pending.transmissions > 0) sent.retransmissions++;
     pending.transmissions++;
     pending.sentAtMs = PathClock.now();
-    this.recordRequest(payload, server, datagram.sourcePort);
-    this.host.sendUdpDatagram(datagram);
+    this.recordRequest(payload, server, datagramSourcePort);
+    this.sendToServer(server, srcIp, datagramSourcePort, payload, datagramBytes);
   }
 
 }

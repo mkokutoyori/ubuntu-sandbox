@@ -33,6 +33,7 @@ export interface CertificateVerifierOptions {
   readonly maxDepth?: number;
   readonly revocationScope?: 'leaf' | 'chain';
   readonly missingCrlOk?: boolean;
+  readonly allowStaleCrl?: boolean;
   readonly crlMode?: 'crl' | 'crl-strict';
   readonly ocspScope?: 'leaf' | 'chain';
   readonly missingOcspOk?: boolean;
@@ -48,6 +49,7 @@ export class CertificateVerifier {
   private readonly maxDepth: number | undefined;
   private readonly revocationScope: 'leaf' | 'chain';
   private readonly missingCrlOk: boolean;
+  private readonly allowStaleCrl: boolean;
   private readonly crlMode: 'crl' | 'crl-strict';
   private readonly ocspScope: 'leaf' | 'chain';
   private readonly missingOcspOk: boolean;
@@ -62,6 +64,7 @@ export class CertificateVerifier {
     this.maxDepth = opts.maxDepth;
     this.revocationScope = opts.revocationScope ?? 'chain';
     this.missingCrlOk = opts.missingCrlOk ?? false;
+    this.allowStaleCrl = opts.allowStaleCrl ?? false;
     this.crlMode = opts.crlMode ?? (this.revocationCheck === 'crl-strict' ? 'crl-strict' : 'crl');
     this.ocspScope = opts.ocspScope ?? 'leaf';
     this.missingOcspOk = opts.missingOcspOk ?? false;
@@ -110,7 +113,7 @@ export class CertificateVerifier {
     const crl = this.crls.find((candidate) => candidate.issuer === cert.issuer);
     if (!crl) return this.crlMode === 'crl-strict' && !this.missingCrlOk ? { ok: false, reason: 'crl-stale' } : null;
     if (!crl.isValidSignature(issuer.publicKey)) return { ok: false, reason: 'crl-untrusted' };
-    if (!crl.isFresh(now) && this.crlMode === 'crl-strict') return { ok: false, reason: 'crl-stale' };
+    if (!crl.isFresh(now) && this.crlMode === 'crl-strict' && !this.allowStaleCrl) return { ok: false, reason: 'crl-stale' };
     return crl.contains(cert.serialNumber) ? { ok: false, reason: 'revoked' } : null;
   }
 

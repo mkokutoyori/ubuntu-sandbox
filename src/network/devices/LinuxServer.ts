@@ -9,7 +9,7 @@
  * `STARTUP` / `SHUTDOWN` reactively.
  */
 
-import { IPAddress, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
+import { IPAddress, IPv6Address, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
 import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
@@ -27,8 +27,9 @@ import { CoaClient } from '../radius/CoaClient';
 import { formatRadiusAttribute } from '../radius/attributeText';
 import { RADIUS_PACKET_NAME } from '../radius/types';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH, RADIUSD_CONF_PATH } from './linux/freeradius/RadiusdService';
-import { DEFAULT_RADIUSD_CONF, DEFAULT_PROXY_CONF } from './linux/freeradius/DefaultRadiusdConf';
-import { DEFAULT_SITE, STATUS_SITE } from './linux/freeradius/DefaultSites';
+import { DEFAULT_RADIUSD_CONF, DEFAULT_PROXY_CONF, REALM_MODULE } from './linux/freeradius/DefaultRadiusdConf';
+import { RADZAP_PATH, RADZAP_SCRIPT } from './linux/freeradius/DefaultRadzap';
+import { DEFAULT_SITE, STATUS_SITE, CONTROL_SOCKET_SITE } from './linux/freeradius/DefaultSites';
 import { DEFAULT_PREPROCESS_MODULE, DEFAULT_HINTS, DEFAULT_HUNTGROUPS } from './linux/freeradius/DefaultPreprocess';
 import { DEFAULT_DETAIL_MODULE } from './linux/freeradius/DefaultDetailModule';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
@@ -88,6 +89,8 @@ export class LinuxServer extends LinuxMachine {
         this.sendIpv4FrameArpAware(outPortName, ipPkt, nextHopIP),
       sendUdpDatagram: (request: import('../layers/transport/UdpEgress').UdpSendRequest) =>
         this.sendUdpDatagram(request),
+      sendUdpDatagramTo: (destination: IPAddress | IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
+        this.sendUdpDatagramTo(destination, destinationPort, sourcePort, payload, payloadBytes),
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
     };
     this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());
@@ -131,7 +134,7 @@ export class LinuxServer extends LinuxMachine {
       if (dgram.sourceIP instanceof IPAddress) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
     this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
     // A standalone client agent has no destination port of its own to be
     // dispatched to on this host's socket-table-based UDP model (unlike a
@@ -140,7 +143,7 @@ export class LinuxServer extends LinuxMachine {
     // identifier-derived ephemeral port `transmit()` otherwise picks.
     this.radtestClient.setFixedSourcePort(RADTEST_SOURCE_PORT);
     this.udpBind(RADTEST_SOURCE_PORT, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.radtestClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.radtestClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
 
     const smtpSubject = `CN=${this.getHostname()}`;
@@ -287,6 +290,9 @@ export class LinuxServer extends LinuxMachine {
     if (!this.executor.vfs.exists(`${modulesDir}/preprocess`)) {
       this.executor.vfs.writeFile(`${modulesDir}/preprocess`, DEFAULT_PREPROCESS_MODULE, 0, 0, 0o022);
     }
+    if (!this.executor.vfs.exists(`${modulesDir}/realm`)) {
+      this.executor.vfs.writeFile(`${modulesDir}/realm`, REALM_MODULE, 0, 0, 0o022);
+    }
     const preprocessDir = `${dir}/mods-config/preprocess`;
     if (!this.executor.vfs.exists(preprocessDir)) this.executor.vfs.mkdirp(preprocessDir, 0o755, 0, 0);
     if (!this.executor.vfs.exists(`${preprocessDir}/hints`)) this.executor.vfs.writeFile(`${preprocessDir}/hints`, DEFAULT_HINTS, 0, 0, 0o022);
@@ -296,9 +302,14 @@ export class LinuxServer extends LinuxMachine {
     for (const folder of [available, enabled]) if (!this.executor.vfs.exists(folder)) this.executor.vfs.mkdirp(folder, 0o755, 0, 0);
     if (!this.executor.vfs.exists(`${available}/default`)) this.executor.vfs.writeFile(`${available}/default`, DEFAULT_SITE, 0, 0, 0o022);
     if (!this.executor.vfs.exists(`${available}/status`)) this.executor.vfs.writeFile(`${available}/status`, STATUS_SITE, 0, 0, 0o022);
+    if (!this.executor.vfs.exists(`${available}/control-socket`)) this.executor.vfs.writeFile(`${available}/control-socket`, CONTROL_SOCKET_SITE, 0, 0, 0o022);
     if (!this.executor.vfs.exists(`${enabled}/default`)) this.executor.vfs.createSymlink(`${enabled}/default`, '../sites-available/default', 0, 0);
     if (!this.executor.vfs.exists(RADIUSD_CONF_PATH)) {
       this.executor.vfs.writeFile(RADIUSD_CONF_PATH, DEFAULT_RADIUSD_CONF, 0, 0, 0o022);
+    }
+    if (!this.executor.vfs.exists(RADZAP_PATH)) {
+      this.executor.vfs.writeFile(RADZAP_PATH, RADZAP_SCRIPT, 0, 0, 0o022);
+      this.executor.vfs.chmod(RADZAP_PATH, 0o755);
     }
     if (!this.executor.vfs.exists(`${dir}/proxy.conf`)) this.executor.vfs.writeFile(`${dir}/proxy.conf`, DEFAULT_PROXY_CONF, 0, 0, 0o022);
     if (!this.executor.vfs.exists(USERS_FILE_PATH)) {

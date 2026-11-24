@@ -15,28 +15,45 @@
  * touch.
  */
 import { knownGoodPassword } from '@/network/radius/KnownGoodPassword';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
 import { parseClientsConf } from './ClientsConfParser';
-import type { RadiusClientEntry } from '@/network/radius/ClientTable';
+import { readEapModule, EAP_DEFAULT_FRAGMENT_SIZE, type EapModuleConfig } from './EapModuleConfig';
+import type { EapTlsConfig } from '@/network/radius/eaptls/EapTlsConfig';
+import { PeapMd5InnerAuthServer } from '@/network/radius/eaptls/PeapInnerAuth';
+import { PeapMsChapV2InnerAuthServer } from '@/network/radius/eaptls/PeapMsChapV2InnerAuth';
+import { TtlsPapInnerAuthServer } from '@/network/radius/eaptls/TtlsInnerAuth';
+import { protocolOf, type RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseUsersFile, matchUsersEntries, requestViewOf, type UsersEntry } from './UsersFileParser';
-import type { RadiusUser, RadiusAttribute, RadiusPacket } from '@/network/radius/types';
-import { detailPath, detailEntry, acctUniqueFor, type DetailRecord } from './DetailModule';
+import { eapMessageHex, type RadiusUser, type RadiusAttribute, type RadiusPacket, type ProxyRoute } from '@/network/radius/types';
+import { detailPath, detailEntry, acctUniqueFor, readDetailSettings, type DetailRecord } from './DetailModule';
 import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
-import { parseFreeradiusConf, type ConfFileReader } from './FreeradiusConf';
+import { parseFreeradiusConf, type ConfFileReader, type ConfSection } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
-import { requestDebugLines, knownGoodDisplayName, type ResolutionTrace } from './RequestDebug';
-import type { RadiusUserResolverContext, AccountingRun } from '@/network/radius/RadiusServerAgent';
+import { requestDebugLines, knownGoodDisplayName, credentialMessages, type ResolutionTrace } from './RequestDebug';
+import type { RadiusUserResolverContext, AccountingRun, AuthenticateOutcome } from '@/network/radius/RadiusServerAgent';
 import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
 import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
-import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool } from './ProxyConfig';
+import { formatRadiusAttribute } from '@/network/radius/attributeText';
+import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer, type RadSecHomeTls } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
 import { readPreprocess, applyPreprocess, NO_PREPROCESS, type PreprocessFiles } from './PreprocessModule';
-import { readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
+import { RadSecServer, RadSecClientConnection } from '@/network/radius/RadSecTransport';
+import { OcspClient, DEFAULT_OCSP_POLICY } from '@/network/http/ocsp/OcspHttpClient';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { peerOf } from '@/network/radius/sourceAddress';
+import { SessionTicketStore, type SessionTicket } from '@/network/tls/sessionTickets';
+import { certificateRejection, cipherOptions, tlsProtocolsOf, verifierOptions } from '@/network/radius/RadSecTlsPolicy';
+import type { TlsClientConfig } from '@/network/tls/TlsClientSession';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { pemToCertChain, pemToDhParameters, pemToPrivateKeyWithPassphrase } from '@/network/pki/pem';
+import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
+import { type ControlSocket, type RadSecTls, readSiteConfig, describeListener, type ListenerSpec, type SiteConfig } from './RadiusdSiteConfig';
 import { RadiusClientTable } from '@/network/radius/ClientTable';
+import type { RadiusStats } from '@/network/radius/RadiusServerAgent';
 import { formatCtime } from '../time/ctime';
 import { formatLocalTime } from '../system/SystemInfo';
 import { simulationNowMs } from '@/network/core/SystemClock';
@@ -96,13 +113,32 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; files: readonly string[] }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null; root: ConfSection }
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
-const DEFAULT_PREACCT_PROGRAM = moduleProgram(['preprocess', 'acct_unique']);
+const DEFAULT_PREACCT_PROGRAM = moduleProgram(['preprocess', 'suffix', 'acct_unique']);
 const DEFAULT_ACCOUNTING_PROGRAM = moduleProgram(['detail', 'radutmp']);
 const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
+
+const BUILTIN_AUTH_TYPES = new Set(['accept', 'reject', 'pap', 'chap', 'mschap', 'eap']);
+const LOADED_MODULE_SECTIONS = new Set(['detail', 'preprocess', 'realm', 'eap']);
+
+const MODULE_METHODS: Readonly<Record<string, readonly string[]>> = {
+  detail: ['authorize', 'preacct', 'accounting', 'pre-proxy', 'post-proxy', 'post-auth', 'recv-coa', 'send-coa'],
+  preprocess: ['authorize', 'preacct'],
+  realm: ['authorize', 'preacct', 'recv-coa'],
+  eap: ['authenticate', 'authorize', 'pre-proxy', 'post-proxy', 'post-auth'],
+};
+const MODULE_FLAGS: Readonly<Record<string, readonly string[]>> = { detail: ['reload-on-hup'], preprocess: [], realm: ['reload-on-hup'], eap: [] };
+
+function loadedModules(root: { sections: readonly { name1: string; name2: string | null }[] }): string[] {
+  const modules = root.sections.find((section) => section.name1 === 'modules') as unknown as { sections: readonly { name1: string; name2: string | null }[] } | undefined;
+  if (modules === undefined) return [];
+  return modules.sections
+    .filter((section) => LOADED_MODULE_SECTIONS.has(section.name1))
+    .map((section) => (section.name2 === null ? section.name1 : `${section.name2} (${section.name1})`));
+}
 
 export class RadiusdService {
   private running = false;
@@ -133,6 +169,146 @@ export class RadiusdService {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  controlSocketPaths(): readonly ControlSocket[] {
+    return this.running ? this.controlSockets : [];
+  }
+
+  configuredControlSockets(): readonly string[] {
+    const loaded = this.loadConfig();
+    return loaded.ok ? loaded.site.controlSockets.map((socket) => socket.path) : [];
+  }
+
+  private statisticsLines(kind: 'auth' | 'acct', stats: RadiusStats, serverForm: boolean): string[] {
+    const lines = [`requests\t${stats.requests}`, `responses\t${stats.responses}`];
+    if (kind === 'auth') lines.push(`accepts\t\t${stats.accepts}`, `rejects\t\t${stats.rejects}`, `challenges\t${stats.challenges}`);
+    lines.push(
+      `dup\t\t${stats.dup}`, `invalid\t\t${stats.invalid}`, `malformed\t${stats.malformed}`, `bad_authenticator\t${stats.badAuthenticator}`,
+      `dropped\t\t${stats.dropped}`, `unknown_types\t${stats.unknownTypes}`, `no_records\t${stats.noRecords}`,
+      ...(serverForm ? [`timeouts\t${stats.timeouts}`] : [`conflicts\t${stats.conflicts}`, `unresponsive_child\t${stats.unresponsiveChild}`]),
+      `last_packet\t${stats.lastPacket}`,
+    );
+    ['1us', '10us', '100us', '1ms', '10ms', '100ms', '1s', '10s'].forEach((name, index) => lines.push(`elapsed.${name}\t${stats.elapsed[index]}`));
+    return lines;
+  }
+
+  statisticsListing(kind: 'auth' | 'acct', clientIp: string | null): string[] {
+    return this.statisticsLines(kind, this.radiusServer.clientStatistics(kind, clientIp), false);
+  }
+
+  socketStatisticsListing(address: string, port: number): string[] | null {
+    const spec = this.activeListeners.find((candidate) => candidate.port === port && candidate.tls === undefined && (candidate.address === null || candidate.address === address));
+    if (spec === undefined) return null;
+    const kind = spec.type === 'acct' ? 'acct' : 'auth';
+    return this.statisticsLines(kind, this.radiusServer.listenerStatistics(kind, port), false);
+  }
+
+  queueStatisticsListing(): string[] {
+    return ['queue_len_internal\t0', 'queue_len_proxy\t\t0', 'queue_len_auth\t\t0', 'queue_len_acct\t\t0', 'queue_len_detail\t0', 'queue_pps_in\t\t0', 'queue_pps_out\t\t0'];
+  }
+
+  homeServerStatisticsListing(kind: 'auth' | 'acct', address: string | null, port: number | null): string[] | null {
+    if (address !== null && this.proxyConfig.homeServers.find((server) => server.address === address && (kind === 'acct' ? (server.acctPort ?? server.port) : server.port) === port && (kind === 'acct' ? server.type !== 'auth' : server.type !== 'acct')) === undefined) return null;
+    const { stats, outstanding } = this.radiusServer.homeServerStatistics(kind, address, port);
+    const lines = this.statisticsLines(kind, stats, true);
+    if (address !== null) lines.push(`outstanding\t${outstanding}`);
+    return lines;
+  }
+
+  moduleType(name: string): string | null {
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return null;
+    const modules = loaded.root.sections.find((section) => section.name1 === 'modules');
+    const found = modules?.sections.find((section) => LOADED_MODULE_SECTIONS.has(section.name1) && (section.name2 ?? section.name1) === name);
+    return found === undefined ? null : found.name1;
+  }
+
+  moduleMethods(name: string): string[] | null {
+    const type = this.moduleType(name);
+    return type === null ? null : [...MODULE_METHODS[type]];
+  }
+
+  moduleFlags(name: string): string[] | null {
+    const type = this.moduleType(name);
+    return type === null ? null : [...MODULE_FLAGS[type]];
+  }
+
+  moduleConfigListing(name: string): string[] | null {
+    const type = this.moduleType(name);
+    if (type === null) return null;
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return null;
+    if (type === 'eap') {
+      const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'eap');
+      return [
+        'eap {', `\tdefault_eap_type = '${section?.pairs.find((pair) => pair.name === 'default_eap_type')?.value ?? 'md5'}'`, '\ttimer_expire = 60', '\tmax_eap_type = 52',
+        '\tignore_unknown_eap_types = no', '\tcisco_accounting_username_bug = no', '\tallow_empty_identities = no', '\tmax_sessions = 2048', "\tdedup_key = ''", '}',
+      ];
+    }
+    if (type === 'realm') {
+      const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'realm' && candidate.name2 === name);
+      const text = (key: string): string | undefined => section?.pairs.find((pair) => pair.name === key)?.value;
+      const flag = (key: string): string => (/^(yes|true|on)$/i.test(text(key) ?? 'no') ? 'yes' : 'no');
+      return [
+        `realm ${name} {`, `\tformat = '${text('format') ?? 'suffix'}'`, `\tdelimiter = '${text('delimiter') ?? '@'}'`,
+        `\tignore_default = ${flag('ignore_default')}`, `\tignore_null = ${flag('ignore_null')}`, `\treturn_notfound = ${flag('return_notfound')}`, '}',
+      ];
+    }
+    if (type === 'preprocess') {
+      const section = loaded.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.find((candidate) => candidate.name1 === 'preprocess' && (candidate.name2 ?? 'preprocess') === name);
+      const text = (key: string): string | undefined => section?.pairs.find((pair) => pair.name === key)?.value;
+      const flag = (key: string): string => (/^(yes|true|on)$/i.test(text(key) ?? 'no') ? 'yes' : 'no');
+      const path = (key: string): string => (text(key) === undefined ? `\t${key} = ` : `\t${key} = '${text(key)}'`);
+      return [
+        'preprocess {', path('huntgroups'), path('hints'), `\twith_ascend_hack = ${flag('with_ascend_hack')}`,
+        `\tascend_channels_per_line = ${text('ascend_channels_per_line') ?? '23'}`, `\twith_ntdomain_hack = ${flag('with_ntdomain_hack')}`,
+        `\twith_specialix_jetstream_hack = ${flag('with_specialix_jetstream_hack')}`, `\twith_cisco_vsa_hack = ${flag('with_cisco_vsa_hack')}`,
+        `\twith_alvarion_vsa_hack = ${flag('with_alvarion_vsa_hack')}`, '}',
+      ];
+    }
+    const settings = readDetailSettings(loaded.root);
+    if (settings === null || 'error' in settings) return null;
+    return [
+      'detail {', `\tdetailfile = '${settings.filename}'`, `\tfilename = '${settings.filename}'`, `\theader = '${settings.header}'`,
+      `\tdetailperm = ${settings.permissions}`, `\tpermissions = ${settings.permissions}`, `\tgroup = ${settings.group === null ? '' : `'${settings.group}'`}`,
+      `\tlocking = ${settings.locking ? 'yes' : 'no'}`, `\tdates_as_integer = ${settings.datesAsInteger ? 'yes' : 'no'}`,
+      `\tescape_filenames = ${settings.escapeFilenames ? 'yes' : 'no'}`, `\tlog_packet_header = ${settings.logPacketHeader ? 'yes' : 'no'}`, '}',
+    ];
+  }
+
+  configValue(path: string): string | null {
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return null;
+    const names = path.split('.');
+    let section: ConfSection | undefined = loaded.root;
+    for (const name of names.slice(0, -1)) {
+      section = section?.sections.find((candidate) => candidate.name1 === name || candidate.name2 === name);
+    }
+    if (section === undefined) return null;
+    return section.pairs.find((pair) => pair.name === names[names.length - 1])?.value ?? null;
+  }
+
+  moduleListing(): string[] {
+    const loaded = this.loadConfig();
+    if (!loaded.ok) return [];
+    return loaded.modules.slice();
+  }
+
+  clientConfig(address: string): string[] | null {
+    const ip = IPAddress.tryParse(address);
+    if (ip === null) return null;
+    return this.radiusServer.clientTable.find(ip)?.confLines?.slice() ?? null;
+  }
+
+  clientListing(verbose: boolean): string[] {
+    const entries = this.radiusServer.clientTable.list();
+    const address = (entry: RadiusClientEntry) => entry.prefix === (entry.address instanceof IPv6Address ? 128 : 32) ? entry.address.toString() : `${entry.address.toString()}/${entry.prefix}`;
+    if (!verbose) return entries.map(address);
+    return entries.flatMap((entry, index) => [
+      `client ${entry.section ?? entry.shortname} {`, `\tipaddr = ${address(entry)}`, `\tproto = ${protocolOf(entry) === 'udp' ? 'udp' : protocolOf(entry) === 'tcp' ? 'tcp' : '*'}`, `\tsecret = ${entry.secret}`, `\tlongname = ${entry.name}`,
+      `\tshortname = ${entry.shortname}`, ...(entry.nasType === '' ? [] : [`\tnas_type = ${entry.nasType}`]), `\tnumber = ${index}`, '\tglobal = yes', '}',
+    ]);
   }
 
   checkConfig(): OperationResult {
@@ -186,6 +362,7 @@ export class RadiusdService {
     if (this.running) return { ok: true };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
+    this.controlSockets = loaded.site.controlSockets;
     const specs: ListenerSpec[] = listen.authPort === undefined ? loaded.site.listeners : [
       { type: 'auth', address: listen.address ?? null, port: listen.authPort, server: 'default', file: '', line: 0 },
       { type: 'acct', address: listen.address ?? null, port: listen.authPort + 1, server: 'default', file: '', line: 0 },
@@ -193,7 +370,8 @@ export class RadiusdService {
     const bound: number[] = [];
     const tables = this.serverClientTables(loaded.site);
     const handlerOf = (spec: ListenerSpec) => (dgram: { inPort: string; sourceIP: unknown; udp: never }): void => {
-      if (!(dgram.sourceIP instanceof IPAddress)) return;
+      if (!(dgram.sourceIP instanceof IPAddress) && !(dgram.sourceIP instanceof IPv6Address)) return;
+      if ((dgram.sourceIP instanceof IPv6Address) !== (spec.ipv6 === true)) return;
       const udp = dgram.udp as { payload?: { code?: string } };
       if (spec.type === 'auth') this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
       else if (spec.type === 'acct') this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
@@ -201,24 +379,62 @@ export class RadiusdService {
       else if (udp.payload?.code === 'accounting-request') this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
       else this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     };
-    for (const spec of specs) {
-      const owner = spec.address === null ? {} : { acceptsDestination: (destination: { toString(): string }) => destination.toString() === spec.address };
+    const radSecServers: RadSecServer[] = [];
+    for (const spec of specs.filter((candidate) => candidate.tls !== undefined)) {
+      const config = this.radSecTlsConfig(spec.tls as RadSecTls);
+      if (typeof config === 'string') return { ok: false, error: config };
+      this.radSecBuilt.set(spec.tls as RadSecTls, { config, atMs: this.wallClock.nowMs() });
+      const server = new RadSecServer(this.host.getTcpStack(), spec.port, this.radiusServer, { tlsConfig: (clientIp) => this.radSecConfigFor(clientIp, spec.tls as RadSecTls, config), checkPeer: (clientIp, certificate) => certificateRejection(certificate, this.radSecLimitsFor(clientIp, spec.tls as RadSecTls)) ?? this.ocspRejection(certificate, this.radSecClientTls(clientIp) ?? (spec.tls as RadSecTls)), localIp: spec.ipv6 === true ? '::' : '0.0.0.0', onConnection: (_ip, accepted, reason, resumed) => { if (!accepted && reason !== undefined) this.writeLogLine('Auth', `tls: ${reason}`); if (accepted && resumed === true) this.resumedRadSecConnections++; } });
+      server.start({ processName: PROCESS_NAME });
+      radSecServers.push(server);
+    }
+    this.radSecServers = radSecServers;
+    const familyOf = (spec: ListenerSpec): 'ipv4' | 'ipv6' => (spec.ipv6 === true ? 'ipv6' : 'ipv4');
+    const familyOfAddress = (address: unknown): 'ipv4' | 'ipv6' => (address instanceof IPv6Address ? 'ipv6' : 'ipv4');
+    const sockets: Array<{ port: number; group: ListenerSpec[] }> = [];
+    for (const spec of specs.filter((candidate) => candidate.tls === undefined && candidate.stream !== true)) {
+      const shared = sockets.find((entry) => entry.port === spec.port && !entry.group.some((other) => familyOf(other) === familyOf(spec)));
+      if (shared === undefined) sockets.push({ port: spec.port, group: [spec] });
+      else shared.group.push(spec);
+    }
+    for (const { port, group } of sockets) {
+      const owner = {
+        families: group.map(familyOf),
+        acceptsDestination: (destination: { toString(): string }) => {
+          const spec = group.find((candidate) => familyOf(candidate) === familyOfAddress(destination));
+          return spec !== undefined && (spec.address === null || spec.address === destination.toString());
+        },
+      };
+      const handlers = new Map(group.map((spec) => [familyOf(spec), handlerOf(spec)]));
+      const dispatch = (dgram: { inPort: string; sourceIP: unknown; udp: never }): void => { handlers.get(familyOfAddress(dgram.sourceIP))?.(dgram); };
       let bindFailed = false;
       try {
-        bindFailed = this.host.udpBind(spec.port, handlerOf(spec) as never, PROCESS_NAME, owner as never) === false;
+        bindFailed = this.host.udpBind(port, dispatch as never, PROCESS_NAME, owner as never) === false;
       } catch (error) {
         if (!(error instanceof Error && error.message.startsWith('EADDRINUSE'))) throw error;
         bindFailed = true;
       }
       if (bindFailed) {
         for (const taken of bound) this.host.udpClose(taken);
+        for (const server of radSecServers) server.stop();
+        this.radSecServers = [];
+        const spec = group[0];
         const what = spec.type === 'acct' ? 'accounting' : spec.type === 'status' ? 'status' : 'authentication';
         return { ok: false, error: `There appears to be another RADIUS server running on the ${what} port ${spec.port}` };
       }
-      bound.push(spec.port);
+      bound.push(port);
     }
     const authPort = specs.find((spec) => spec.type === 'auth' || spec.type === 'auth+acct')?.port ?? UDP_PORT_RADIUS_AUTH;
     const acctPort = specs.find((spec) => spec.type === 'acct')?.port ?? authPort;
+    if (loaded.proxy.homeServers.some((server) => server.address.includes(':') && server.radSec === null)) {
+      const proxySocket = this.host.udpBind(0, ((dgram: { sourceIP: unknown; udp: never }) => {
+        if (dgram.sourceIP instanceof IPv6Address) this.radiusServer.handleProxyReply(dgram.sourceIP, dgram.udp);
+      }) as never, PROCESS_NAME, { families: ['ipv6'] } as never);
+      if (proxySocket !== false) {
+        bound.push(proxySocket);
+        this.radiusServer.setProxyPort6(proxySocket);
+      }
+    }
     this.activeListeners = specs;
     this.portServers = new Map(specs.map((spec) => [spec.port, spec.server]));
     this.radiusServer.setAnyPort(true);
@@ -226,7 +442,7 @@ export class RadiusdService {
     this.applyConfig(loaded);
     this.radiusServer.setPorts(authPort, acctPort);
     this.radiusServer.start();
-    this.radiusTcpServer.start();
+    this.radiusTcpServer.start(specs.filter((spec) => spec.stream === true).map((spec) => ({ port: spec.port, localIp: spec.ipv6 === true ? '::' : spec.address ?? '0.0.0.0' })));
     this.radiusServer.setDecisionListener((payload) => this.writeAuthLog(payload));
     this.radiusServer.setAccountingListener((record) => this.writeDetail(record));
     this.radiusServer.setWarningListener((message) => this.writeLogLine('Warning', message));
@@ -253,6 +469,9 @@ export class RadiusdService {
     this.boundPorts = [];
     this.radiusServer.stop();
     this.radiusTcpServer.stop();
+    for (const server of this.radSecServers) server.stop();
+    this.closeRadSecConnections();
+    this.radSecServers = [];
     this.running = false;
   }
 
@@ -273,7 +492,8 @@ export class RadiusdService {
 
   private pipelines = new Map<string, Pipeline>();
   private proxyConfig: ProxyConfig = NO_PROXY;
-  private proxyDecision: RadiusUser['proxy'] | null = null;
+  private controlSockets: readonly ControlSocket[] = [];
+  private proxyDecision: ProxyRoute | null = null;
   private proxyRotation = new Map<string, number>();
   private portServers = new Map<number, string>();
 
@@ -293,7 +513,96 @@ export class RadiusdService {
     this.files.append(detailPath(settings, record), detailEntry(settings, record, this.sectionAllows(record.destinationPort, 'preacct', 'acct_unique') ? acctUniqueFor(record) : null), ~settings.permissions & 0o777);
   }
 
-  private runAccounting(info: AccountingRun): boolean {
+  private runStatus(info: { port: number; accounting: boolean; request: readonly RadiusAttribute[] }): { verdict: 'ok' | 'reject' | 'drop'; reply: RadiusAttribute[] } | null {
+    const server = this.portServers.get(info.port) ?? 'default';
+    const pipeline = this.pipelines.get(server);
+    const section = info.accounting ? pipeline?.accounting : pipeline?.authorize;
+    const wanted = info.accounting ? 'Acct-Type Status-Server' : 'Autz-Type Status-Server';
+    const group = section?.find((statement) => statement.kind === 'typed' && statement.name === wanted);
+    if (group === undefined || group.kind !== 'typed') return null;
+    const context = newContext(String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? ''), info.request, null, this.wallClock.nowMs());
+    const lines: string[] = [];
+    const host: UnlangHost = { runModule: (name): ModuleOutcome => (name === 'ok' ? { result: 'ok', messages: [] } : name === 'reject' ? { result: 'reject', messages: [] } : { result: 'noop', messages: [] }) };
+    const outcome = run(group.body, context, host, lines, 3);
+    this.radiusServer.emitDebugLines([`# Executing group from file ${group.file} line ${group.line}`, `  ${wanted} {`, ...lines, `  } # ${wanted} = ${outcome.result}`]);
+    const verdict = outcome.result === 'ok' || outcome.result === 'updated' ? 'ok' : outcome.result === 'fail' || outcome.result === 'handled' ? 'drop' : 'reject';
+    return { verdict, reply: context.reply };
+  }
+
+  private runSession(info: { port: number; username: string; active: number; maximum: number }): number | null {
+    const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
+    const program = pipeline?.session;
+    if (program === undefined || program === null) return pipeline !== undefined && pipeline.sections.has('session') && !pipeline.sections.get('session')!.has('radutmp') ? null : info.active;
+    let counted = 0;
+    const context = newContext(info.username, [], null, this.wallClock.nowMs());
+    const lines: string[] = [];
+    const host: UnlangHost = {
+      runModule: (name): ModuleOutcome => {
+        if (name === 'radutmp') {
+          counted = info.active;
+          return { result: 'ok', messages: [] };
+        }
+        if (name === 'ok') return { result: 'ok', messages: [] };
+        if (name === 'reject') return { result: 'reject', messages: [] };
+        return { result: 'noop', messages: [] };
+      },
+    };
+    const outcome = run(program, context, host, lines, 3);
+    return outcome.result === 'ok' ? counted : null;
+  }
+
+  private runAuthenticate(info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[]; messages?: readonly string[] }): AuthenticateOutcome | null {
+    const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
+    const raw = this.lastResolution?.authTypeName ?? null;
+    if (pipeline === undefined || raw === null) return null;
+    const builtin = raw.toLowerCase();
+    const group = pipeline.authGroups.get(builtin === 'mschap' ? 'ms-chap' : builtin);
+    if (group === undefined) return null;
+    const userName = String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
+    const context = newContext(userName, info.request, null, this.wallClock.nowMs());
+    const lines: string[] = [];
+    const host: UnlangHost = {
+      runModule: (name): ModuleOutcome => {
+        if ((name === 'pap' && builtin === 'pap') || (name === 'chap' && builtin === 'chap') || (name === 'mschap' && builtin === 'mschap')) {
+          return { result: info.accepted ? 'ok' : 'reject', messages: credentialMessages(builtin === 'pap' ? 'PAP' : builtin === 'chap' ? 'CHAP' : 'MS-CHAP', info.accepted, userName, info.user?.knownGoodName) };
+        }
+        if (name === 'eap' && builtin === 'eap') return { result: info.accepted ? 'ok' : 'reject', messages: [...(info.messages ?? [])] };
+        if (name === 'ok') return { result: 'ok', messages: [] };
+        if (name === 'reject') return { result: 'reject', messages: [] };
+        if (this.isRealmInstance(name)) return this.runRealmModule(name, context);
+        return { result: 'noop', messages: [] };
+      },
+    };
+    const outcome = run(group.program, context, host, lines, 3);
+    return {
+      accepted: outcome.result === 'ok' || outcome.result === 'handled' || outcome.result === 'updated',
+      reply: context.reply,
+      trace: { type: group.name, name: group.name, file: group.file, line: group.line, lines, result: outcome.result },
+    };
+  }
+
+  private runProxyStage(section: 'pre-proxy' | 'post-proxy', port: number, request: readonly RadiusAttribute[], outbound: RadiusAttribute[], reply: RadiusAttribute[]): { attributes: RadiusAttribute[] | null } {
+    const server = this.portServers.get(port) ?? 'default';
+    const pipeline = this.pipelines.get(server);
+    const program = section === 'pre-proxy' ? pipeline?.preProxy : pipeline?.postProxy;
+    const keep = section === 'pre-proxy' ? outbound : reply;
+    if (program === null || program === undefined || program.length === 0) return { attributes: keep };
+    const username = String(request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
+    const context = newContext(username, request, null, this.wallClock.nowMs());
+    context.proxyRequest = [...outbound];
+    context.proxyReply = [...reply];
+    const lines: string[] = [];
+    const host: UnlangHost = { runModule: (name, ctx) => (this.isRealmInstance(name) ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }) };
+    const outcome = run(program, context, host, lines, 3);
+    const place = pipeline?.locations.get(section);
+    this.radiusServer.emitDebugLines([
+      `# Executing section ${section}${place === undefined ? '' : ` from file ${place.file} line ${place.line}`}`, `  ${section} {`, ...lines, `  } # ${section} = ${outcome.result}`,
+    ]);
+    if (outcome.result === 'reject' || outcome.result === 'fail') return { attributes: null };
+    return { attributes: section === 'pre-proxy' ? context.proxyRequest : context.proxyReply };
+  }
+
+  private runAccounting(info: AccountingRun): boolean | ProxyRoute {
     const pipeline = this.pipelines.get(this.portServers.get(info.destinationPort) ?? 'default');
     const attributes = info.packet.attributes;
     const username = String(attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '');
@@ -311,6 +620,7 @@ export class RadiusdService {
           const rejected = applyPreprocess(this.preprocessFiles, ctx, info.sourceIp, Math.floor(this.wallClock.nowMs() / 1000), (user) => this.wallClock.groupsOf(user));
           return { result: rejected ? 'reject' : 'ok', messages: [] };
         }
+        if (this.isRealmInstance(name)) return this.runRealmModule(name, ctx);
         if (name === 'acct_unique') {
           ctx.overlay.set('acct-unique-session-id', acctUniqueFor(recordOf()));
           return { result: 'updated', messages: [] };
@@ -329,14 +639,202 @@ export class RadiusdService {
         return { result: 'noop', messages: [] };
       },
     };
-    const lines: string[] = [];
-    const preacct = run(pipeline?.preacct ?? DEFAULT_PREACCT_PROGRAM, context, host, lines, 3);
-    if (preacct.result === 'reject' || preacct.result === 'fail') return false;
-    run(pipeline?.accounting ?? DEFAULT_ACCOUNTING_PROGRAM, context, host, lines, 3);
-    return true;
+    const server = this.portServers.get(info.destinationPort) ?? 'default';
+    const lines: string[] = [`Virtual server ${server} received request`, ...info.packet.attributes.map((attribute) => `  ${formatRadiusAttribute(attribute)}`), `server ${server} {`];
+    const place = (section: ProcessingSection): string => {
+      const location = pipeline?.locations.get(section);
+      return location === undefined ? '' : ` from file ${location.file} line ${location.line}`;
+    };
+    const runSection = (section: ProcessingSection, program: readonly Statement[]) => {
+      lines.push(`  # Executing section ${section}${place(section)}`, `    ${section} {`);
+      const outcome = run(program, context, host, lines, 3);
+      lines.push(`    } # ${section} = ${outcome.result}`);
+      return outcome;
+    };
+    this.proxyDecision = null;
+    const preacct = runSection('preacct', pipeline?.preacct ?? DEFAULT_PREACCT_PROGRAM);
+    const rejected = preacct.result === 'reject' || preacct.result === 'fail';
+    const proxied = !rejected ? this.proxyDecision : null;
+    if (!rejected && proxied === null) runSection('accounting', pipeline?.accounting ?? DEFAULT_ACCOUNTING_PROGRAM);
+    lines.push(`} # server ${server}`, 'Virtual server sending reply');
+    this.radiusServer.emitDebugLines(lines);
+    return proxied ?? !rejected;
   }
 
   private boundPorts: number[] = [];
+  private radSecServers: RadSecServer[] = [];
+
+  private radSecConnections = new Map<string, RadSecClientConnection>();
+
+  private radSecRequest(address: string, port: number, request: RadiusPacket): RadiusPacket | null {
+    const home = this.proxyConfig.homeServers.find((server) => server.address === address && server.radSec !== null && (server.port === port || server.acctPort === port));
+    if (home === undefined || home.radSec === null) return null;
+    const key = `${address}:${port}`;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let connection = this.radSecConnections.get(key);
+      if (connection !== undefined && !connection.isOpen()) {
+        this.radSecConnections.delete(key);
+        connection = undefined;
+      }
+      const reused = connection !== undefined;
+      if (connection === undefined) {
+        const config = this.radSecClientConfig(home.radSec);
+        if (typeof config === 'string') return null;
+        const ticket = this.radSecTickets.get(key);
+        const opened = RadSecClientConnection.open(this.host.getTcpStack(), address, port, ticket === undefined ? config : { ...config, resumptionTicket: ticket }, (certificate) => certificateRejection(certificate, home.radSec!.limits));
+        if (!(opened instanceof RadSecClientConnection)) return null;
+        this.radSecTickets.delete(key);
+        connection = opened;
+        this.radSecConnections.set(key, connection);
+      }
+      const outcome = connection.exchange(request);
+      const issued = connection.ticket;
+      if (issued !== null) this.radSecTickets.set(key, issued);
+      if (outcome.ok && outcome.reply !== undefined) return outcome.reply;
+      connection.close();
+      this.radSecConnections.delete(key);
+      if (!reused) return null;
+    }
+    return null;
+  }
+
+  private closeRadSecConnections(): void {
+    for (const connection of this.radSecConnections.values()) connection.close();
+    this.radSecConnections.clear();
+  }
+
+  private radSecClientConfig(tls: RadSecHomeTls): TlsClientConfig | string {
+    const certificateText = this.files.read(tls.certificateFile);
+    if (certificateText === null) return `Failed reading certificate_file "${tls.certificateFile}": No such file or directory`;
+    const chain = pemToCertChain(certificateText);
+    if (chain.length === 0) return `Failed parsing certificate_file "${tls.certificateFile}": no certificate found`;
+    const keyText = this.files.read(tls.privateKeyFile);
+    if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
+    const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
+    if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
+    const caText = this.files.read(tls.caFile);
+    if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
+    return {
+      verifier: new CertificateVerifier(verifierOptions(caText, tls.limits, () => this.wallClock.nowMs())),
+      clientCert: chain[0], clientChain: chain.slice(1), clientPrivateKey: key, versions: tlsProtocolsOf(tls.limits), ...cipherOptions(tls.limits),
+    };
+  }
+
+  private radSecClientTls(clientIp: string): RadSecTls | undefined {
+    return this.radiusServer.clientTable.find(peerOf(clientIp), 'tls')?.tls;
+  }
+
+  private resumedRadSecConnections = 0;
+
+  radSecResumedConnections(): number { return this.resumedRadSecConnections; }
+
+  private readonly radSecTickets = new Map<string, SessionTicket>();
+
+  private readonly ticketStores = new Map<RadSecTls, SessionTicketStore>();
+
+  private ticketStoreFor(tls: RadSecTls): SessionTicketStore {
+    let store = this.ticketStores.get(tls);
+    if (store === undefined) { store = new SessionTicketStore(); this.ticketStores.set(tls, store); }
+    return store;
+  }
+
+  private readonly radSecBuilt = new Map<RadSecTls, { config: TlsServerConfig; atMs: number }>();
+
+  private radSecConfigFor(clientIp: string, listener: RadSecTls, listenerConfig: TlsServerConfig): TlsServerConfig | null {
+    const own = this.radSecClientTls(clientIp);
+    if (own === undefined || own === listener) return this.reloadedConfig(listener, listenerConfig);
+    const config = this.radSecTlsConfig(own);
+    if (typeof config === 'string') {
+      this.writeLogLine('Error', `tls: ${config}`);
+      return null;
+    }
+    return config;
+  }
+
+  private reloadedConfig(tls: RadSecTls, initial: TlsServerConfig): TlsServerConfig {
+    const now = this.wallClock.nowMs();
+    const kept = this.radSecBuilt.get(tls) ?? { config: initial, atMs: now };
+    if (tls.caPathReloadSeconds !== undefined && now - kept.atMs >= tls.caPathReloadSeconds * 1000) {
+      const rebuilt = this.radSecTlsConfig(tls);
+      if (typeof rebuilt !== 'string') {
+        this.writeLogLine('Debug', 'tls: (TLS) Flushing X509 store to re-read data from ca_path dir');
+        const entry = { config: rebuilt, atMs: now };
+        this.radSecBuilt.set(tls, entry);
+        return rebuilt;
+      }
+    }
+    this.radSecBuilt.set(tls, kept);
+    return kept.config;
+  }
+
+  private ocspRejection(certificate: X509Certificate | null, tls: RadSecTls): string | null {
+    const ocsp = tls.ocsp;
+    if (ocsp === undefined || certificate === null) return null;
+    const material = this.caMaterial(tls);
+    const anchors = pemToCertChain(typeof material === 'string' ? material : '');
+    const client = new OcspClient({ tcpStack: () => this.host.getTcpStack(), now: () => this.wallClock.nowMs() }, {
+      ...DEFAULT_OCSP_POLICY, responderUrl: ocsp.url, overrideResponder: ocsp.overrideCertUrl, trusted: anchors, useNonce: ocsp.useNonce,
+      cacheMs: 0, timeoutMs: ocsp.timeoutSeconds === 0 ? null : ocsp.timeoutSeconds * 1000,
+    });
+    const lookup = client.lookup(certificate, anchors.find((anchor) => anchor.subject === certificate.issuer));
+    if (lookup.ok === false) {
+      this.writeLogLine('Error', `tls: ocsp: ${lookup.reason}`);
+      if (lookup.kind === 'unreachable' && ocsp.softfail) {
+        this.writeLogLine('Warning', 'tls: (TLS) ocsp: Unable to check certificate, assuming it\'s valid');
+        return null;
+      }
+      return lookup.kind === 'unreachable' ? '(TLS) ocsp: Unable to check certificate, failing' : '(TLS) ocsp: Certificate has been expired/revoked';
+    }
+    if (lookup.single.status === 'good') return null;
+    this.writeLogLine('Error', `tls: ocsp: Cert status: ${lookup.single.status}`);
+    return '(TLS) ocsp: Certificate has been expired/revoked';
+  }
+
+  private caMaterial(tls: { caFile: string | null; caPath?: string }): string | null | { error: string } {
+    let text: string | null = null;
+    if (tls.caFile !== null) {
+      text = this.files.read(tls.caFile);
+      if (text === null) return { error: `Failed reading ca_file "${tls.caFile}": No such file or directory` };
+    }
+    if (tls.caPath !== undefined) {
+      const names = this.files.list?.(tls.caPath);
+      if (names === null || names === undefined) return { error: `Failed reading ca_path "${tls.caPath}": No such file or directory` };
+      text = (text ?? '') + [...names].sort().map((name) => this.files.read(`${tls.caPath}/${name}`) ?? '').join('\n');
+    }
+    return text;
+  }
+
+  private radSecLimitsFor(clientIp: string, listener: RadSecTls): RadSecTls['limits'] {
+    return (this.radSecClientTls(clientIp) ?? listener).limits;
+  }
+
+  private radSecTlsConfig(tls: RadSecTls): TlsServerConfig | string {
+    const certificateText = this.files.read(tls.certificateFile);
+    if (certificateText === null) return `Failed reading certificate_file "${tls.certificateFile}": No such file or directory`;
+    const chain = pemToCertChain(certificateText);
+    if (chain.length === 0) return `Failed parsing certificate_file "${tls.certificateFile}": no certificate found`;
+    const keyText = this.files.read(tls.privateKeyFile);
+    if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
+    const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
+    if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
+    const caText = this.caMaterial(tls);
+    if (typeof caText === 'object' && caText !== null) return caText.error;
+    let dhParameters: ReturnType<typeof pemToDhParameters> = null;
+    if (tls.dhFile !== undefined) {
+      const dhText = this.files.read(tls.dhFile);
+      if (dhText === null) return `Failed reading dh_file "${tls.dhFile}": No such file or directory`;
+      dhParameters = pemToDhParameters(dhText);
+      if (dhParameters === null) return 'Unable to set DH parameters';
+    }
+    return {
+      ...(dhParameters === null ? {} : { dhParameters }),
+      ...(tls.cache === undefined ? {} : { sessionTicketStore: this.ticketStoreFor(tls), ticketLifetimeSeconds: tls.cache.lifetimeHours * 3600 }),
+      serverCert: chain[0], serverPrivateKey: key, serverChain: chain.slice(1),
+      requestClientCert: tls.requireClientCert, clientCertPolicy: tls.requireClientCert ? 'strict' : 'optional',
+      verifier: new CertificateVerifier(verifierOptions(caText as string | null, tls.limits, () => this.wallClock.nowMs())),
+      protocols: tlsProtocolsOf(tls.limits), ...cipherOptions(tls.limits),
+    };
+  }
   private activeListeners: ListenerSpec[] = [];
 
   listeners(): readonly ListenerSpec[] { return this.activeListeners; }
@@ -420,10 +918,12 @@ export class RadiusdService {
     const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
     const outcome = run(program, context, host, lines, 3);
     const authType = context.control.get('auth-type')?.toLowerCase();
-    const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : null;
-    this.lastResolution = { lines, result: outcome.result, authType: trace };
+    const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : authType === 'mschap' ? 'MS-CHAP' : authType === 'eap' ? 'EAP' : null;
+    this.lastResolution = { lines, result: outcome.result, authType: trace, authTypeName: context.control.get('auth-type') ?? null };
     if (outcome.result === 'reject' || authType === 'reject') return undefined;
     if (this.proxyDecision !== null && this.proxyDecision !== undefined) return { username, password: '', proxy: this.proxyDecision };
+    const customGroup = authType !== undefined && !BUILTIN_AUTH_TYPES.has(authType) && pipeline?.authGroups.has(authType) === true;
+    if (customGroup) return { username, password: '', acceptAny: true, replyAttributes: context.reply };
     const known = knownGoodPassword(context.knownGood);
     const acceptAny = authType === 'accept';
     if (known === null && !acceptAny) return undefined;
@@ -453,9 +953,24 @@ export class RadiusdService {
     }
     if (name === 'mschap') {
       const present = context.request.some((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === MICROSOFT_VENDOR_ID && attribute.vendor.type === 25);
+      if (present && !context.control.has('auth-type')) context.control.set('auth-type', 'mschap');
+      if (present) messages.push("mschap: Found MS-CHAP attributes.  Setting 'Auth-Type  = mschap'");
       return { result: present ? 'ok' : 'noop', messages };
     }
     if (name === 'eap') {
+      const eapHex = eapMessageHex(context.request) ?? '';
+      if (eapHex.length >= 10) {
+        const code = parseInt(eapHex.slice(0, 2), 16);
+        const codeName = ['', 'Request', 'Response', 'Success', 'Failure'][code];
+        if (codeName !== undefined && codeName !== '') messages.push(`eap: Peer sent EAP ${codeName} (code ${code}) ID ${parseInt(eapHex.slice(2, 4), 16)} length ${parseInt(eapHex.slice(4, 8), 16)}`);
+        if (!context.control.has('auth-type')) context.control.set('auth-type', 'eap');
+        if (code === 2 && eapHex.slice(8, 10) === '01' && !has('state')) {
+          messages.push("eap: EAP-Identity reply, returning 'ok' so we can short-circuit the rest of authorize");
+          return { result: 'ok', messages };
+        }
+        messages.push("eap: No EAP Start, assuming it's an on-going EAP conversation");
+        return { result: 'updated', messages };
+      }
       if (has('eap-message')) return { result: 'ok', messages };
       messages.push('eap: No EAP-Message, not doing EAP');
       return { result: 'noop', messages };
@@ -475,7 +990,7 @@ export class RadiusdService {
       context.reply.push(...match.reply);
       return { result: 'ok', messages };
     }
-    if (name === 'suffix' || name === 'ntdomain') return this.runRealmModule(name, context);
+    if (this.isRealmInstance(name)) return this.runRealmModule(name, context);
     if (name === 'logintime') {
       const loginTime = context.control.get('login-time');
       if (loginTime === undefined) return { result: 'noop', messages };
@@ -503,9 +1018,14 @@ export class RadiusdService {
     return { result: 'noop', messages };
   }
 
+  private isRealmInstance(name: string): boolean {
+    return name === 'suffix' || name === 'ntdomain' || this.proxyConfig.instances.has(name);
+  }
+
   private runRealmModule(instanceName: string, context: UnlangContext): ModuleOutcome {
     const messages: string[] = [];
-    const format: RadiusFormat = this.proxyConfig.instances.get(instanceName) ?? (instanceName === 'ntdomain' ? { format: 'prefix', delimiter: '\\', ignoreDefault: false, ignoreNull: false } : { format: 'suffix', delimiter: '@', ignoreDefault: false, ignoreNull: false });
+    const configured = this.proxyConfig.instances.get(instanceName);
+    const format: RadiusFormat = configured ?? (instanceName === 'ntdomain' ? { format: 'prefix', delimiter: '\\', ignoreDefault: false, ignoreNull: false, returnNotfound: false } : { format: 'suffix', delimiter: '@', ignoreDefault: false, ignoreNull: false, returnNotfound: false });
     if (context.overlay.has('realm')) {
       messages.push(`${instanceName}: Request already has destination realm set.  Ignoring`);
       return { result: 'noop', messages };
@@ -522,10 +1042,11 @@ export class RadiusdService {
       messages.push(`${instanceName}: No '${format.delimiter}' in User-Name = "${name}", looking up realm NULL`);
     }
     if (realmName === null && format.ignoreNull) return { result: 'noop', messages };
-    const realm = findRealm(this.proxyConfig, realmName);
+    const found = findRealm(this.proxyConfig, realmName);
+    const realm = found !== null && found.name === 'DEFAULT' && format.ignoreDefault ? null : found;
     if (realm === null) {
       messages.push(`${instanceName}: No such realm "${realmName ?? 'NULL'}"`);
-      return { result: 'noop', messages };
+      return { result: format.returnNotfound ? 'notfound' : 'noop', messages };
     }
     messages.push(`${instanceName}: Found realm "${realm.name}"`);
     if (realm.strip && position >= 0) {
@@ -535,14 +1056,16 @@ export class RadiusdService {
     }
     context.overlay.set('realm', realm.name);
     messages.push(`${instanceName}: Adding Realm = "${realm.name}"`);
-    if (realm.authPool === null) {
-      messages.push(`${instanceName}: Authentication realm is LOCAL`);
+    const accounting = context.packet?.type === 'Accounting-Request';
+    const pool = accounting ? realm.acctPool : realm.authPool;
+    if (pool === null) {
+      messages.push(`${instanceName}: ${accounting ? 'Accounting' : 'Authentication'} realm is LOCAL`);
       return { result: 'ok', messages };
     }
     messages.push(`${instanceName}: Proxying request from user ${name} to realm ${realm.name}`);
-    const server = this.pickHomeServer(realm.authPool);
-    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs });
-    const rest = realm.authPool.servers.filter((candidate) => candidate !== server);
+    const server = this.pickHomeServer(pool, accounting);
+    const route = (candidate: typeof server) => ({ homeServerIp: candidate.address, homePort: accounting ? candidate.acctPort ?? candidate.port : candidate.port, homeSecret: candidate.secret, timeoutMs: candidate.responseWindowMs, ...(candidate.statusCheck === null ? {} : { statusCheck: candidate.statusCheck }), ...(candidate.radSec === null ? {} : { radSec: true }) });
+    const rest = pool.servers.filter((candidate) => candidate !== server);
     this.proxyDecision = {
       realm: realm.name, forwardName: realm.strip && position >= 0 ? local : name,
       ...route(server), fallbacks: rest.map(route),
@@ -550,11 +1073,52 @@ export class RadiusdService {
     return { result: 'updated', messages };
   }
 
-  private pickHomeServer(pool: HomePool) {
-    if (pool.type === 'fail-over') return pool.servers[0];
+  private homeStateOf(server: HomeServer, accounting: boolean) {
+    return this.radiusServer.homeServerState(server.address, accounting ? server.acctPort ?? server.port : server.port, server);
+  }
+
+  private pickHomeServer(pool: HomePool, accounting: boolean): HomeServer {
+    const usable = pool.servers.filter((server) => !['dead', 'down'].includes(this.homeStateOf(server, accounting).state));
+    const candidates = usable.length > 0 ? usable : pool.servers;
+    if (pool.type === 'fail-over') return candidates[0];
     const turn = this.proxyRotation.get(pool.name) ?? 0;
     this.proxyRotation.set(pool.name, turn + 1);
-    return pool.servers[turn % pool.servers.length];
+    return candidates[turn % candidates.length];
+  }
+
+  private findHomeServer(address: string, port: number): { server: HomeServer; accounting: boolean } | null {
+    for (const server of this.proxyConfig.homeServers) {
+      if (server.address !== address) continue;
+      if (server.port === port && server.type !== 'acct') return { server, accounting: false };
+      if (server.acctPort === port && server.type !== 'auth') return { server, accounting: true };
+    }
+    return null;
+  }
+
+  homeServerStateText(address: string, port: number): string | null {
+    const found = this.findHomeServer(address, port);
+    return found === null ? null : this.radiusServer.homeServerState(found.server.address, port, found.server).state;
+  }
+
+  setHomeServerState(address: string, port: number, state: 'alive' | 'dead' | 'down'): boolean {
+    const found = this.findHomeServer(address, port);
+    if (found === null) return false;
+    this.radiusServer.setHomeServerState(address, port, found.server, state);
+    return true;
+  }
+
+  homeServerListing(all: boolean): string[] {
+    const lines: string[] = [];
+    for (const server of this.proxyConfig.homeServers) {
+      const entries: Array<{ port: number; type: string }> = server.type === 'auth+acct' && server.radSec === null
+        ? [{ port: server.port, type: 'auth+acct' }, { port: server.port + 1, type: 'acct' }]
+        : [{ port: server.port, type: server.type }];
+      for (const entry of entries) {
+        const { state, outstanding } = this.radiusServer.homeServerState(server.address, entry.port, server);
+        lines.push(`${server.address}\t${entry.port}\t${server.radSec === null ? 'udp' : 'tcp'}\t${entry.type}\t${state}\t${outstanding}${all ? `\t(name=${server.name}, dynamic=no)` : ''}`);
+      }
+    }
+    return lines;
   }
 
   private confReader(): ConfFileReader {
@@ -577,12 +1141,22 @@ export class RadiusdService {
     if ('error' in security) return { ok: false, error: security.error };
     const site = readSiteConfig(main.root);
     if ('error' in site) return { ok: false, error: site.error };
+    for (const spec of site.listeners) {
+      if (spec.tls === undefined) continue;
+      const tlsConfig = this.radSecTlsConfig(spec.tls);
+      if (typeof tlsConfig === 'string') return { ok: false, error: `${spec.file}[${spec.line}]: ${tlsConfig}` };
+    }
     const preprocess = readPreprocess(main.root, (path) => this.files.read(path));
     if ('error' in preprocess) return { ok: false, error: preprocess.error };
     const pipelines = readPipelines(main.root);
     if ('error' in pipelines) return { ok: false, error: pipelines.error };
     const proxy = readProxyConfig(main.root);
     if ('error' in proxy) return { ok: false, error: proxy.error };
+    for (const server of proxy.homeServers) {
+      if (server.radSec === null) continue;
+      const tlsConfig = this.radSecClientConfig(server.radSec);
+      if (typeof tlsConfig === 'string') return { ok: false, error: `home_server ${server.name}: ${tlsConfig}` };
+    }
     const clientsSource = this.files.read(clientsPath);
     if (clientsSource === null) return { ok: false, error: `open: ${clientsPath}: file not found` };
     const usersSource = this.files.read(usersPath);
@@ -591,20 +1165,61 @@ export class RadiusdService {
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, files: main.files };
+    const eapModule = readEapModule(main.root.sections.find((section) => section.name1 === 'modules'));
+    if (eapModule !== null && 'error' in eapModule) return { ok: false, error: eapModule.error };
+    const eapTls = eapModule === null ? null : this.eapTlsConfig(eapModule as EapModuleConfig, users.entries);
+    if (typeof eapTls === 'string') return { ok: false, error: eapTls };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls, root: main.root };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig }): void {
+  private eapTlsConfig(module: EapModuleConfig, entries: UsersEntry[]): EapTlsConfig | string | null {
+    const tls = module.tls;
+    if (tls === null) return null;
+    const certificateText = this.files.read(tls.certificateFile);
+    if (certificateText === null) return `Failed reading certificate_file "${tls.certificateFile}": No such file or directory`;
+    const chain = pemToCertChain(certificateText);
+    if (chain.length === 0) return `Failed parsing certificate_file "${tls.certificateFile}": no certificate found`;
+    const keyText = this.files.read(tls.privateKeyFile);
+    if (keyText === null) return `Failed reading private_key_file "${tls.privateKeyFile}": No such file or directory`;
+    const key = pemToPrivateKeyWithPassphrase(keyText, tls.privateKeyPassword);
+    if (key === null) return `Failed reading private_key_file "${tls.privateKeyFile}": bad decrypt or not a private key`;
+    let caText: string | null = null;
+    if (tls.caFile !== null) {
+      caText = this.files.read(tls.caFile);
+      if (caText === null) return `Failed reading ca_file "${tls.caFile}": No such file or directory`;
+    }
+    const lookup = (username: string): RadiusUser | undefined => this.resolveUser(entries, username, []);
+    return {
+      serverCert: chain[0], serverPrivateKey: key,
+      verifier: new CertificateVerifier(verifierOptions(caText, tls, () => this.wallClock.nowMs())),
+      requireClientCert: module.defaultType === 'tls', eapType: module.defaultType as 'tls' | 'peap' | 'ttls',
+      mtu: tls.fragmentSize ?? EAP_DEFAULT_FRAGMENT_SIZE,
+      ...(module.defaultType === 'peap' ? { innerAuth: module.peapInner === 'md5' ? new PeapMd5InnerAuthServer(lookup) : new PeapMsChapV2InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
+    };
+  }
+
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
     this.logConfig = loaded.log;
+    this.radiusServer.setEapTlsConfig(loaded.eapTls);
     this.preprocessFiles = loaded.preprocess;
     this.pipelines = loaded.pipelines;
     this.proxyConfig = loaded.proxy;
+    this.radiusServer.setAuthenticateHook((info) => this.runAuthenticate(info));
+    this.radiusServer.setSessionHook((info) => this.runSession(info));
+    this.radiusServer.setStatusHook((info) => this.runStatus(info));
+    this.radiusServer.setRadSecClient((address, port, request) => this.radSecRequest(address, port, request));
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
+    this.radiusServer.setProxyHooks({
+      pre: (info) => this.runProxyStage('pre-proxy', info.port, info.request, info.outbound, []).attributes,
+      post: (info) => this.runProxyStage('post-proxy', info.port, info.request, [], info.reply).attributes,
+    });
     this.radiusServer.setPostAuthHook((info) => this.runPostAuth(info.port, info.accepted, info.userReply));
     this.radiusServer.setDebugBuilder((info) => requestDebugLines({
       server: this.portServers.get(info.port) ?? 'default', pipeline: this.pipelines.get(this.portServers.get(info.port) ?? 'default'),
       request: info.request, user: info.user, resolution: this.lastResolution, usersPath: this.usersFilePath, accepted: info.accepted,
       receivedLines: info.receivedLines, replyLines: info.replyLines, postAuthLines: info.postAuthLines,
+      ...(info.eap === undefined ? {} : { eap: info.eap }),
+      ...(info.authenticate === undefined ? {} : { authenticate: info.authenticate }),
     }));
     this.radiusServer.setFeaturePolicy((feature, port) => {
       const both = (name: string) => this.sectionAllows(port, 'authorize', name) && this.sectionAllows(port, 'authenticate', name);

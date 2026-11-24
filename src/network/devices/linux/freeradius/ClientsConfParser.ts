@@ -1,5 +1,7 @@
-import { IPAddress } from '@/network/core/types';
-import type { MessageAuthenticatorPolicy, RadiusClientEntry } from '@/network/radius/ClientTable';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+import type { RadSecTls } from '@/network/radius/RadSecTlsPolicy';
+import { readTlsBody } from './RadSecTlsSection';
+import type { ClientProtocol, MessageAuthenticatorPolicy, RadiusClientEntry } from '@/network/radius/ClientTable';
 import { parseFreeradiusConf, type ConfFileReader, type ConfSection } from './FreeradiusConf';
 
 export interface ParsedClients {
@@ -17,13 +19,31 @@ function policyOf(value: string | undefined): MessageAuthenticatorPolicy {
   return value as MessageAuthenticatorPolicy;
 }
 
+function renderSection(section: ConfSection, indent: number): string[] {
+  const tabs = '\t'.repeat(indent);
+  const lines = [section.name2 === null ? `${tabs}${section.name1} {` : `${tabs}${section.name1} ${section.name2} {`];
+  for (const item of section.items) {
+    if ('items' in item) lines.push(...renderSection(item, indent + 1));
+    else lines.push(item.value === '' ? `${tabs}\t${item.name}` : `${tabs}\t${item.name} = ${item.value}`);
+  }
+  lines.push(`${tabs}}`);
+  return lines;
+}
+
 function pair(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
 }
 
-function parseAddressSpec(text: string, netmask: number | null): { address: IPAddress; prefix: number } | null {
+function parseAddressSpec(text: string, netmask: number | null): { address: IPAddress | IPv6Address; prefix: number } | null {
   const slash = text.indexOf('/');
-  const address = IPAddress.tryParse(slash === -1 ? text : text.slice(0, slash));
+  const host = slash === -1 ? text : text.slice(0, slash);
+  const v6 = IPv6Address.tryParse(host);
+  if (v6 !== null) {
+    if (slash === -1) return { address: v6, prefix: netmask ?? 128 };
+    const prefix = Number(text.slice(slash + 1));
+    return Number.isInteger(prefix) && prefix >= 0 && prefix <= 128 ? { address: v6, prefix } : null;
+  }
+  const address = IPAddress.tryParse(host);
   if (address === null) return null;
   if (slash === -1) return { address, prefix: netmask ?? 32 };
   const prefix = Number(text.slice(slash + 1));
@@ -38,11 +58,13 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
     const explicit = pair(section, 'ipaddr') ?? pair(section, 'ipv4addr') ?? pair(section, 'ipv6addr');
     const netmaskText = pair(section, 'netmask');
     const netmask = netmaskText === undefined ? null : Number(netmaskText);
-    let spec: { address: IPAddress; prefix: number } | null;
+    let spec: { address: IPAddress | IPv6Address; prefix: number } | null;
     let longname: string;
     if (explicit !== undefined) {
       spec = parseAddressSpec(explicit, netmask);
       longname = explicit;
+      const family = spec === null ? null : spec.address instanceof IPv6Address ? 6 : 4;
+      if (spec !== null && ((pair(section, 'ipv4addr') !== undefined && family !== 4) || (pair(section, 'ipv6addr') !== undefined && family !== 6))) spec = null;
       if (spec === null) {
         result.errors.push(`${where}: Failed parsing client address "${explicit}"`);
         continue;
@@ -57,7 +79,24 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
         continue;
       }
     }
-    const secret = pair(section, 'secret') ?? '';
+    const protoText = pair(section, 'proto');
+    const protoKinds: Record<string, { protocol: ClientProtocol; tls: boolean }> = {
+      udp: { protocol: 'udp', tls: false }, tcp: { protocol: 'tcp', tls: false }, tls: { protocol: 'tcp', tls: true },
+      radsec: { protocol: 'tcp', tls: true }, '*': { protocol: '*', tls: false },
+    };
+    if (protoText !== undefined && protoKinds[protoText] === undefined) {
+      result.errors.push(`${where}: Unknown proto "${protoText}".`);
+      continue;
+    }
+    const kind = protoText === undefined ? protoKinds.udp : protoKinds[protoText];
+    const tlsSection = section.sections.find((candidate) => candidate.name1 === 'tls');
+    const tlsRead = tlsSection === undefined ? null : readTlsBody(tlsSection);
+    if (tlsRead !== null && 'error' in tlsRead) {
+      result.errors.push(tlsRead.error);
+      continue;
+    }
+    const tls: RadSecTls | undefined = tlsRead !== null && !('error' in tlsRead) ? tlsRead : undefined;
+    const secret = pair(section, 'secret') ?? (kind.tls ? 'radsec' : '');
     if (secret === '') {
       result.errors.push(`${where}: secret must be at least 1 character long`);
       continue;
@@ -73,12 +112,17 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
     result.clients.push({
       name: longname,
       shortname: pair(section, 'shortname') ?? name2,
+      section: name2,
+      confLines: renderSection(section, 0),
       address: spec.address,
       prefix: spec.prefix,
       secret,
       nasType: pair(section, 'nas_type') ?? 'other',
       requireMessageAuthenticator: policyOf(requireMa),
       limitProxyState: policyOf(pair(section, 'limit_proxy_state')),
+      protocol: kind.protocol,
+      tlsRequired: kind.tls,
+      ...(tls === undefined ? {} : { tls }),
     });
   }
 }

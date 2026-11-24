@@ -1,0 +1,153 @@
+import type { TcpListener, TcpSocket, TcpStack } from '@/network/tcp/TcpStack';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
+import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
+import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
+import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
+import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
+import { runTlsHandshakeOverSocket } from '@/network/http/https/TlsRecordWire';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { SessionTicket } from '@/network/tls/sessionTickets';
+import type { TlsRecord } from '@/network/tls/recordLayer';
+import { peerOf, type PeerAddress } from './sourceAddress';
+import { decodeRadiusPacket, encodeRadiusPacket, isRadiusDecodeError } from './codec';
+import type { RadiusPacket } from './types';
+
+export const RADSEC_PORT = 2083;
+export const RADSEC_SECRET = 'radsec';
+
+export interface RadSecEngine {
+  handleStreamRequest(
+    srcIp: PeerAddress, srcPort: number, localIp: PeerAddress, localPort: number,
+    request: RadiusPacket, reply: (response: RadiusPacket) => void, secret?: string, encrypted?: boolean,
+  ): void;
+}
+
+export interface RadSecServerSettings {
+  readonly tlsConfig: (clientIp: string) => TlsServerConfig | null;
+  readonly checkPeer?: (clientIp: string, certificate: X509Certificate | null) => string | null;
+  readonly localIp?: string;
+  readonly onConnection: (clientIp: string, accepted: boolean, reason?: string, resumed?: boolean) => void;
+}
+
+function radiusFrameLength(buffer: Uint8Array): number | null {
+  if (buffer.length < 4) return null;
+  return (buffer[2] << 8) | buffer[3];
+}
+
+export class RadSecServer {
+  private listener: TcpListener | null = null;
+
+  constructor(
+    private readonly tcp: TcpStack, private readonly port: number, private readonly engine: RadSecEngine,
+    private readonly settings: RadSecServerSettings,
+  ) {}
+
+  start(identity?: ListenerIdentity): void {
+    this.listener = this.tcp.listen(this.port, { onAccept: (socket) => this.accept(socket), identity }, this.settings.localIp);
+  }
+
+  stop(): void {
+    if (this.listener === null) return;
+    this.tcp.closeListener(this.port, this.settings.localIp);
+    this.listener = null;
+  }
+
+  isRunning(): boolean { return this.listener !== null; }
+
+  private accept(socket: TcpSocket): void {
+    const config = this.settings.tlsConfig(socket.remoteIp);
+    if (config === null) { socket.close(); return; }
+    const tls = new TlsServerSession(config);
+    let buffer = new Uint8Array(0);
+    const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
+      onHandshakeComplete: () => {
+        const reason = this.settings.checkPeer?.(socket.remoteIp, tls.peerCertificate) ?? null;
+        this.settings.onConnection(socket.remoteIp, reason === null, reason ?? undefined, tls.sessionReused);
+        if (reason !== null) channel.close();
+      },
+      onHandshakeRejected: () => { this.settings.onConnection(socket.remoteIp, false); channel.close(); },
+      onData: (plaintext) => {
+        const joined = new Uint8Array(buffer.length + plaintext.length);
+        joined.set(buffer);
+        joined.set(plaintext, buffer.length);
+        buffer = joined;
+        for (;;) {
+          const length = radiusFrameLength(buffer);
+          if (length === null || length < 20 || length > 4096) {
+            if (length !== null) channel.close();
+            return;
+          }
+          if (buffer.length < length) return;
+          const packet = decodeRadiusPacket(buffer.subarray(0, length));
+          buffer = buffer.slice(length);
+          if (isRadiusDecodeError(packet)) { channel.close(); return; }
+          this.engine.handleStreamRequest(
+            peerOf(socket.remoteIp), socket.remotePort, peerOf(socket.localIp), socket.localPort, packet,
+            (response) => channel.write(encodeRadiusPacket(response)), RADSEC_SECRET, true,
+          );
+        }
+      },
+    });
+  }
+}
+
+export interface RadSecClientOutcome {
+  readonly ok: boolean;
+  readonly reply?: RadiusPacket;
+  readonly reason?: string;
+  readonly resumed?: boolean;
+  readonly ticket?: SessionTicket | null;
+}
+
+export class RadSecClientConnection {
+  private constructor(private readonly socket: TcpSocket, private readonly channel: TlsClientChannel, private readonly tls: TlsClientSession, readonly peerCertificate: X509Certificate | null) {}
+
+  get resumed(): boolean { return this.tls.pskResumed; }
+
+  get ticket(): SessionTicket | null { return this.tls.receivedTicket; }
+
+  static open(tcp: TcpStack, address: string, port: number, tlsConfig: TlsClientConfig, checkPeer?: (certificate: X509Certificate | null) => string | null): RadSecClientConnection | { reason: string } {
+    const socket = tcp.connect(address, port);
+    if (!socket || socket.state !== 'established') return { reason: 'connection failed' };
+    const tls = new TlsClientSession(tlsConfig);
+    const trailing: TlsRecord[] = [];
+    runTlsHandshakeOverSocket(socket, tls, (records) => { trailing.push(...records); });
+    if (tls.result !== 'success') {
+      socket.close();
+      return { reason: 'TLS handshake failed' };
+    }
+    const rejection = checkPeer?.(tls.peerCertificate) ?? null;
+    if (rejection !== null) {
+      socket.close();
+      return { reason: rejection };
+    }
+    const channel = new TlsClientChannel(socket, tls);
+    if (trailing.length > 0) channel.receiveRecords(trailing);
+    return new RadSecClientConnection(socket, channel, tls, tls.peerCertificate);
+  }
+
+  isOpen(): boolean { return this.socket.state === 'established'; }
+
+  exchange(request: RadiusPacket): RadSecClientOutcome {
+    let answer: Uint8Array;
+    try {
+      answer = this.channel.exchange(encodeRadiusPacket(request));
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : 'TLS failure' };
+    }
+    if (answer.length === 0) return { ok: false, reason: 'no reply' };
+    const decoded = decodeRadiusPacket(answer);
+    return isRadiusDecodeError(decoded) ? { ok: false, reason: decoded.error } : { ok: true, reply: decoded };
+  }
+
+  close(): void { this.socket.close(); }
+}
+
+export function radSecExchange(tcp: TcpStack, address: string, port: number, request: RadiusPacket, tlsConfig: TlsClientConfig, checkPeer?: (certificate: X509Certificate | null) => string | null): RadSecClientOutcome {
+  const connection = RadSecClientConnection.open(tcp, address, port, tlsConfig, checkPeer);
+  if (!(connection instanceof RadSecClientConnection)) return { ok: false, reason: connection.reason };
+  const outcome = connection.exchange(request);
+  const finished = { ...outcome, resumed: connection.resumed, ticket: connection.ticket };
+  connection.close();
+  return finished;
+}

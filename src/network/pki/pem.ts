@@ -377,6 +377,15 @@ export function pemToCrl(pem: string): CertificateRevocationList | null {
   }
 }
 
+export function pemToCrls(pem: string): CertificateRevocationList[] {
+  const out: CertificateRevocationList[] = [];
+  for (const block of pem.match(/-----BEGIN X509 CRL-----[\s\S]*?-----END X509 CRL-----/g) ?? []) {
+    const crl = pemToCrl(block);
+    if (crl !== null) out.push(crl);
+  }
+  return out;
+}
+
 export interface DhParameters {
   readonly prime: bigint;
   readonly generator: bigint;

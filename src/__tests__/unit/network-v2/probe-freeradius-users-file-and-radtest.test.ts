@@ -67,7 +67,7 @@ const radtest = (client: LinuxServer, args: string) => client.executeCommand(`ra
 describe('freeradius users file and radtest', () => {
   it('witness: a plain Cleartext-Password user is accepted', async () => {
     const { client } = await lab();
-    expect(await radtest(client, 'alice wonderland')).toContain('Access-Accept');
+    expect(await radtest(client, 'alice wonderland')).toContain('Received Access-Accept');
   });
 
   it('the Access-Accept carries the reply items of the entry, with names from the dictionary', async () => {
@@ -121,7 +121,7 @@ describe('freeradius users file and radtest', () => {
 
   it('a user removed from the file and reloaded is no longer known', async () => {
     const { client, target } = await lab();
-    expect(await radtest(client, 'alice wonderland')).toContain('Access-Accept');
+    expect(await radtest(client, 'alice wonderland')).toContain('Received Access-Accept');
     write(target, USERS_FILE_PATH, 'bob Cleartext-Password := "builder"\n');
     await target.executeCommand('systemctl reload freeradius');
     expect(await radtest(client, 'alice wonderland')).toContain('Access-Reject');

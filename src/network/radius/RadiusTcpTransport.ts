@@ -9,9 +9,9 @@
  * send, wait for the reply, close) — deliberately not folded into the
  * UDP agents' CHAP/EAP/challenge/accounting machinery, mirroring how
  * `TacacsClientAgent`/`TacacsServerAgent` already use the same `TcpStack`
- * for a TCP-native AAA protocol. RadSec (RFC 6614, TLS over this same
- * transport) stays out of scope — see PRD-RADIUS §2.2.
+ * for a TCP-native AAA protocol. RadSec (RFC 6614) lives in RadSecTransport.
  */
+import { peerOf, type PeerAddress } from './sourceAddress';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -145,7 +145,7 @@ export class RadiusTcpClient {
 
 export interface RadiusStreamEngine {
   handleStreamRequest(
-    srcIp: IPAddress, srcPort: number, localIp: IPAddress, localPort: number,
+    srcIp: PeerAddress, srcPort: number, localIp: PeerAddress, localPort: number,
     request: RadiusPacket, reply: (response: RadiusPacket) => void,
   ): void;
   addUser(username: string, password: string): void;
@@ -170,15 +170,26 @@ export class RadiusTcpServer {
     private readonly engine: RadiusStreamEngine,
   ) {}
 
-  start(): void {
+  private custom: Array<{ port: number; localIp: string }> = [];
+
+  start(listeners?: ReadonlyArray<{ port: number; localIp: string }>): void {
     if (this.running) return;
     this.running = true;
-    if (this.config.enabled) this.installListener();
+    if (listeners === undefined) {
+      if (this.config.enabled) this.installListener();
+      return;
+    }
+    this.custom = [...listeners];
+    for (const { port, localIp } of this.custom) {
+      this.getTcpStack().listen(port, { identity: { processName: 'freeradius' }, onAccept: (socket) => this.accept(socket) }, localIp);
+    }
   }
 
   stop(): void {
     if (!this.running) return;
     this.running = false;
+    for (const { port, localIp } of this.custom) this.getTcpStack().closeListener(port, localIp);
+    this.custom = [];
     if (this.listenerInstalled) {
       this.getTcpStack().closeListener(this.config.port);
       this.listenerInstalled = false;
@@ -205,43 +216,38 @@ export class RadiusTcpServer {
 
   private installListener(): void {
     if (this.listenerInstalled) return;
-    this.getTcpStack().listen(this.config.port, {
-      // RADIUS-over-TCP (RFC 6613) écoutait vraiment sans jamais paraître
-      // dans `ss`, à côté de ses propres sockets UDP qui, eux, s'y
-      // affichaient. Le nom vient d'ici pour que les deux lignes désignent
-      // le même démon (docs/PRD-Sockets-Une-Seule-Verite.md §P1).
-      identity: { processName: 'freeradius' },
-      onAccept: (socket) => {
-        socket.onData((data) => {
-          if (!this.config.enabled) { socket.close(); return; }
-          const request = data as RadiusPacket | undefined;
-          const accepted = request?.type === 'radius'
-            && (request.code === 'access-request' || request.code === 'accounting-request' || request.code === 'status-server');
-          if (!request || !accepted) {
-            socket.close();
-            return;
-          }
-          const username = String(getAttr(request, 'user-name')?.value ?? '');
-          this.engine.handleStreamRequest(
-            new IPAddress(socket.remoteIp), socket.remotePort, new IPAddress(socket.localIp), socket.localPort, request,
-            (response) => {
-              const result = response.code === 'access-accept' || response.code === 'accounting-response' ? 'accept' : 'reject';
-              this.getBus().publish({
-                topic: 'radius.tcp.completed',
-                payload: {
-                  deviceId: this.host.id, hostname: this.host.getHostname(),
-                  serverIp: socket.remoteIp, username, result,
-                },
-              });
-              Logger.info(this.host.id, 'radius:tcp',
-                `${this.host.name}: ${response.code} (TCP) for ${username || '(unknown)'}`);
-              socket.send(response);
-            },
-          );
-          socket.close();
-        });
-      },
-    });
+    this.getTcpStack().listen(this.config.port, { identity: { processName: 'freeradius' }, onAccept: (socket) => this.accept(socket) });
     this.listenerInstalled = true;
+  }
+
+  private accept(socket: TcpSocket): void {
+    socket.onData((data) => {
+      if (!this.config.enabled) { socket.close(); return; }
+      const request = data as RadiusPacket | undefined;
+      const accepted = request?.type === 'radius'
+        && (request.code === 'access-request' || request.code === 'accounting-request' || request.code === 'status-server');
+      if (!request || !accepted) {
+        socket.close();
+        return;
+      }
+      const username = String(getAttr(request, 'user-name')?.value ?? '');
+      this.engine.handleStreamRequest(
+        peerOf(socket.remoteIp), socket.remotePort, peerOf(socket.localIp), socket.localPort, request,
+        (response) => {
+          const result = response.code === 'access-accept' || response.code === 'accounting-response' ? 'accept' : 'reject';
+          this.getBus().publish({
+            topic: 'radius.tcp.completed',
+            payload: {
+              deviceId: this.host.id, hostname: this.host.getHostname(),
+              serverIp: socket.remoteIp, username, result,
+            },
+          });
+          Logger.info(this.host.id, 'radius:tcp',
+            `${this.host.name}: ${response.code} (TCP) for ${username || '(unknown)'}`);
+          socket.send(response);
+        },
+      );
+      socket.close();
+    });
   }
 }

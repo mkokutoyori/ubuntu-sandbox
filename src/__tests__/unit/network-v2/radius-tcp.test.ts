@@ -152,6 +152,10 @@ describe('RADIUS/TCP — hosted on a Linux Server (generic hosting, PRD-RADIUS P
     nas.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
+    const site = '/etc/freeradius/3.0/sites-available/default';
+    const vfs = (server as unknown as { executor: { vfs: { readFile(path: string): string | null; writeFile(path: string, content: string, uid: number, gid: number, umask: number): void } } }).executor.vfs;
+    vfs.writeFile(site, (vfs.readFile(site) ?? '').replace('server default {\n', 'server default {\n\tlisten {\n\t\ttype = auth+acct\n\t\tproto = tcp\n\t\tport = 1812\n\t}\n'), 0, 0, 0o022);
+    await server.executeCommand('systemctl restart freeradius');
     server.getRadiusTcpServer().setSharedSecret('shared');
     server.getRadiusTcpServer().addUser('alice', 'wonderland');
     nas.getRadiusTcpClient().addServer('10.0.0.2', 'shared', { timeoutMs: 200 });

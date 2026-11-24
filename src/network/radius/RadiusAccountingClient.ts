@@ -1,3 +1,4 @@
+import { peerOf, type PeerAddress } from './sourceAddress';
 import { clientSourceAddress } from './sourceAddress';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -35,6 +36,7 @@ export interface RadiusAccountingHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
+  sendUdpDatagramTo?(destination: PeerAddress, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
 }
 
@@ -50,7 +52,7 @@ export interface RawAcctExchange {
   localIp: string;
 }
 
-export type RawRequestCode = 'accounting-request' | 'status-server';
+export type RawRequestCode = 'accounting-request' | 'status-server' | 'access-request';
 
 interface PendingRaw {
   identifier: number;
@@ -231,6 +233,16 @@ export class RadiusAccountingClient {
   }
 
   private transmitRaw(pending: PendingRaw, port: number): void {
+    if (pending.server.ip.includes(':')) {
+      if (this.host.sendUdpDatagramTo === undefined) return;
+      const payload = this.signRaw(pending);
+      pending.exchange = {
+        ...pending.exchange, request: payload, serverPort: port, length: encodeRadiusPacket(payload).length,
+        transmissions: pending.exchange.transmissions + 1, localIp: '::',
+      };
+      this.host.sendUdpDatagramTo(peerOf(pending.server.ip), port, pending.sourcePort, payload, 12);
+      return;
+    }
     const srcIp = clientSourceAddress(this.host, new IPAddress(pending.server.ip));
     if (!srcIp) return;
     const payload = this.signRaw(pending);
@@ -279,7 +291,7 @@ export class RadiusAccountingClient {
 
   private readonly rawPending = new Map<number, PendingRaw>();
 
-  handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleUdp(_inPort: string, srcIp: PeerAddress, udp: UDPPacket): void {
     if (!this.running) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;

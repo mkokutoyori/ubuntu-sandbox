@@ -5,7 +5,7 @@
  * Stripped-User-Name", "Adding Realm", "Proxying request from user X to realm Y", "Authentication realm is LOCAL"; nostrip keeps the
  * name; DEFAULT and regular-expression realms), src/main/realms.c (pool types, missing home_server / secret refusals).
  * The Access-Request is relayed over a real UDP exchange to the home server, which authenticates with its own clients.conf secret.
- * Keys the simulator cannot honour (proto tcp, status_check, ...) are refused naming them, never ignored.
+ * Keys the simulator cannot honour (proto tcp, max_outstanding, ...) are refused naming them, never ignored.
  *
  * Discriminated with git stash on src: the first 10 cases fall before the realm change, the witness included; the fail-over case and the default-site case each fall on the commit before theirs; because proxy.conf is never read
  * and the shipped default site (which now calls suffix after mschap, as the 3.2 site does) refuses nothing but resolves no realm. The witness still proves
@@ -69,12 +69,12 @@ describe('proxy.conf and the realm modules', () => {
   it('witness: a name in the LOCAL realm is authenticated by the edge itself', async () => {
     const { client } = await lab(HOME_POOL());
     expect(await client.executeCommand(request('bob@local.test', 'local'))).toContain('Access-Reject');
-    expect(await client.executeCommand(request('bob', 'local'))).toContain('Access-Accept');
+    expect(await client.executeCommand(request('bob', 'local'))).toContain('Received Access-Accept');
   });
 
   it('proxies a user of a realm with an auth_pool to the home server, which answers with its own user table', async () => {
     const { client } = await lab(HOME_POOL());
-    expect(await client.executeCommand(request('alice@example.com', 'wonderland'))).toContain('Access-Accept');
+    expect(await client.executeCommand(request('alice@example.com', 'wonderland'))).toContain('Received Access-Accept');
     expect(await client.executeCommand(request('alice@example.com', 'wrong'))).toContain('Access-Reject');
   });
 
@@ -99,17 +99,18 @@ describe('proxy.conf and the realm modules', () => {
 
   it('the ntdomain instance reads DOMAIN\\user with the first backslash as delimiter', async () => {
     const { client } = await lab(HOME_POOL().replace('realm example.com', 'realm EXAMPLE'), 'ntdomain');
-    expect(await client.executeCommand(request('EXAMPLE\\\\alice', 'wonderland'))).toContain('Access-Accept');
+    write(client, '/tmp/ntdomain.pkt', 'User-Name = "EXAMPLE\\\\alice"\nUser-Password = "wonderland"\n');
+    expect(await client.executeCommand('radclient -r 1 -f /tmp/ntdomain.pkt 10.0.0.2 auth shared')).toContain('Received Access-Accept');
   });
 
   it('a regular-expression realm matches', async () => {
     const { client } = await lab(HOME_POOL().replace('realm example.com', 'realm ~.*\\.com$'));
-    expect(await client.executeCommand(request('alice@anything.com', 'wonderland'))).toContain('Access-Accept');
+    expect(await client.executeCommand(request('alice@anything.com', 'wonderland'))).toContain('Received Access-Accept');
   });
 
   it('refuses a home_server key the simulator cannot honour, naming it and its line', async () => {
-    const { started } = await lab(HOME_POOL('status_check = status-server'));
-    expect(started).toContain('The home_server setting "status_check" is not implemented in this simulator');
+    const { started } = await lab(HOME_POOL('max_outstanding = 5'));
+    expect(started).toContain('The home_server setting "max_outstanding" is not implemented in this simulator');
   });
 
   it('refuses a pool naming an unknown home_server', async () => {
@@ -125,6 +126,6 @@ describe('proxy.conf and the realm modules', () => {
   it('fail-over: a home server that never answers is replaced by the next of the pool after response_window', async () => {
     const dead = 'home_server dead {\n  ipaddr = 10.0.0.9\n  secret = x\n  response_window = 1\n}\n';
     const { client } = await lab(dead + HOME_POOL().replace('home_server = home1', 'home_server = dead\n  home_server = home1'));
-    expect(await client.executeCommand(`printf 'User-Name = "alice@example.com"\\nUser-Password = "wonderland"\\n' | radclient -r 3 -t 2 10.0.0.2 auth shared`)).toContain('Access-Accept');
+    expect(await client.executeCommand(`printf 'User-Name = "alice@example.com"\\nUser-Password = "wonderland"\\n' | radclient -r 3 -t 2 10.0.0.2 auth shared`)).toContain('Received Access-Accept');
   });
 });

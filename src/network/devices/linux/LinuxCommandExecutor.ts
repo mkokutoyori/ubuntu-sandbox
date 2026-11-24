@@ -1660,6 +1660,18 @@ export class LinuxCommandExecutor {
     }
   }
 
+  pathScript(name: string): string | null {
+    if (name === '' || name.includes('/')) return null;
+    const directories = (this.env.get('PATH') ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin').split(':');
+    if (!directories.some((directory) => this.vfs.getType(`${directory === '' ? '.' : directory}/${name}`) === 'file')) return null;
+    if (STANDARD_BIN_PATHS[name] !== undefined || this.knownCommandSet().has(name)) return null;
+    const resolved = this.resolveExecutablePath(name);
+    if (resolved === null) return null;
+    const lines = (this.vfs.readFile(resolved) ?? '').split('\n');
+    const isScript = lines[0].startsWith('#!') && lines.slice(1).some((line) => line.trim() !== '' && !line.trim().startsWith('#'));
+    return isScript ? resolved : null;
+  }
+
   resolveExecutablePath(name: string): string | null {
     const resolver = new CommandResolver(this.shellIntrospection());
     return resolver.resolveAll(name, { forcePath: true }).find((candidate) => candidate.kind === 'file')?.path ?? null;
@@ -4710,6 +4722,12 @@ export class LinuxCommandExecutor {
         if (cmd0 === 'run-parts') return this.handleRunPartsAsync(rest);
         if (cmd0.startsWith('./') || cmd0.startsWith('/')) {
           return this.runDirectScriptAsync(cmd0, rest).then(
+            (r) => r ?? this.dispatchFromInterpreter(effective, env, background, outputPiped, stdin),
+          );
+        }
+        const onPath = this.pathScript(cmd0);
+        if (onPath !== null) {
+          return this.runDirectScriptAsync(onPath, rest).then(
             (r) => r ?? this.dispatchFromInterpreter(effective, env, background, outputPiped, stdin),
           );
         }

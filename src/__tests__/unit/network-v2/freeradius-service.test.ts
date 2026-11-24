@@ -135,7 +135,7 @@ describe('radtest (freeradius-utils)', () => {
     const bus = new EventBus();
     const { client } = setupRadtestLab(bus);
     const out = await client.executeCommand('radtest alice wonderland 10.0.0.2 10 shared');
-    expect(out).toContain('Access-Accept');
+    expect(out).toContain('Received Access-Accept');
   });
 
   it('prints Access-Reject for a wrong password', async () => {
@@ -149,13 +149,13 @@ describe('radtest (freeradius-utils)', () => {
     const bus = new EventBus();
     const { client } = setupRadtestLab(bus);
     const out = await client.executeCommand('radtest -t chap alice wonderland 10.0.0.2 10 shared');
-    expect(out).toContain('Access-Accept');
+    expect(out).toContain('Received Access-Accept');
   });
 
   it('supports -t mschap', async () => {
     const bus = new EventBus();
     const { client } = setupRadtestLab(bus);
     const out = await client.executeCommand('radtest -t mschap alice wonderland 10.0.0.2 10 shared');
-    expect(out).toContain('Access-Accept');
+    expect(out).toContain('Received Access-Accept');
   });
 });

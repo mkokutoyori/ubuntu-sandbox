@@ -8,10 +8,10 @@
  * (conditions: ==, !=, <, >, <=, >=, =~ and !~ with /regex/, &&, ||, !, parentheses, an attribute alone as an existence test) and
  * doc/unlang. The list is the context of ONE request: the modules of the section read and write it in order (files puts the
  * known-good password and the reply items into it, pap needs a known-good password there, an update control can supply one).
- * The expansion functions (%{md5:...}), switch, case, foreach, redundant, group, load-balance, map, return and break are refused naming them.
+ * The expansion functions this simulator lacks (%{sql:...}) and the constructs foreach, map and break are refused naming them (switch, case, group, redundant, load-balance and return run since probe-freeradius-unlang-constructs, and %{md5:} and the other string functions with them).
  *
  * Discriminated with git stash on src: 10 of 12 fall before the fix; two pass either way and are named: the witness (a site with
- * no unlang behaves as before) and the refusal of switch (refused before as after).
+ * no unlang behaves as before) and the refusal of foreach (refused before as after; the case moved from switch, which now runs).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -143,8 +143,8 @@ describe('unlang: update and if', () => {
 
   it('an expansion function the simulator has not is refused naming it, with file and line', async () => {
     const { target } = await lab();
-    write(target, SITES, inAuthorize(['\t\tupdate reply {', '\t\t\tReply-Message := "hello %{md5:x}"', '\t\t}'])(site(target)));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/\[\d+\]: The expansion function "%\{md5:\.\.\.\}" is not implemented in this simulator$/);
+    write(target, SITES, inAuthorize(['\t\tupdate reply {', '\t\t\tReply-Message := "hello %{sql:x}"', '\t\t}'])(site(target)));
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/\[\d+\]: The expansion function "%\{sql:\.\.\.\}" is not implemented in this simulator$/);
   });
 
   it('an unknown attribute in update, an operator the simulator has not and a syntax error in a condition are refused with file and line', async () => {
@@ -168,9 +168,9 @@ describe('unlang: update and if', () => {
     expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The attribute list "session-state" in update is not implemented in this simulator$/);
   });
 
-  it('switch is still refused naming it', async () => {
+  it('map is still refused naming it', async () => {
     const { target } = await lab();
-    write(target, SITES, inAuthorize(['\t\tswitch {', '\t\t}'])(site(target)));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "switch" is not implemented in this simulator$/);
+    write(target, SITES, inAuthorize(['\t\tmap &Reply-Message {', '\t\t}'])(site(target)));
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "map" is not implemented in this simulator$/);
   });
 });
