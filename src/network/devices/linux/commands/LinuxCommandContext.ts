@@ -49,6 +49,7 @@ export interface RadiusdCommandPort {
   moduleListing(): string[];
   socketStatisticsListing(address: string, port: number): string[] | null;
   queueStatisticsListing(): string[];
+  threadStatisticsListing(): string[];
   moduleMethods(name: string): string[] | null;
   moduleFlags(name: string): string[] | null;
   moduleConfigListing(name: string): string[] | null;
