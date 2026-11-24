@@ -7,12 +7,13 @@ import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { expandTemplate, XLAT_FUNCTIONS } from './Xlat';
 
 export type ModuleResult = 'reject' | 'fail' | 'ok' | 'handled' | 'invalid' | 'userlock' | 'notfound' | 'noop' | 'updated';
-export type AttributeList = 'request' | 'control' | 'reply' | 'proxy-request' | 'proxy-reply';
+export type AttributeList = 'request' | 'control' | 'reply' | 'proxy-request' | 'proxy-reply' | 'session-state';
 
 export interface UnlangContext extends ViewContext {
   nowMs: number;
   request: RadiusAttribute[];
   control: Map<string, string>;
+  sessionState: Map<string, string>;
   knownGood: KnownGoodItem[];
   reply: RadiusAttribute[];
   proxyRequest: RadiusAttribute[];
@@ -23,7 +24,7 @@ export interface UnlangContext extends ViewContext {
 }
 
 export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null, nowMs = 0): UnlangContext {
-  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [], lastResult: null, foreachValues: [], breaking: false };
+  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), sessionState: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [], lastResult: null, foreachValues: [], breaking: false };
 }
 
 const FOREACH_VARIABLE = /^foreach-variable-([0-7])$/;
@@ -34,6 +35,7 @@ export function lookup(context: UnlangContext, list: AttributeList, name: string
   if (variable !== null) return context.foreachValues[Number(variable[1])];
   if (list === 'request') return requestViewOf(context, () => [])(key);
   if (list === 'control') return context.control.get(key);
+  if (list === 'session-state') return context.sessionState.get(key);
   if (list === 'proxy-request') return context.proxyRequest.find((attribute) => attribute.type === key)?.value;
   if (list === 'proxy-reply') return context.proxyReply.find((attribute) => attribute.type === key)?.value;
   return context.reply.find((attribute) => attribute.type === key)?.value;
@@ -72,7 +74,7 @@ const UNSUPPORTED = new Set(['case', 'map']);
 const FOREACH_DEPTH = 8;
 const GROUPS = new Set(['group', 'redundant', 'load-balance', 'redundant-load-balance']);
 const ACTIONS = new Set(['return', 'continue', 'reject']);
-const LIST_ALIASES: Record<string, AttributeList> = { request: 'request', control: 'control', config: 'control', reply: 'reply', 'proxy-request': 'proxy-request', 'proxy-reply': 'proxy-reply' };
+const LIST_ALIASES: Record<string, AttributeList> = { request: 'request', control: 'control', config: 'control', reply: 'reply', 'proxy-request': 'proxy-request', 'proxy-reply': 'proxy-reply', 'session-state': 'session-state' };
 
 function fail(file: string, line: number, message: string): never {
   throw new UnlangError(`${file}[${line}]: ${message}`);
@@ -250,7 +252,7 @@ function assignmentOf(pair: ConfPair, defaultList: AttributeList): Assignment {
   if (pair.value.includes('`')) fail(pair.file, pair.line, 'A backtick expansion is not implemented in this simulator');
   checkTemplate(pair.value, pair.file, pair.line);
   const key = target.name.toLowerCase();
-  if (target.list !== 'control' && !(key in RADIUS_ATTR)) fail(pair.file, pair.line, `Unknown attribute "${target.name}"`);
+  if (target.list !== 'control' && target.list !== 'session-state' && !(key in RADIUS_ATTR)) fail(pair.file, pair.line, `Unknown attribute "${target.name}"`);
   const value: Term = !pair.quoted && pair.value.startsWith('&') ? parseReference(pair.value, 'request', pair.file, pair.line) : { kind: 'literal', value: pair.value, ...(pair.quoted && pair.value.includes('%{') ? { template: true } : {}) };
   return { list: target.list, name: target.name, op: pair.op, value, file: pair.file, line: pair.line };
 }
@@ -356,6 +358,11 @@ function applyAssignment(context: UnlangContext, assignment: Assignment): void {
   if (raw === undefined) return;
   const key = assignment.name.toLowerCase();
   const value = String(raw);
+  if (assignment.list === 'session-state') {
+    if (assignment.op === '=' && context.sessionState.has(key)) return;
+    context.sessionState.set(key, value);
+    return;
+  }
   if (assignment.list === 'control') {
     if (assignment.op === '=' && context.control.has(key)) return;
     context.control.set(key, value);
@@ -398,7 +405,7 @@ export function run(statements: readonly Statement[], context: UnlangContext, ho
     } else if (statement.kind === 'foreach') {
       const key = statement.operand.name.toLowerCase();
       const store = statement.operand.list === 'reply' ? context.reply : statement.operand.list === 'proxy-request' ? context.proxyRequest : statement.operand.list === 'proxy-reply' ? context.proxyReply : statement.operand.list === 'request' ? context.request : null;
-      const values = store === null ? [context.control.get(key)].filter((value): value is string => value !== undefined) : store.filter((attribute) => attribute.type === key).map((attribute) => attribute.value);
+      const values = store === null ? [(statement.operand.list === 'session-state' ? context.sessionState : context.control).get(key)].filter((value): value is string => value !== undefined) : store.filter((attribute) => attribute.type === key).map((attribute) => attribute.value);
       if (context.foreachValues.length >= FOREACH_DEPTH) throw new UnlangError('foreach Nesting too deep!');
       if (values.length === 0) {
         indent(`foreach ${statement.text} {`);

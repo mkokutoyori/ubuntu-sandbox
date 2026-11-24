@@ -520,7 +520,7 @@ export class RadiusdService {
     const wanted = info.accounting ? 'Acct-Type Status-Server' : 'Autz-Type Status-Server';
     const group = section?.find((statement) => statement.kind === 'typed' && statement.name === wanted);
     if (group === undefined || group.kind !== 'typed') return null;
-    const context = newContext(String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? ''), info.request, null, this.wallClock.nowMs());
+    const context = this.newRequestContext(String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? ''), info.request, null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = { runModule: (name): ModuleOutcome => (name === 'ok' ? { result: 'ok', messages: [] } : name === 'reject' ? { result: 'reject', messages: [] } : { result: 'noop', messages: [] }) };
     const outcome = run(group.body, context, host, lines, 3);
@@ -534,7 +534,7 @@ export class RadiusdService {
     const program = pipeline?.session;
     if (program === undefined || program === null) return pipeline !== undefined && pipeline.sections.has('session') && !pipeline.sections.get('session')!.has('radutmp') ? null : info.active;
     let counted = 0;
-    const context = newContext(info.username, [], null, this.wallClock.nowMs());
+    const context = this.newRequestContext(info.username, [], null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
       runModule: (name): ModuleOutcome => {
@@ -559,7 +559,7 @@ export class RadiusdService {
     const group = pipeline.authGroups.get(builtin === 'mschap' ? 'ms-chap' : builtin);
     if (group === undefined) return null;
     const userName = String(info.request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
-    const context = newContext(userName, info.request, null, this.wallClock.nowMs());
+    const context = this.newRequestContext(userName, info.request, null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
       runModule: (name): ModuleOutcome => {
@@ -588,7 +588,7 @@ export class RadiusdService {
     const keep = section === 'pre-proxy' ? outbound : reply;
     if (program === null || program === undefined || program.length === 0) return { attributes: keep };
     const username = String(request.find((attribute) => attribute.type === 'user-name')?.value ?? '');
-    const context = newContext(username, request, null, this.wallClock.nowMs());
+    const context = this.newRequestContext(username, request, null, this.wallClock.nowMs());
     context.proxyRequest = [...outbound];
     context.proxyReply = [...reply];
     const lines: string[] = [];
@@ -606,7 +606,7 @@ export class RadiusdService {
     const pipeline = this.pipelines.get(this.portServers.get(info.destinationPort) ?? 'default');
     const attributes = info.packet.attributes;
     const username = String(attributes.find((attribute) => attribute.type === 'user-name')?.value ?? '');
-    const context = newContext(username, attributes, {
+    const context = this.newRequestContext(username, attributes, {
       sourceIp: info.sourceIp, sourcePort: info.sourcePort, destinationIp: info.destinationIp, destinationPort: info.destinationPort,
       server: this.portServers.get(info.destinationPort) ?? 'default', type: 'Accounting-Request', authenticator: info.packet.authenticator,
     }, this.wallClock.nowMs());
@@ -909,11 +909,17 @@ export class RadiusdService {
     return { reply: context.reply, lines };
   }
 
+  private newRequestContext(...args: Parameters<typeof newContext>): ReturnType<typeof newContext> {
+    const context = newContext(...args);
+    context.sessionState = this.radiusServer.sessionState;
+    return context;
+  }
+
   private resolveUser(entries: UsersEntry[], username: string, attributes: RadiusAttribute[], nasIp = '', listenPort = UDP_PORT_RADIUS_AUTH, packet?: RadiusUserResolverContext['packet']): RadiusUser | undefined {
     const groupsOf = (name: string) => this.wallClock.groupsOf(name);
     const pipeline = this.pipelines.get(this.portServers.get(listenPort) ?? 'default');
     const program: readonly Statement[] = pipeline?.authorize ?? DEFAULT_AUTHORIZE_PROGRAM;
-    const context = newContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' }, this.wallClock.nowMs());
+    const context = this.newRequestContext(username, attributes, packet === undefined ? null : { ...packet, server: this.portServers.get(listenPort) ?? 'default' }, this.wallClock.nowMs());
     this.lastContext = context;
     this.proxyDecision = null;
     const lines: string[] = [];

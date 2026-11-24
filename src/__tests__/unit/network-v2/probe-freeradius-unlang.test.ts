@@ -160,12 +160,12 @@ describe('unlang: update and if', () => {
     expect(errorOf(['\t\tif (&User-Name == ) {', '\t\t}'])).toMatch(/\[\d+\]: Syntax error in condition/);
   });
 
-  it('elsif without an if, and the lists the simulator has not (session-state), are refused', async () => {
+  it('elsif without an if, and the lists the simulator has not (a list of the real server it does not carry), are refused', async () => {
     const { target } = await lab();
     write(target, SITES, inAuthorize(['\t\telsif (&User-Name == "a") {', '\t\t}'])(site(target)));
     expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/"elsif" without a preceding "if"$/);
-    write(target, SITES, inAuthorize(['\t\tupdate session-state {', '\t\t}'])(vfsOf(target).readFile('/etc/freeradius/3.0/sites-available/default')!.replace(/\t\telsif[\s\S]*?\t\t\}\n/, '')));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The attribute list "session-state" in update is not implemented in this simulator$/);
+    write(target, SITES, inAuthorize(['\t\tupdate coa {', '\t\t}'])(vfsOf(target).readFile('/etc/freeradius/3.0/sites-available/default')!.replace(/\t\telsif[\s\S]*?\t\t\}\n/, '')));
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The attribute list "coa" in update is not implemented in this simulator$/);
   });
 
   it('map is still refused naming it', async () => {
