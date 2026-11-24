@@ -1217,13 +1217,14 @@ export class RadiusServerAgent {
       return;
     }
     this.eapTlsSessions.delete(state);
-    const accepted = ctx.session.result === 'accept';
-    lines.push(`eap: Sending EAP ${accepted ? 'Success (code 3)' : 'Failure (code 4)'} ID ${nextRequest.identifier} length ${encodeEapPacket(nextRequest).length}`, 'eap: Freeing handler');
-    this.eapTrace = { result: accepted ? 'ok' : 'reject', lines };
     const eapName = ctx.session.authenticatedUser ?? ctx.username;
     const eapUser = this.config.users.get(eapName) ?? this.userResolver?.(eapName, { nasIp: dstIp.toString(), attributes: request.attributes });
+    const accepted = ctx.session.result === 'accept' && !(ctx.session.resumed && eapUser === undefined);
+    const outgoing: EapPacket = accepted || ctx.session.result !== 'accept' ? nextRequest : { type: 'eap', code: 'failure', identifier: nextRequest.identifier };
+    lines.push(`eap: Sending EAP ${accepted ? 'Success (code 3)' : 'Failure (code 4)'} ID ${outgoing.identifier} length ${encodeEapPacket(outgoing).length}`, 'eap: Freeing handler');
+    this.eapTrace = { result: accepted ? 'ok' : 'reject', lines };
     if (!accepted) this.publishRejected(dstIp.toString(), ctx.username, 'bad-password');
-    this.replyEap(inPort, dstIp, clientPort, request, nextRequest, accepted, eapUser, dedupKey);
+    this.replyEap(inPort, dstIp, clientPort, request, outgoing, accepted, eapUser, dedupKey);
   }
 
   /**

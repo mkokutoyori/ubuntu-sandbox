@@ -9,6 +9,7 @@
  *
  * PEAP and TTLS: the ticket is issued only once the inner method has accepted (a ticket granted at the end of the tunnel handshake would let a peer that
  * failed its inner authentication resume), carries the authenticated inner user, and a resumed conversation skips the inner phase and acts as that user.
+ * A resumed PEAP/TTLS conversation is rejected when the user the ticket names no longer exists (the witness is the accepted resumption above, same lab).
  * Discriminated with git stash on src/network: every case falls before the fix (the peer has no ticket accessor on the base); the cases pinning
  * 'no ticket' (no cache, failed inner) are non-regressions the fix keeps true and are the witnesses of the lab.
  */
@@ -178,6 +179,17 @@ describe('EAP-TLS resumption (RFC 9190)', () => {
       expect(await converse(made, second)).toBe('accept');
       expect(second.resumed).toBe(true);
       expect(roundsOf.value).toBeLessThan(fullRounds);
+    });
+
+    it(`${type}: a ticket does not outlive its user: resumed after the user is removed, the conversation is rejected`, async () => {
+      const made = await lab(EAP(type, '    default_eap_type = md5\n', CACHE()));
+      const first = tunnelled(made, type, 'alice', 'wonderland');
+      expect(await converse(made, first)).toBe('accept');
+      write(made.target, USERS_FILE_PATH, 'bob Cleartext-Password := "builder"\n');
+      await made.target.executeCommand('systemctl restart freeradius');
+      const second = tunnelled(made, type, 'alice', 'wonderland', first.ticket!);
+      expect(await converse(made, second)).toBe('reject');
+      expect(second.resumed).toBe(true);
     });
 
     it(`${type}: a failed inner authentication yields no ticket`, async () => {

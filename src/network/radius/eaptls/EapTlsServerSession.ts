@@ -49,6 +49,8 @@ export class EapTlsServerSession {
 
   result: EapTlsSessionResult = null;
 
+  get resumed(): boolean { return this.tls.sessionReused; }
+
   get authenticatedUser(): string | null {
     return this.tls.resumedSubject ?? this.config.innerAuth?.authenticatedUser() ?? null;
   }
