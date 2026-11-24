@@ -452,6 +452,19 @@ export class RadiusServerAgent {
     });
   }
 
+  private isHomeServer(address: string, port: number): boolean {
+    for (const route of this.realms.values()) if (route.homeServerIp === address && route.homePort === port) return true;
+    return this.homeStatistics.has(`auth:${address}:${port}`) || this.homeStatistics.has(`acct:${address}:${port}`);
+  }
+
+  private countStrayProxyReply(srcIp: PeerAddress, port: number, payload: RadiusPacket): void {
+    const kind = payload.code === 'accounting-response' ? 'acct' : payload.code === 'access-accept' || payload.code === 'access-reject' || payload.code === 'access-challenge' ? 'auth' : null;
+    if (kind === null || !this.isHomeServer(srcIp.toString(), port)) return;
+    let stats = this.homeStatistics.get(`${kind}:*`);
+    if (stats === undefined) { stats = emptyStats(); this.homeStatistics.set(`${kind}:*`, stats); }
+    stats.noRecords++;
+  }
+
   homeServerStatistics(kind: 'auth' | 'acct', address: string | null, port: number | null): { stats: RadiusStats; outstanding: number } {
     const stats = this.homeStatistics.get(`${kind}:${address === null ? '*' : `${address}:${port}`}`) ?? emptyStats();
     const outstanding = address === null ? 0 : [...this.pendingProxy.values()].filter((pending) => pending.homeServerIp === address && pending.homePort === port).length;
@@ -668,7 +681,7 @@ export class RadiusServerAgent {
       this.handleStatusServer(inPort, srcIp, udp, payload, 'accounting-response', this.recentAcctReplies);
       return;
     }
-    if (payload?.type === 'radius' && payload.code === 'accounting-response' && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0) && this.tryCompleteProxyReply(srcIp, udp, payload)) return;
+    if (payload?.type === 'radius' && payload.code === 'accounting-response' && this.tryCompleteProxyReply(srcIp, udp, payload)) return;
     if (!payload || payload.type !== 'radius') {
       this.countGlobal('acct', (stats) => { stats.requests++; stats.malformed++; });
       return;
@@ -813,7 +826,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    if ((payload.code === 'access-accept' || payload.code === 'access-reject') && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0)) {
+    if (payload.code === 'access-accept' || payload.code === 'access-reject' || payload.code === 'access-challenge') {
       if (this.tryCompleteProxyReply(srcIp, udp, payload)) return;
     }
     if (payload.code === 'status-server') {
@@ -1776,9 +1789,14 @@ export class RadiusServerAgent {
   private tryCompleteProxyReply(srcIp: PeerAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
     if (this.tryCompleteProbe(srcIp, udp, payload)) return true;
     const ctx = this.pendingProxy.get(payload.identifier);
-    if (!ctx) return false;
-    if (srcIp.toString() !== ctx.homeServerIp || udp.sourcePort !== ctx.homePort) return false;
-    if (!verifyResponseAuthenticator(payload, ctx.outAuthenticator, ctx.homeSecret)) return false;
+    if (!ctx || srcIp.toString() !== ctx.homeServerIp || udp.sourcePort !== ctx.homePort) {
+      this.countStrayProxyReply(srcIp, udp.sourcePort, payload);
+      return false;
+    }
+    if (!verifyResponseAuthenticator(payload, ctx.outAuthenticator, ctx.homeSecret)) {
+      this.countHome(ctx.kind, ctx.homeServerIp, ctx.homePort, (stats) => { stats.badAuthenticator++; });
+      return false;
+    }
 
     this.pendingProxy.delete(payload.identifier);
     if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
