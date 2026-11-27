@@ -399,6 +399,8 @@ export class RadiusdService {
     const handlerOf = (spec: ListenerSpec) => (dgram: { inPort: string; sourceIP: unknown; udp: never }): void => {
       if (!(dgram.sourceIP instanceof IPAddress) && !(dgram.sourceIP instanceof IPv6Address)) return;
       if ((dgram.sourceIP instanceof IPv6Address) !== (spec.ipv6 === true)) return;
+      const clientList = spec.clientsList ?? (loaded.site.serverClients.has(spec.server) ? `server:${spec.server}` : undefined);
+      if (spec.type !== 'status' && this.radiusServer.clientTable.find(dgram.sourceIP) !== null && this.radiusServer.clientTable.findInList(dgram.sourceIP, clientList) === null) return;
       const udp = dgram.udp as { payload?: { code?: string } };
       const destination = (dgram as { destinationIP?: unknown }).destinationIP;
       if (destination instanceof IPv6Address) this.radiusServer.noteLocalAddress(dgram.sourceIP, destination);
@@ -1242,7 +1244,9 @@ export class RadiusdService {
       if ('error' in sql) return { ok: false, error: sql.error };
       sqlModules.push(sql);
     }
-    const site = readSiteConfig(main.root);
+    const clientsText = this.files.read(clientsPath);
+    const clientListSections = clientsText === null ? [] : parseClientsConf(clientsText, clientsPath, (path) => this.files.read(path)).listSections ?? [];
+    const site = readSiteConfig(main.root, clientListSections);
     if ('error' in site) return { ok: false, error: site.error };
     for (const spec of site.listeners) {
       if (spec.tls === undefined) continue;
@@ -1375,7 +1379,8 @@ export class RadiusdService {
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
-    for (const client of [...loaded.clients, ...this.clientsFromSql(loaded.site.serverNames)]) this.radiusServer.clientTable.add(client);
+    const scoped = [...loaded.site.serverClients.values(), ...loaded.site.namedClients.values()].flat();
+    for (const client of [...loaded.clients, ...this.clientsFromSql(loaded.site.serverNames), ...scoped]) this.radiusServer.clientTable.add(client);
     this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? '', context?.listenPort, context?.packet));
   }
 }
