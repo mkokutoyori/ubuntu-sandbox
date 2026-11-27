@@ -55,7 +55,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
   const realms = realmInstanceNames(root);
   const expansions = sqlInstanceNames(root);
   const resolve = (rawName: string, file: string, line: number): string | null => resolveModule(rawName, file, line, realms);
-  const resolveInAccounting = (rawName: string, file: string, line: number): string | null => {
+  const resolveWithSql = (rawName: string, file: string, line: number): string | null => {
     const name = rawName.startsWith('-') ? rawName.slice(1) : rawName;
     return expansions.has(name) ? name : resolve(rawName, file, line);
   };
@@ -81,7 +81,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
       if (section.name1 === 'authorize' || section.name1 === 'post-auth' || section.name1 === 'preacct' || section.name1 === 'accounting' || section.name1 === 'pre-proxy' || section.name1 === 'post-proxy' || section.name1 === 'session') {
         let program: Statement[];
         try {
-          program = parseStatements(section, section.name1 === 'accounting' ? resolveInAccounting : resolve, false, expansions);
+          program = parseStatements(section, section.name1 === 'accounting' || section.name1 === 'authorize' ? resolveWithSql : resolve, false, expansions);
         } catch (error) {
           if (error instanceof UnlangError) return { error: error.message };
           throw error;

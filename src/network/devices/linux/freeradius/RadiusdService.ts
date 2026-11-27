@@ -982,6 +982,18 @@ export class RadiusdService {
     };
   }
 
+  private applyUsersMatch(context: UnlangContext, match: NonNullable<ReturnType<typeof matchUsersEntries>>): void {
+    for (const item of match.knownGood) {
+      context.control.set(item.name, item.value);
+      context.knownGood = [...context.knownGood.filter((known) => known.name !== item.name), item];
+    }
+    if (match.acceptAny) context.control.set('auth-type', 'accept');
+    if (match.rejected) context.control.set('auth-type', 'reject');
+    if (match.loginTime !== null) context.control.set('login-time', match.loginTime);
+    if (match.simultaneousUse !== null) context.control.set('simultaneous-use', String(match.simultaneousUse));
+    context.reply.push(...match.reply);
+  }
+
   private runAuthorizeModule(name: string, context: UnlangContext, entries: UsersEntry[], nasIp: string, groupsOf: (username: string) => readonly string[]): ModuleOutcome {
     const has = (type: string) => context.request.some((attribute) => attribute.type === type);
     const messages: string[] = [];
@@ -1022,15 +1034,23 @@ export class RadiusdService {
       const match = matchUsersEntries(entries, context.strippedName ?? context.username, requestViewOf(context, groupsOf));
       if (match === null) return { result: 'noop', messages };
       for (const entry of match.matchedEntries) messages.push(`files: ${this.usersFilePath}: Matched entry ${entry.name} at line ${entry.line}`);
-      for (const item of match.knownGood) {
-        context.control.set(item.name, item.value);
-        context.knownGood = [...context.knownGood.filter((known) => known.name !== item.name), item];
-      }
-      if (match.acceptAny) context.control.set('auth-type', 'accept');
-      if (match.rejected) context.control.set('auth-type', 'reject');
-      if (match.loginTime !== null) context.control.set('login-time', match.loginTime);
-      if (match.simultaneousUse !== null) context.control.set('simultaneous-use', String(match.simultaneousUse));
-      context.reply.push(...match.reply);
+      this.applyUsersMatch(context, match);
+      return { result: 'ok', messages };
+    }
+    const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+    if (sqlInstance !== undefined) {
+      const unescaped = (value: string) => value;
+      context.overlay.set('sql-user-name', expandForContext(sqlInstance.config.userName, context, unescaped));
+      const expand = (template: string) => expandForContext(template, context, (value) => sqlInstance.escape(value));
+      const userName = context.overlay.get('sql-user-name') ?? context.username;
+      const sqlEntries = sqlInstance.authorize(userName, expand, (template, group) => {
+        context.overlay.set('sql-group', group);
+        return expand(template);
+      });
+      if (sqlEntries === 'fail') return { result: 'fail', messages };
+      const match = matchUsersEntries(sqlEntries, userName, requestViewOf(context, groupsOf));
+      if (match === null) return { result: 'notfound', messages };
+      this.applyUsersMatch(context, match);
       return { result: 'ok', messages };
     }
     if (this.isRealmInstance(name)) return this.runRealmModule(name, context);
