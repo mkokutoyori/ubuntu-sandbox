@@ -40,7 +40,7 @@ registerView({
           df.autoextend ? bytesToBlocks(8 * 1024 * 1024, ts.blockSize || DEFAULT_BLOCK_SIZE) : 0,
           userBytes,
           userBlocks,
-          ts.status === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+          df.needsRecovery === true ? 'RECOVER' : ts.status === 'OFFLINE' || df.offline === true ? 'OFFLINE' : 'ONLINE',
         ]);
       }
     }

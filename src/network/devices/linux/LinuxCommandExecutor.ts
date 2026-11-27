@@ -5397,21 +5397,15 @@ export class LinuxCommandExecutor {
     const isLoop = options.includes('loop');
 
     if (mountAll) {
-      const fstab = this.vfs.readFile('/etc/fstab') ?? '';
       const errors: string[] = [];
-      for (const raw of fstab.split('\n')) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const parts = line.split(/\s+/);
-        if (parts.length < 3) { errors.push(`mount: error: bad line in /etc/fstab: "${line}"`); continue; }
-        const [src, tgt, fs] = parts;
-        if (fake) continue; // validate the line only — no mount syscall, no state change
-        if (this.mountTable.find(tgt)) continue;
-        if (!this.vfs.exists(tgt)) this.vfs.mkdirp(tgt, 0o755, 0, 0);
-        const entry = this.mountTable.mount(new MountEntry({ source: src, target: tgt, fstype: fs, options: ['rw'] }));
-        this.publishMountEvent('linux.mount.mounted', entry);
+      let worst = 0;
+      for (const entry of this.fstabEntries(errors)) {
+        if (entry.options.includes('noauto') || this.mountTable.find(entry.target)) continue;
+        if (!fake && !this.vfs.exists(entry.target)) this.vfs.mkdirp(entry.target, 0o755, 0, 0);
+        const outcome = this.mountFstabEntry(entry, fake);
+        if (outcome.exitCode !== 0) { errors.push(outcome.output); worst = outcome.exitCode; }
       }
-      return { output: errors.join('\n'), exitCode: errors.length > 0 ? 32 : 0 };
+      return { output: errors.join('\n'), exitCode: errors.length > 0 ? (worst || 32) : 0 };
     }
 
     if (positionals.length === 0) {
@@ -5440,7 +5434,11 @@ export class LinuxCommandExecutor {
     }
 
     if (positionals.length < 2) {
-      return { output: `mount: ${positionals[0]}: can't find in /etc/fstab.`, exitCode: 1 };
+      const wanted = positionals[0];
+      const entry = this.fstabEntries([]).find((candidate) => candidate.target === wanted || candidate.source === wanted
+        || candidate.target === this.vfs.normalizePath(wanted, this.cwd));
+      if (!entry) return { output: `mount: ${positionals[0]}: can't find in /etc/fstab.`, exitCode: 1 };
+      return this.mountFstabEntry(entry, fake);
     }
     // `10.0.0.2:/export` is not a local path: normalising it would mangle
     // the host part and lose the server the mount depends on.
@@ -5472,6 +5470,24 @@ export class LinuxCommandExecutor {
     }));
     this.publishMountEvent('linux.mount.mounted', entry);
     return { output: '', exitCode: 0 };
+  }
+
+  private fstabEntries(errors: string[]): Array<{ source: string; target: string; fstype: string; options: string[] }> {
+    const entries: Array<{ source: string; target: string; fstype: string; options: string[] }> = [];
+    for (const raw of (this.vfs.readFile('/etc/fstab') ?? '').split('\n')) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const parts = line.split(/\s+/);
+      if (parts.length < 3) { errors.push(`mount: error: bad line in /etc/fstab: "${line}"`); continue; }
+      const options = (parts[3] ?? 'defaults').split(',').filter((option) => option !== '' && option !== 'defaults');
+      entries.push({ source: parts[0], target: parts[1], fstype: parts[2], options });
+    }
+    return entries;
+  }
+
+  private mountFstabEntry(entry: { source: string; target: string; fstype: string; options: string[] }, fake: boolean): { output: string; exitCode: number } {
+    const args = ['-t', entry.fstype, ...(entry.options.length > 0 ? ['-o', entry.options.join(',')] : []), ...(fake ? ['--fake'] : []), entry.source, entry.target];
+    return this.handleMount(args);
   }
 
   private nfsClient(): NfsClient | null {

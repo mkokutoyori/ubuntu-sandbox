@@ -1,6 +1,6 @@
 import { RADIUS_ATTR, type RadiusAttribute, type RadiusAttrType } from '@/network/radius/types';
 import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodPassword';
-import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, type RadiusValueType } from '@/network/radius/dictionary';
+import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, lookupVsaByName, type RadiusValueType } from '@/network/radius/dictionary';
 
 export type UsersOperator = '=' | ':=' | '+=' | '-=' | '==' | '!=' | '<' | '>' | '<=' | '>=' | '=~' | '!~';
 
@@ -150,7 +150,7 @@ const FILE_ONLY_NAMES = new Set(['suffix', 'prefix', 'strip-user-name', 'strippe
 
 function knownName(name: string): boolean {
   const key = name.toLowerCase();
-  return key in RADIUS_ATTR || CONTROL_ONLY.has(key) || FILE_ONLY_NAMES.has(key);
+  return key in RADIUS_ATTR || lookupVsaByName(key) !== undefined || CONTROL_ONLY.has(key) || FILE_ONLY_NAMES.has(key);
 }
 
 export function parseUsersFile(source: string, fileName: string, readFile: (path: string) => string | null): ParsedUsers {
@@ -243,6 +243,11 @@ function encodeValue(valueType: RadiusValueType, type: RadiusAttrType, raw: stri
 
 export function usersPairToAttribute(pair: UsersPair): RadiusAttribute | null {
   const key = pair.name.toLowerCase();
+  const vsa = lookupVsaByName(key);
+  if (vsa !== undefined) {
+    const value = vsa.valueType === 'octets' ? (/^0x[0-9a-f]*$/i.test(pair.value) ? pair.value.slice(2) : null) : pair.value;
+    return value === null ? null : { type: 'vendor-specific', value, vendor: { id: vsa.vendorId, type: vsa.vendorType } };
+  }
   if (!(key in RADIUS_ATTR)) return null;
   const type = key as RadiusAttrType;
   const value = encodeValue(RADIUS_DICTIONARY[type].valueType, type, pair.value);

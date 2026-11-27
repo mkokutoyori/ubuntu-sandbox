@@ -4,7 +4,7 @@ import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodP
 import type { ConfPair, ConfSection } from './FreeradiusConf';
 import { usersPairToAttribute, requestViewOf, type PacketFacts, type ViewContext } from './UsersFileParser';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
-import { expandTemplate, XLAT_FUNCTIONS } from './Xlat';
+import { expandTemplate, XLAT_FUNCTIONS, type ExternalExpansions } from './Xlat';
 
 export type ModuleResult = 'reject' | 'fail' | 'ok' | 'handled' | 'invalid' | 'userlock' | 'notfound' | 'noop' | 'updated';
 export type AttributeList = 'request' | 'control' | 'reply' | 'proxy-request' | 'proxy-reply' | 'session-state';
@@ -13,6 +13,7 @@ export interface UnlangContext extends ViewContext {
   nowMs: number;
   request: RadiusAttribute[];
   control: Map<string, string>;
+  externals: ExternalExpansions;
   sessionState: Map<string, string>;
   knownGood: KnownGoodItem[];
   reply: RadiusAttribute[];
@@ -24,7 +25,7 @@ export interface UnlangContext extends ViewContext {
 }
 
 export function newContext(username: string, request: readonly RadiusAttribute[], packet: PacketFacts | null = null, nowMs = 0): UnlangContext {
-  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), sessionState: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [], lastResult: null, foreachValues: [], breaking: false };
+  return { username, strippedName: null, packet, nowMs, request: [...request], overlay: new Map(), control: new Map(), externals: new Map(), sessionState: new Map(), knownGood: [], reply: [], proxyRequest: [], proxyReply: [], lastResult: null, foreachValues: [], breaking: false };
 }
 
 const FOREACH_VARIABLE = /^foreach-variable-([0-7])$/;
@@ -127,7 +128,7 @@ function tokenizeCondition(text: string, file: string, line: number): string[] {
   return tokens;
 }
 
-function parseCondition(text: string, file: string, line: number): Condition {
+function parseCondition(text: string, file: string, line: number, expansions: ReadonlySet<string>): Condition {
   const tokens = tokenizeCondition(text, file, line);
   let position = 0;
   const peek = (): string | undefined => tokens[position];
@@ -136,7 +137,7 @@ function parseCondition(text: string, file: string, line: number): Condition {
     if (token === undefined) fail(file, line, 'Syntax error in condition: unexpected end');
     if (token.startsWith('"') || token.startsWith("'")) {
       const text = token.slice(1, -1).replace(/\\(.)/g, '$1');
-      checkTemplate(text, file, line);
+      checkTemplate(text, file, line, expansions);
       return { kind: 'literal', value: text, ...(token.startsWith('"') && text.includes('%{') ? { template: true } : {}) };
     }
     if (token.startsWith('/')) {
@@ -198,14 +199,14 @@ function valueOf(context: UnlangContext, term: Term): string | number | undefine
     const list = colon > 0 ? LIST_ALIASES[name.slice(0, colon)] : undefined;
     const found = list === undefined ? lookup(context, 'request', name) : lookup(context, list, name.slice(colon + 1));
     return found === undefined ? undefined : String(found);
-  }, context.nowMs, (value) => value);
+  }, context.nowMs, (value) => value, context.externals);
 }
 
 const TEMPLATE_FUNCTION = /%\{([A-Za-z0-9_-]+):(?!-)/g;
 
-function checkTemplate(text: string, file: string, line: number): void {
+function checkTemplate(text: string, file: string, line: number, expansions: ReadonlySet<string>): void {
   for (const match of text.matchAll(TEMPLATE_FUNCTION)) {
-    if (LIST_ALIASES[match[1]] === undefined && !XLAT_FUNCTIONS.has(match[1])) fail(file, line, `The expansion function "%{${match[1]}:...}" is not implemented in this simulator`);
+    if (LIST_ALIASES[match[1]] === undefined && !XLAT_FUNCTIONS.has(match[1]) && !expansions.has(match[1])) fail(file, line, `The expansion function "%{${match[1]}:...}" is not implemented in this simulator`);
   }
 }
 
@@ -246,18 +247,20 @@ export function evaluate(condition: Condition, context: UnlangContext): boolean 
   }
 }
 
-function assignmentOf(pair: ConfPair, defaultList: AttributeList): Assignment {
+function assignmentOf(pair: ConfPair, defaultList: AttributeList, expansions: ReadonlySet<string>): Assignment {
   const target = parseReference(pair.name, defaultList, pair.file, pair.line);
   if (!['=', ':=', '+='].includes(pair.op)) fail(pair.file, pair.line, `The operator "${pair.op}" in update is not implemented in this simulator`);
   if (pair.value.includes('`')) fail(pair.file, pair.line, 'A backtick expansion is not implemented in this simulator');
-  checkTemplate(pair.value, pair.file, pair.line);
+  checkTemplate(pair.value, pair.file, pair.line, expansions);
   const key = target.name.toLowerCase();
   if (target.list !== 'control' && target.list !== 'session-state' && !(key in RADIUS_ATTR)) fail(pair.file, pair.line, `Unknown attribute "${target.name}"`);
   const value: Term = !pair.quoted && pair.value.startsWith('&') ? parseReference(pair.value, 'request', pair.file, pair.line) : { kind: 'literal', value: pair.value, ...(pair.quoted && pair.value.includes('%{') ? { template: true } : {}) };
   return { list: target.list, name: target.name, op: pair.op, value, file: pair.file, line: pair.line };
 }
 
-export function parseStatements(section: ConfSection, knownModule: (name: string, file: string, line: number) => string | null, inForeach = false): Statement[] {
+const NO_EXPANSIONS: ReadonlySet<string> = new Set();
+
+export function parseStatements(section: ConfSection, knownModule: (name: string, file: string, line: number) => string | null, inForeach = false, expansions: ReadonlySet<string> = NO_EXPANSIONS): Statement[] {
   const statements: Statement[] = [];
   let pending: Extract<Statement, { kind: 'if' }> | null = null;
   for (const item of section.items) {
@@ -276,20 +279,20 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       continue;
     }
     if (item.name1 === 'if') {
-      pending = { kind: 'if', branches: [{ keyword: 'if', text: item.name2 ?? '', condition: parseCondition(item.name2 ?? '', item.file, item.line), body: parseStatements(item, knownModule, inForeach) }] };
+      pending = { kind: 'if', branches: [{ keyword: 'if', text: item.name2 ?? '', condition: parseCondition(item.name2 ?? '', item.file, item.line, expansions), body: parseStatements(item, knownModule, inForeach, expansions) }] };
       statements.push(pending);
     } else if (item.name1 === 'elsif' || item.name1 === 'else') {
       if (pending === null) fail(item.file, item.line, `"${item.name1}" without a preceding "if"`);
-      pending.branches.push({ keyword: item.name1, text: item.name2 ?? '', condition: item.name1 === 'else' ? null : parseCondition(item.name2 ?? '', item.file, item.line), body: parseStatements(item, knownModule, inForeach) });
+      pending.branches.push({ keyword: item.name1, text: item.name2 ?? '', condition: item.name1 === 'else' ? null : parseCondition(item.name2 ?? '', item.file, item.line, expansions), body: parseStatements(item, knownModule, inForeach, expansions) });
       if (item.name1 === 'else') pending = null;
     } else if (item.name1 === 'update') {
       pending = null;
       const list = LIST_ALIASES[item.name2 ?? ''];
       if (list === undefined) fail(item.file, item.line, `The attribute list "${item.name2 ?? ''}" in update is not implemented in this simulator`);
-      statements.push({ kind: 'update', list, assignments: item.pairs.map((pair) => assignmentOf(pair, list)) });
+      statements.push({ kind: 'update', list, assignments: item.pairs.map((pair) => assignmentOf(pair, list, expansions)) });
     } else if (GROUPS.has(item.name1)) {
       pending = null;
-      statements.push({ kind: 'group', keyword: item.name1 as 'group', body: parseStatements(item, knownModule, inForeach) });
+      statements.push({ kind: 'group', keyword: item.name1 as 'group', body: parseStatements(item, knownModule, inForeach, expansions) });
     } else if (item.name1 === 'switch') {
       pending = null;
       const text = item.name2 ?? '';
@@ -298,7 +301,7 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       const cases: Array<{ value: string | null; body: Statement[] }> = [];
       for (const child of item.sections) {
         if (child.name1 !== 'case') fail(child.file, child.line, `Unknown section "${child.name1}" in switch`);
-        cases.push({ value: child.name2 === null ? null : child.name2.replace(/^["']|["']$/g, ''), body: parseStatements(child, knownModule, inForeach) });
+        cases.push({ value: child.name2 === null ? null : child.name2.replace(/^["']|["']$/g, ''), body: parseStatements(child, knownModule, inForeach, expansions) });
       }
       statements.push({ kind: 'switch', text, expression, cases });
     } else if (item.name1 === 'foreach') {
@@ -307,12 +310,12 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       if (text === '') fail(item.file, item.line, "You must specify an attribute to loop over in 'foreach'");
       if (item.items.length === 0) fail(item.file, item.line, "'foreach' blocks cannot be empty");
       if (!text.startsWith('&')) fail(item.file, item.line, "MUST use attribute or list reference in 'foreach'");
-      statements.push({ kind: 'foreach', text, operand: parseReference(text, 'request', item.file, item.line), body: parseStatements(item, knownModule, true) });
+      statements.push({ kind: 'foreach', text, operand: parseReference(text, 'request', item.file, item.line), body: parseStatements(item, knownModule, true, expansions) });
     } else if (UNSUPPORTED.has(item.name1)) {
       fail(item.file, item.line, `The unlang construct "${item.name1}" is not implemented in this simulator`);
     } else if (item.name1.endsWith('-Type')) {
       pending = null;
-      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule, inForeach), file: item.file, line: item.line });
+      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule, inForeach, expansions), file: item.file, line: item.line });
     } else {
       pending = null;
       const resolved = knownModule(item.name1, item.file, item.line);

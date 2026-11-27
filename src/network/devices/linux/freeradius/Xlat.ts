@@ -14,7 +14,14 @@ function applyFunction(name: string, argument: string): string {
 
 export type Lookup = (name: string) => string | undefined;
 
-export function expandTemplate(template: string, lookup: Lookup, atMs: number, escape: (value: string) => string): string {
+export interface ExternalExpansion {
+  escape(value: string): string;
+  call(argument: string): string | undefined;
+}
+
+export type ExternalExpansions = ReadonlyMap<string, ExternalExpansion>;
+
+export function expandTemplate(template: string, lookup: Lookup, atMs: number, escape: (value: string) => string, externals?: ExternalExpansions): string {
   let out = '';
   for (let index = 0; index < template.length; index++) {
     const char = template[index];
@@ -32,12 +39,16 @@ export function expandTemplate(template: string, lookup: Lookup, atMs: number, e
       index = end - 1;
       const alternative = splitAlternative(body);
       if (alternative !== null) {
-        const first = expandTemplate(alternative[0], lookup, atMs, escape);
-        out += first !== '' ? first : expandTemplate(alternative[1], lookup, atMs, escape);
-      } else if (body.startsWith('%{')) out += expandTemplate(body, lookup, atMs, escape);
-      else if (/^(toupper|tolower|strlen|md5|sha1):/.test(body)) {
+        const first = expandTemplate(alternative[0], lookup, atMs, escape, externals);
+        out += first !== '' ? first : expandTemplate(alternative[1], lookup, atMs, escape, externals);
+      } else if (body.startsWith('%{')) out += expandTemplate(body, lookup, atMs, escape, externals);
+      else if (externals?.has(/^[A-Za-z0-9_-]+(?=:)/.exec(body)?.[0] ?? '') === true) {
         const colon = body.indexOf(':');
-        out += applyFunction(body.slice(0, colon), expandTemplate(body.slice(colon + 1), lookup, atMs, escape));
+        const external = externals.get(body.slice(0, colon))!;
+        out += external.call(expandTemplate(body.slice(colon + 1), lookup, atMs, external.escape, externals)) ?? '';
+      } else if (/^(toupper|tolower|strlen|md5|sha1):/.test(body)) {
+        const colon = body.indexOf(':');
+        out += applyFunction(body.slice(0, colon), expandTemplate(body.slice(colon + 1), lookup, atMs, escape, externals));
       } else {
         const value = lookup(body);
         out += value === undefined ? '' : escape(value);

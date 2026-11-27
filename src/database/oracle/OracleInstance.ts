@@ -393,6 +393,10 @@ export class OracleInstance {
     return missing;
   }
 
+  datafileIsMissing(path: string): boolean {
+    return this.missingDatafiles().some((file) => file.path === path);
+  }
+
   getControlFilePaths(): string[] {
     return (this.getParameter('control_files') ?? '')
       .split(',')

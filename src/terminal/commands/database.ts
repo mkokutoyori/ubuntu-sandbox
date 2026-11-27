@@ -14,6 +14,7 @@ import { captureOracleDelta, restoreOracleDelta, type OracleDelta } from '@/data
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf } from '@/database/oracle/storage/ControlFileImage';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
+import { wireSqlPlusSession } from './sqlPlusWiring';
 import { OracleRedoTransport } from '@/adapters/OracleRedoTransport';
 import { OracleManagedRecovery } from '@/adapters/OracleManagedRecovery';
 import { OracleRoleTransition } from '@/adapters/OracleRoleTransition';
@@ -269,27 +270,45 @@ export interface SqlPlusInvocation {
   readonly connArgs: string[] | null;
   readonly sqlSource: string;
   readonly isSysdba: boolean;
+  readonly startScript: string | null;
 }
 
 export function parseSqlPlusInvocation(args: readonly string[], stdin?: string): SqlPlusInvocation {
-  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.filter(a => !a.startsWith('-')).join(' '));
-  const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
+  const scriptIndex = args.findIndex(a => a.startsWith('@') && a.length > 1);
+  const startScript = scriptIndex === -1 ? null : [args[scriptIndex].slice(1), ...args.slice(scriptIndex + 1)].join(' ');
+  const options = scriptIndex === -1 ? args : args.slice(0, scriptIndex);
+  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(options.filter(a => !a.startsWith('-')).join(' '));
+  const connectArg = options.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
   const sqlSource = [
-    ...args.filter(a => a !== connectArg && !a.startsWith('-') && SQL_ARGUMENT.test(a)),
+    ...options.filter(a => a !== connectArg && !a.startsWith('-') && SQL_ARGUMENT.test(a)),
     stdin ?? '',
   ].join('\n').trim();
   const connArgs = isSysdba ? ['/', 'as', 'sysdba'] : connectArg ? [connectArg] : null;
-  return { connArgs, sqlSource, isSysdba };
+  return { connArgs, sqlSource, isSysdba, startScript };
 }
 
-export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource: string): string {
+export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource: string, startScript: string | null = null): string {
   const { session, loginOutput } = createSQLPlusSession(deviceId, connArgs);
   if (loginOutput.some(l => /^ERROR|ORA-\d/.test(l))) return loginOutput.join('\n');
+  const device = EquipmentRegistry.getInstance().getById(deviceId);
+  if (device) wireSqlPlusSession(device, session);
   const out: string[] = [];
-  for (const raw of sqlSource.split(';')) {
-    const stmt = raw.trim();
-    if (stmt) for (const line of session.processLine(`${stmt};`).output) out.push(line);
+  let pending = false;
+  const feed = (line: string): boolean => {
+    const result = session.processLine(line);
+    out.push(...result.output);
+    pending = result.needsMoreInput;
+    return result.exit;
+  };
+  let exited = startScript !== null && feed(`@${startScript}`);
+  const lines = sqlSource.includes('\n')
+    ? sqlSource.split('\n')
+    : sqlSource.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => `${statement};`);
+  for (const line of lines) {
+    if (exited) break;
+    exited = feed(line);
   }
+  if (!exited && pending) feed(';');
   session.disconnect();
   return out.join('\n');
 }

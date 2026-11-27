@@ -45,9 +45,15 @@ function realmInstanceNames(root: ConfSection): ReadonlySet<string> {
   return new Set(modules.sections.filter((section) => section.name1 === 'realm' && section.name2 !== null).map((section) => section.name2 as string));
 }
 
+function sqlInstanceNames(root: ConfSection): ReadonlySet<string> {
+  const modules = root.sections.find((section) => section.name1 === 'modules') ?? root;
+  return new Set(modules.sections.filter((section) => section.name1 === 'sql').map((section) => section.name2 ?? section.name1));
+}
+
 export function readPipelines(root: ConfSection): Map<string, Pipeline> | { error: string } {
   const pipelines = new Map<string, Pipeline>();
   const realms = realmInstanceNames(root);
+  const expansions = sqlInstanceNames(root);
   const resolve = (rawName: string, file: string, line: number): string | null => resolveModule(rawName, file, line, realms);
   for (const server of root.sections.filter((section) => section.name1 === 'server')) {
     const sections = new Map<ProcessingSection, ReadonlySet<string>>();
@@ -71,7 +77,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
       if (section.name1 === 'authorize' || section.name1 === 'post-auth' || section.name1 === 'preacct' || section.name1 === 'accounting' || section.name1 === 'pre-proxy' || section.name1 === 'post-proxy' || section.name1 === 'session') {
         let program: Statement[];
         try {
-          program = parseStatements(section, resolve);
+          program = parseStatements(section, resolve, false, expansions);
         } catch (error) {
           if (error instanceof UnlangError) return { error: error.message };
           throw error;
@@ -92,7 +98,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
           if (child.name1 !== 'Auth-Type' || child.name2 === null) return { error: `${child.file}[${child.line}]: ${REAL_UNLANG.has(child.name1) ? `The unlang construct "${child.name1}" directly in authenticate is not implemented in this simulator` : `Unknown section "${child.name1}" in authenticate`}` };
           let program: Statement[];
           try {
-            program = parseStatements(child, resolve);
+            program = parseStatements(child, resolve, false, expansions);
           } catch (error) {
             if (error instanceof UnlangError) return { error: error.message };
             throw error;

@@ -34,7 +34,7 @@ registerView({
           ts.name,
           bytes,
           ts.blockSize || 8192,
-          ts.status === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+          df.needsRecovery === true ? 'RECOVER' : ts.status === 'OFFLINE' || df.offline === true ? 'OFFLINE' : 'ONLINE',
           'AVAILABLE',
           DEFAULT_CREATION_TIME,
           // One consistent checkpoint SCN across all headers — agrees

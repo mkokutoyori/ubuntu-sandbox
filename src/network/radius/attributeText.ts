@@ -1,10 +1,12 @@
 import type { RadiusAttribute } from './types';
-import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, type RadiusValueType } from './dictionary';
+import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, lookupVsa, type RadiusValueType } from './dictionary';
 
 const UPPERCASE_WORDS = new Set(['nas', 'ip', 'chap', 'eap', 'mtu', 'tcp']);
 
 export function radiusAttributeDisplayName(attribute: RadiusAttribute): string {
-  if (attribute.type === 'vendor-specific' && attribute.vendor) return `Vendor-Specific(${attribute.vendor.id}:${attribute.vendor.type})`;
+  if (attribute.type === 'vendor-specific' && attribute.vendor) {
+    return lookupVsa(attribute.vendor.id, attribute.vendor.type)?.displayName ?? `Vendor-Specific(${attribute.vendor.id}:${attribute.vendor.type})`;
+  }
   return attribute.type.split('-').map((word) => {
     if (word === 'ipv6') return 'IPv6';
     if (UPPERCASE_WORDS.has(word)) return word.toUpperCase();
@@ -21,7 +23,8 @@ const NAMED_CASE: Record<string, string> = {
 };
 
 export function formatRadiusAttributeValue(attribute: RadiusAttribute): string {
-  const valueType: RadiusValueType = attribute.type === 'vendor-specific' ? 'octets' : RADIUS_DICTIONARY[attribute.type].valueType;
+  const vsa = attribute.type === 'vendor-specific' && attribute.vendor ? lookupVsa(attribute.vendor.id, attribute.vendor.type) : undefined;
+  const valueType: RadiusValueType = attribute.type === 'vendor-specific' ? vsa?.valueType ?? 'octets' : RADIUS_DICTIONARY[attribute.type].valueType;
   const raw = String(attribute.value);
   if (valueType === 'octets') return `0x${raw}`;
   if (valueType === 'time') {
