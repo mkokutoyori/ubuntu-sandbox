@@ -303,7 +303,7 @@ export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource
   let exited = startScript !== null && feed(`@${startScript}`);
   const lines = sqlSource.includes('\n')
     ? sqlSource.split('\n')
-    : sqlSource.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => `${statement};`);
+    : sqlSource.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => (statement.startsWith('@') ? statement : `${statement};`));
   for (const line of lines) {
     if (exited) break;
     exited = feed(line);

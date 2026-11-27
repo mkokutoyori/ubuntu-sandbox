@@ -5236,8 +5236,9 @@ export class OracleExecutor extends BaseExecutor {
   private exprToString(expr: Expression): string {
     switch (expr.type) {
       case 'Literal': return String(expr.value ?? 'NULL');
-      case 'Identifier': return expr.name;
-      case 'FunctionCall': return `${expr.name}(...)`;
+      case 'Identifier': return [expr.schema, expr.table, expr.name].filter((part): part is string => part !== undefined).join('.');
+      case 'Star': return expr.table === undefined ? '*' : `${expr.table}.*`;
+      case 'FunctionCall': return `${expr.name}(${expr.distinct ? 'DISTINCT ' : ''}${expr.args.map((argument) => this.exprToString(argument)).join(',')})`;
       case 'BinaryExpr': return `${this.exprToString(expr.left)} ${expr.operator} ${this.exprToString(expr.right)}`;
       default: return 'EXPR';
     }

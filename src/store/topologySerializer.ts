@@ -852,6 +852,7 @@ function serviceMgrOf(device: LinuxMachine): {
   enable(n: string): unknown; disable(n: string): unknown;
   mask(n: string): unknown; unmask(n: string): unknown;
   start(n: string): unknown; stop(n: string): unknown;
+  restart(n: string): unknown;
 } {
   return (device as unknown as {
     executor: { serviceMgr: ReturnType<typeof serviceMgrOf> };
@@ -918,6 +919,16 @@ function captureLinuxServices(device: LinuxMachine, twin: LinuxMachine): Topolog
       enabled: u.enabled as TopologyLinuxServiceExport['enabled'],
       active: u.state === 'active',
     }));
+}
+
+function restartServicesReadingRestoredFiles(device: LinuxMachine, restoredPaths: readonly string[]): void {
+  const mgr = serviceMgrOf(device);
+  for (const unit of mgr.list()) {
+    if (unit.state !== 'active' || ORACLE_INSTANCE_UNIT.test(unit.name)) continue;
+    const ownsRestoredFile = restoredPaths.some((path) =>
+      path.startsWith(`/etc/${unit.name}/`) || path.startsWith(`/etc/${unit.name}.`));
+    if (ownsRestoredFile) mgr.restart(unit.name);
+  }
 }
 
 function restoreLinuxServices(
@@ -1674,6 +1685,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       // After the files, because a unit file the lab wrote has to exist
       // before the manager can be asked to enable or start it.
       if (devData.linuxServices) restoreLinuxServices(device, devData.linuxServices);
+      restartServicesReadingRestoredFiles(device, (devData.files ?? []).map((file) => file.path));
       if (devData.linuxBonds) restoreLinuxBonds(device, devData.linuxBonds);
       device.restartTimeDaemonFromFiles();
       device.restartSyslogDaemonFromFiles();

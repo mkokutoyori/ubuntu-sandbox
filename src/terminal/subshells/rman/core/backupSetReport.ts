@@ -102,6 +102,12 @@ export function backupSetLines(sets: ReadonlyArray<BackupSet>, ctx?: { hostZoneN
   return lines;
 }
 
+export function archivedLogLines(logs: ReadonlyArray<ArchivedLogRow>, dbName: string): string[] {
+  if (logs.length === 0) return ['', 'specification does not match any archived log in the repository', ''];
+  return ['', `List of Archived Log Copies for database with db_unique_name ${dbName}`, '=====================================================================',
+    ...renderTable(logs, ARCHIVED_LOG_COLUMNS, RMAN_TABLE), ''];
+}
+
 export function restorePreviewLines(
   sets: ReadonlyArray<BackupSet>,
   logs: ReadonlyArray<ArchivedLogRow>,

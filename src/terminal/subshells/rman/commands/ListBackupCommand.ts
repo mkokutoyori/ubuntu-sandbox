@@ -13,7 +13,7 @@ import type { IRmanCommand, RmanCommandContext } from './types';
 import type { BackupSet } from '../catalog/types';
 import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
 import { formatOracleDate, rmanNowMs, rmanWall, rmanWallDay } from '../core/pureUtils';
-import { backupSetLines } from '../core/backupSetReport';
+import { archivedLogLines, backupSetLines } from '../core/backupSetReport';
 import { renderTable, type TableColumn, type TableStyle } from '@/network/devices/shells/cli/TextTable';
 
 const RMAN_TABLE: TableStyle = { gap: 1, rule: true };
@@ -79,6 +79,9 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     const snap = catalog.listAll();
     if (snap.ok === false) return snap;
 
+    if (this.variant === 'ARCHIVELOG' && ctx.getArchivedLogs) {
+      return ok(archivedLogLines(ctx.getArchivedLogs().filter(log => ctx.vfs.fileExists(log.path)), ctx.dbName));
+    }
     if (this.variant === 'ARCHIVELOG') {
       const arc = snap.value.sets.filter(s => s.type === 'ARCHIVELOG');
       if (arc.length === 0) return ok(['', 'no archived log found', '']);

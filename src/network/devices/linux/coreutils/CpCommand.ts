@@ -276,7 +276,7 @@ class Copier {
     }
     const keepContent = request.attributesOnly && ctx.vfs.lstat(target) !== null;
     if (!keepContent) {
-      const content = request.attributesOnly ? '' : inode.content;
+      const content = request.attributesOnly ? '' : ctx.vfs.readFile(source) ?? inode.content;
       const created = ctx.vfs.createFileAt(target, content, inode.permissions & 0o777 & ~ctx.umask, ctx.uid, ctx.gid);
       if (created === null) { this.fail(`cannot create regular file ${quoteShell(targetName)}: No such file or directory`); return; }
     }

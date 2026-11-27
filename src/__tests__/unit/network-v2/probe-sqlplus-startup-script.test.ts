@@ -6,7 +6,9 @@
  * (with the device file surface wired by one function the interactive shell shares: SPOOL, @, HOST), stops at EXIT, and ends an unterminated statement at the end
  * of the input as the old runner did for a one-line statement.
  *
- * Discriminated with git stash on src: 5 of 7 fall before the fix; the witnesses (a heredoc script with plain statements, and a piped one-line statement) pass either way.
+ * A one-line stdin that is only `@file` (the shape of `sqlplus -s / as sysdba <<EOF @script EOF`) was cut at semicolons and given one, so SQL*Plus looked for `file;`.
+ *
+ * Discriminated with git stash on src: 6 of 8 fall before the fix; the witnesses (a heredoc script with plain statements, and a piped one-line statement) pass either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -37,6 +39,14 @@ describe('sqlplus @script and batch input', () => {
     const output = await server.executeCommand('sqlplus -s / as sysdba @/tmp/a.sql');
     expect(output).toContain('ORCL');
     expect(output).not.toContain('ORA-12162');
+  });
+
+  it('a stdin made of one @file line runs the script, without a semicolon added to the name', async () => {
+    const server = new LinuxServer('linux-server', 'DB');
+    await write(server, '/tmp/one.sql', 'SELECT instance_name FROM v$instance;\nEXIT');
+    const output = await server.executeCommand("sqlplus -s / as sysdba <<'EOF'\n@/tmp/one.sql\nEOF");
+    expect(output).toContain('ORCL');
+    expect(output).not.toContain('SP2-0310');
   });
 
   it('the .sql extension is optional, as in SQL*Plus', async () => {

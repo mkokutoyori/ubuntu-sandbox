@@ -5,7 +5,15 @@
  * User's Guide, incomplete recovery: after RECOVER UNTIL the database must be opened with RESETLOGS (ORA-01589 otherwise), RESETLOGS is only valid after an
  * incomplete recovery (ORA-01139) and creates a new incarnation.
  *
- * Discriminated with git stash on src: 6 of 8 fall before the fix; the witness (the instance reaches OPEN in the lab), the ORA-01139 refusal (pre-existing
+ * LIST ARCHIVELOG ALL printed the backup sets of the archived logs (with a datafile list) instead of the archived log files; it now reads the archived logs the
+ * instance holds, and says so when DELETE INPUT removed them.
+ *
+ * RESTORE CONTROLFILE FROM AUTOBACKUP looked only in the recovery area and in the catalog (which lives in the lost control file), so an autobackup written with
+ * CONFIGURE CONTROLFILE AUTOBACKUP FORMAT '/backup/cf_%F' was never found (RMAN-06172) and SET CONTROLFILE AUTOBACKUP FORMAT did not exist; both now search the
+ * directory of the format for c-<dbid>-<date>-<seq>, and a restored control file requires OPEN RESETLOGS (ORA-01589 otherwise).
+ *
+ * Discriminated with git stash on src: 10 of 12 fall before the work (6 measured against the commit that introduced the SCN source and RESETLOGS, 4 more with the later
+ * additions: both LIST ARCHIVELOG cases, the control file autobackup restore and the SET format refusal); the witness (the instance reaches OPEN in the lab), the ORA-01139 refusal (pre-existing
  * ORA-00900 refusal also satisfies the match) are the cases that pass either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -94,6 +102,40 @@ describe('backup checkpoint SCN and incarnations', () => {
 
   it('RESETLOGS without an incomplete recovery is refused (ORA-01139)', () => {
     expect(sql('ALTER DATABASE OPEN RESETLOGS;')).toMatch(/ORA-01139|ORA-01531|ORA-00900/);
+  });
+
+  it('LIST ARCHIVELOG ALL lists the archived log files, then none once BACKUP ARCHIVELOG ALL DELETE INPUT removed them', () => {
+    sql('ALTER SYSTEM SWITCH LOGFILE;');
+    const before = rman('LIST ARCHIVELOG ALL;');
+    expect(before).toContain('List of Archived Log Copies');
+    expect(before).toMatch(/\.arc/);
+    expect(before).not.toContain('List of Datafiles in backup set');
+    rman("BACKUP ARCHIVELOG ALL FORMAT '/vol/backup/arc_%U' DELETE INPUT;");
+    expect(rman('LIST ARCHIVELOG ALL;')).toContain('specification does not match any archived log');
+  });
+
+  it('LIST ARCHIVELOG ALL on a database with no archived log says so', () => {
+    expect(rman('LIST ARCHIVELOG ALL;')).toContain('specification does not match any archived log');
+  });
+
+  it('the control file is restored from the autobackup named by SET CONTROLFILE AUTOBACKUP FORMAT, and RESETLOGS is then required', async () => {
+    const dbid = Number(/\d{6,}/.exec(sql('SELECT dbid FROM v$database;'))![0]);
+    rman("CONFIGURE CONTROLFILE AUTOBACKUP ON;", "CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/vol/backup/cf_%F';");
+    rman("BACKUP DATABASE FORMAT '/vol/backup/db_%U';");
+    sql('SHUTDOWN ABORT');
+    lab.sh(lab.prod, 'rm -f /u01/app/oracle/oradata/ORCL/control01.ctl /u01/app/oracle/oradata/ORCL/control02.ctl');
+    sql('STARTUP NOMOUNT;');
+    const restored = rman(`SET DBID ${dbid};`, "SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/vol/backup/cf_%F';", 'RESTORE CONTROLFILE FROM AUTOBACKUP;');
+    expect(restored).not.toContain('RMAN-06172');
+    expect(restored).toContain(`/vol/backup/cf_c-${dbid}-`);
+    expect(sql('ALTER DATABASE MOUNT;')).toContain('Database altered.');
+    rman('RECOVER DATABASE;');
+    expect(sql('ALTER DATABASE OPEN;')).toContain('ORA-01589');
+    expect(sql('ALTER DATABASE OPEN RESETLOGS;')).toContain('Database altered.');
+  });
+
+  it('SET CONTROLFILE AUTOBACKUP FORMAT refuses a format without %F', () => {
+    expect(rman("SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/vol/backup/cf_x';")).toContain('%F');
   });
 
   it('a database that was never reset has a single CURRENT incarnation', () => {

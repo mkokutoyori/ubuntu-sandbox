@@ -7,6 +7,7 @@
  *   - 'UNTIL_SCN'   SET UNTIL SCN  <n>
  *   - 'MAXCORRUPT'  SET MAXCORRUPT FOR DATAFILE <n> TO <m>
  *   - 'DBID'        SET DBID <n>
+ *   - 'AUTOBACKUP_FORMAT'  SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '<format with %F>'
  *
  * The first stores rename targets in cmdCtx.setNewname; the two UNTIL
  * forms write into cmdCtx.setUntil so later RESTORE/RECOVER calls inside
@@ -17,7 +18,7 @@ import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 
-export type SetMode = 'NEWNAME' | 'UNTIL_TIME' | 'UNTIL_SCN' | 'MAXCORRUPT' | 'DBID';
+export type SetMode = 'NEWNAME' | 'UNTIL_TIME' | 'UNTIL_SCN' | 'MAXCORRUPT' | 'DBID' | 'AUTOBACKUP_FORMAT';
 
 export class SetCommand implements IRmanCommand<string[]> {
   readonly name = 'SET';
@@ -45,6 +46,14 @@ export class SetCommand implements IRmanCommand<string[]> {
       }
       if (cmdCtx.setDbid) cmdCtx.setDbid.value = value;
       return ok(['executing command: SET DBID']);
+    }
+    if (this.mode === 'AUTOBACKUP_FORMAT') {
+      const format = (args[0] ?? '').replace(/^'|'$/g, '');
+      if (!format.includes('%F')) {
+        return err({ code: 'RMAN_01009', message: 'SET CONTROLFILE AUTOBACKUP FORMAT requires a format that contains %F' });
+      }
+      if (cmdCtx.setAutobackupFormat) cmdCtx.setAutobackupFormat.value = format;
+      return ok(['executing command: SET CONTROLFILE AUTOBACKUP FORMAT']);
     }
     if (this.mode === 'MAXCORRUPT') {
       const fichier = Number(args[0]);

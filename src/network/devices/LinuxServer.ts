@@ -176,6 +176,10 @@ export class LinuxServer extends LinuxMachine {
       // SQL commands can arrive on the command line or piped on stdin
       // (`echo "SHUTDOWN ABORT;" | sqlplus / as sysdba`).
       const script = `${args.join(' ')}\n${stdin ?? ''}`;
+      const invocation = parseSqlPlusInvocation(args, stdin);
+      if ((invocation.sqlSource || invocation.startScript !== null) && invocation.connArgs) {
+        return runSqlPlusScript(this.id, invocation.connArgs, invocation.sqlSource, invocation.startScript);
+      }
 
       // SHUTDOWN [ABORT|IMMEDIATE|TRANSACTIONAL|NORMAL] — stop the
       // instance; OracleInstance.shutdown publishes background-process-
