@@ -12,6 +12,7 @@
 import { IPAddress, IPv6Address, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
+import { oracleSqlConnector } from '@/adapters/RadiusOracleSql';
 import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
 import { installOracleClientHooks } from './linux/oracleClientHooks';
 import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
@@ -103,6 +104,7 @@ export class LinuxServer extends LinuxMachine {
       append: (path, text, umask = 0o022) => { this.executor.vfs.writeFile(path, text, 0, 0, umask, true); },
       list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
     }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime(), groupsOf: (name: string) => this.executor.userMgr.getUserGroups(name).map((group) => group.name) });
+    this.radiusd.setSqlConnector(oracleSqlConnector(this.id));
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'postfix') return;

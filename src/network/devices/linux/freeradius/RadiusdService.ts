@@ -33,6 +33,9 @@ import type { RadiusAuthDecidedPayload } from '@/network/radius/events';
 import { parseFreeradiusConf, type ConfFileReader, type ConfSection } from './FreeradiusConf';
 import { readRadiusdLogConfig, DEFAULT_RADIUS_LOG_FILE, type RadiusdLogConfig } from './RadiusdLogConfig';
 import { readRadiusdSecurityConfig, type RadiusdSecurityConfig } from './RadiusdSecurityConfig';
+import { readSqlModuleConfig, SqlModuleInstance, type SqlModuleConfig } from './sql/SqlModule';
+import type { SqlConnector } from './sql/SqlPort';
+import type { ExternalExpansion } from './Xlat';
 import { readRadiusdThreadPool, settledThreadCount, type RadiusdThreadPool } from './RadiusdThreadPool';
 import { requestDebugLines, knownGoodDisplayName, credentialMessages, type ResolutionTrace } from './RequestDebug';
 import type { RadiusUserResolverContext, AccountingRun, AuthenticateOutcome } from '@/network/radius/RadiusServerAgent';
@@ -114,7 +117,7 @@ export const RADIUSD_CONF_PATH = '/etc/freeradius/3.0/radiusd.conf';
 const PROCESS_NAME = 'freeradius';
 
 type ConfigLoadResult =
-  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null; root: ConfSection }
+  | { ok: true; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; sqlModules: SqlModuleConfig[]; site: SiteConfig; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; modules: readonly string[]; files: readonly string[]; eapTls: EapTlsConfig | null; root: ConfSection }
   | { ok: false; error: string };
 
 const moduleProgram = (names: string[]): readonly Statement[] => names.map((name) => ({ kind: 'module', name, file: '', line: 0 }));
@@ -123,15 +126,16 @@ const DEFAULT_ACCOUNTING_PROGRAM = moduleProgram(['detail', 'radutmp']);
 const DEFAULT_AUTHORIZE_PROGRAM: readonly Statement[] = ['preprocess', 'chap', 'mschap', 'eap', 'files', 'logintime', 'pap'].map((name) => ({ kind: 'module', name, file: '', line: 0 }));
 
 const BUILTIN_AUTH_TYPES = new Set(['accept', 'reject', 'pap', 'chap', 'mschap', 'eap']);
-const LOADED_MODULE_SECTIONS = new Set(['detail', 'preprocess', 'realm', 'eap']);
+const LOADED_MODULE_SECTIONS = new Set(['detail', 'preprocess', 'realm', 'eap', 'sql']);
 
 const MODULE_METHODS: Readonly<Record<string, readonly string[]>> = {
   detail: ['authorize', 'preacct', 'accounting', 'pre-proxy', 'post-proxy', 'post-auth', 'recv-coa', 'send-coa'],
   preprocess: ['authorize', 'preacct'],
   realm: ['authorize', 'preacct', 'recv-coa'],
   eap: ['authenticate', 'authorize', 'pre-proxy', 'post-proxy', 'post-auth'],
+  sql: ['authorize', 'accounting', 'post-auth', 'session'],
 };
-const MODULE_FLAGS: Readonly<Record<string, readonly string[]>> = { detail: ['reload-on-hup'], preprocess: [], realm: ['reload-on-hup'], eap: [] };
+const MODULE_FLAGS: Readonly<Record<string, readonly string[]>> = { detail: ['reload-on-hup'], preprocess: [], realm: ['reload-on-hup'], eap: [], sql: [] };
 
 function loadedModules(root: { sections: readonly { name1: string; name2: string | null }[] }): string[] {
   const modules = root.sections.find((section) => section.name1 === 'modules') as unknown as { sections: readonly { name1: string; name2: string | null }[] } | undefined;
@@ -206,6 +210,11 @@ export class RadiusdService {
   }
 
   private threadPool: RadiusdThreadPool | null = null;
+  private sqlConnector: SqlConnector | null = null;
+  private sqlInstances: SqlModuleInstance[] = [];
+  private sqlExpansions: ReadonlyMap<string, ExternalExpansion> = new Map();
+
+  setSqlConnector(connector: SqlConnector | null): void { this.sqlConnector = connector; }
   private threadPoolStartedMs = 0;
 
   threadStatisticsListing(): string[] {
@@ -277,6 +286,11 @@ export class RadiusdService {
         `\twith_specialix_jetstream_hack = ${flag('with_specialix_jetstream_hack')}`, `\twith_cisco_vsa_hack = ${flag('with_cisco_vsa_hack')}`,
         `\twith_alvarion_vsa_hack = ${flag('with_alvarion_vsa_hack')}`, '}',
       ];
+    }
+    if (type === 'sql') {
+      const config = loaded.sqlModules.find((candidate) => candidate.name === name);
+      if (config === undefined) return null;
+      return [`sql ${config.name} {`, `\tdriver = '${config.driver}'`, `\tradius_db = '${config.connectString}'`, `\tlogin = '${config.login}'`, '\tpassword = <<< secret >>>', `\tsafe_characters = '${config.safeCharacters}'`, '}'];
     }
     const settings = readDetailSettings(loaded.root);
     if (settings === null || 'error' in settings) return null;
@@ -478,6 +492,7 @@ export class RadiusdService {
     this.radiusServer.setAccountingListener(null);
     this.radiusServer.setWarningListener(null);
     this.radiusServer.setUnknownClientListener(null);
+    for (const instance of this.sqlInstances) instance.close();
     for (const port of this.boundPorts) this.host.udpClose(port);
     this.boundPorts = [];
     this.radiusServer.stop();
@@ -925,6 +940,7 @@ export class RadiusdService {
   private newRequestContext(...args: Parameters<typeof newContext>): ReturnType<typeof newContext> {
     const context = newContext(...args);
     context.sessionState = this.radiusServer.sessionState;
+    context.externals = this.sqlExpansions;
     return context;
   }
 
@@ -1162,6 +1178,12 @@ export class RadiusdService {
     if ('error' in security) return { ok: false, error: security.error };
     const threadPool = readRadiusdThreadPool(main.root);
     if ('error' in threadPool) return { ok: false, error: threadPool.error };
+    const sqlModules: SqlModuleConfig[] = [];
+    for (const section of main.root.sections.find((candidate) => candidate.name1 === 'modules')?.sections.filter((candidate) => candidate.name1 === 'sql') ?? []) {
+      const sql = readSqlModuleConfig(section);
+      if ('error' in sql) return { ok: false, error: sql.error };
+      sqlModules.push(sql);
+    }
     const site = readSiteConfig(main.root);
     if ('error' in site) return { ok: false, error: site.error };
     for (const spec of site.listeners) {
@@ -1192,7 +1214,7 @@ export class RadiusdService {
     if (eapModule !== null && 'error' in eapModule) return { ok: false, error: eapModule.error };
     const eapTls = eapModule === null ? null : this.eapTlsConfig(eapModule as EapModuleConfig, users.entries);
     if (typeof eapTls === 'string') return { ok: false, error: eapTls };
-    return { ok: true, clients: parsed.clients, users: users.entries, log, security, threadPool, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls, root: main.root };
+    return { ok: true, clients: parsed.clients, users: users.entries, log, security, threadPool, sqlModules, site, preprocess, pipelines, proxy, modules: loadedModules(main.root), files: main.files, eapTls, root: main.root };
   }
 
   private eapTlsConfig(module: EapModuleConfig, entries: UsersEntry[]): EapTlsConfig | string | null {
@@ -1222,9 +1244,12 @@ export class RadiusdService {
     };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
+  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; sqlModules: SqlModuleConfig[]; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
     this.logConfig = loaded.log;
     this.threadPool = loaded.threadPool;
+    for (const instance of this.sqlInstances) instance.close();
+    this.sqlInstances = loaded.sqlModules.map((config) => new SqlModuleInstance(config, () => this.sqlConnector, (message) => this.writeLogLine('Error', message)));
+    this.sqlExpansions = new Map(this.sqlInstances.map((instance) => [instance.config.name, instance.expansion()]));
     this.threadPoolStartedMs = this.wallClock.nowMs();
     this.radiusServer.setEapTlsConfig(loaded.eapTls);
     this.preprocessFiles = loaded.preprocess;
