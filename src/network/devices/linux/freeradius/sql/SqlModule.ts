@@ -13,6 +13,7 @@ export interface SqlModuleConfig {
   readonly safeCharacters: string;
   readonly accountingQueries: ReadonlyMap<string, readonly string[]>;
   readonly postAuthQueries: readonly string[];
+  readonly readClients: boolean;
   readonly pool: PoolSettings;
   readonly userName: string;
   readonly readGroups: boolean;
@@ -65,7 +66,7 @@ function readPool(section: ConfSection): PoolSettings | { error: string } {
   return values as unknown as PoolSettings;
 }
 
-const AUTHORIZE_QUERIES = ['simul_count_query', 'authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
+const AUTHORIZE_QUERIES = ['client_query', 'simul_count_query', 'authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
 const OPERATORS = new Set<string>(['=', ':=', '+=', '-=', '==', '!=', '<', '>', '<=', '>=', '=~', '!~']);
 
 const SAFE_CHARACTERS = '@abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_: /';
@@ -86,7 +87,7 @@ function accountingQueriesOf(section: ConfSection): ReadonlyMap<string, readonly
 
 export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { error: string } {
   const name = section.name2 ?? section.name1;
-  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section), postAuthQueries: section.sections.find((candidate) => candidate.name1 === 'post-auth')?.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value) ?? [], pool: DEFAULT_POOL, userName: '%{User-Name}', readGroups: true, queries: new Map<string, string>() };
+  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section), readClients: false, postAuthQueries: section.sections.find((candidate) => candidate.name1 === 'post-auth')?.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value) ?? [], pool: DEFAULT_POOL, userName: '%{User-Name}', readGroups: true, queries: new Map<string, string>() };
   for (const pair of section.pairs) {
     const where = `${pair.file}[${pair.line}]`;
     if (pair.name === 'driver') config.driver = pair.value;
@@ -100,6 +101,10 @@ export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { e
       const flag = confBoolean(pair);
       if (typeof flag !== 'boolean') return flag;
       config.readGroups = flag;
+    } else if (pair.name === 'read_clients') {
+      const flag = confBoolean(pair);
+      if (typeof flag !== 'boolean') return flag;
+      (config as { readClients: boolean }).readClients = flag;
     } else if (AUTHORIZE_QUERIES.includes(pair.name)) (config.queries as Map<string, string>).set(pair.name, pair.value);
     else if (STORED_KEYS.has(pair.name) || QUERY_SUFFIX.test(pair.name)) continue;
     else return { error: `${where}: Unknown sql setting "${pair.name}"` };
@@ -107,6 +112,7 @@ export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { e
   const pool = readPool(section);
   if ('error' in pool) return pool;
   (config as { pool: PoolSettings }).pool = pool;
+  if (config.readClients && !config.queries.has('client_query')) return { error: `${section.file}[${section.line}]: rlm_sql (${name}): read_clients is set but no client_query is configured` };
   if (config.driver === '') return { error: `${section.file}[${section.line}]: sql: Failed to find configuration item "driver"` };
   if (config.driver !== SUPPORTED_DRIVER) return { error: `${section.file}[${section.line}]: The sql driver "${config.driver}" is not implemented in this simulator (only ${SUPPORTED_DRIVER}, over Oracle Net to the simulator's Oracle instance)` };
   return config;
@@ -296,6 +302,21 @@ export class SqlModuleInstance {
     if (rows === 'fail') return 'fail';
     const count = Number(rows[0]?.[0] ?? '');
     return Number.isInteger(count) && count >= 0 ? count : 'fail';
+  }
+
+  clientSections(): ConfSection[] | 'fail' {
+    const query = this.config.queries.get('client_query');
+    if (!this.config.readClients || query === undefined) return [];
+    const session = this.open();
+    if (session === null) return 'fail';
+    const rows = this.rows(query, (template) => template, session);
+    if (rows === 'fail') return 'fail';
+    return rows.map((row) => {
+      const pairs: ConfPair[] = [
+        ['ipaddr', row[1]], ['shortname', row[2]], ['nas_type', row[3] === '' ? 'other' : row[3]], ['secret', row[4]],
+      ].map(([name, value]) => ({ name, op: '=', value: value ?? '', quoted: true, file: `rlm_sql (${this.config.name})`, line: 0 }));
+      return { name1: 'client', name2: row[2] ?? row[1] ?? '', pairs, sections: [], items: pairs, file: `rlm_sql (${this.config.name})`, line: 0 };
+    });
   }
 
   postAuth(expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
