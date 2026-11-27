@@ -197,9 +197,9 @@ export class LinuxServer extends LinuxMachine {
       // `user/pass@conn "SQL"` and `… | sqlplus / as sysdba` (used to
       // drop the SQL on the sysdba path and fake "1 row selected" on the
       // password path).
-      const { connArgs, sqlSource, isSysdba } = parseSqlPlusInvocation(args, stdin);
-      if (sqlSource && connArgs && db.instance.state === 'OPEN') {
-        return runSqlPlusScript(this.id, connArgs, sqlSource);
+      const { connArgs, sqlSource, isSysdba, startScript } = parseSqlPlusInvocation(args, stdin);
+      if ((sqlSource || startScript !== null) && connArgs && (db.instance.state === 'OPEN' || startScript !== null)) {
+        return runSqlPlusScript(this.id, connArgs, sqlSource, startScript);
       }
       if (args.length === 0 || isSysdba) {
         return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;

@@ -10,18 +10,9 @@ import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { SQLPlusSession, SQLPlusResult } from '@/database/oracle/commands/SQLPlusSession';
 import { yieldToEventLoop } from '@/events/CooperativeYield';
-import type { HostCommandRunner } from '@/database/oracle/commands/HostCommandRunner';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
-
-interface SyncShellHost {
-  executeShellCommandSync(command: string): string;
-}
-
-function asSyncShellHost(device: Equipment): SyncShellHost | null {
-  const d = device as unknown as Partial<SyncShellHost>;
-  return typeof d.executeShellCommandSync === 'function' ? (d as SyncShellHost) : null;
-}
+import { syncShellHostOf, wireSqlPlusSession, type SyncShellHost } from '@/terminal/commands/sqlPlusWiring';
 
 /**
  * Snapshot the launching shell's OS identity — like a real sqlplus
@@ -93,38 +84,10 @@ export class SqlPlusSubShell implements ISubShell {
   ): { subShell: SqlPlusSubShell; banner: string[]; loginOutput: string[] } {
     initOracleFilesystem(device);
     const deviceId = device.getId();
-    const host = asSyncShellHost(device);
+    const host = syncShellHostOf(device);
     const osCtx = captureOsContext(device, host);
     const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args, osCtx);
-    if (host) {
-      const runner: HostCommandRunner = {
-        execute(cmd: string): string[] {
-          const out = host.executeShellCommandSync(cmd);
-          return out === '' ? [] : out.split('\n');
-        },
-      };
-      session.setHostCommandRunner(runner);
-    }
-
-    // SPOOL / @script filesystem surface. Relative paths resolve against
-    // the launching shell's cwd (like a real sqlplus process); reads and
-    // writes go through the device's stable editor file surface.
-    const fsDevice = device as unknown as {
-      writeFileFromEditor?: (p: string, c: string) => boolean;
-      readFileForEditor?: (p: string) => string | null;
-    };
-    session.setFileIO({
-      resolve: (path: string): string => {
-        if (path.startsWith('/')) return path;
-        const pwd = host?.executeShellCommandSync('pwd').trim();
-        const baseDir = pwd && pwd.startsWith('/') ? pwd : '/root';
-        return `${baseDir}/${path}`.replace(/\/{2,}/g, '/');
-      },
-      read: (path: string): string | null =>
-        fsDevice.readFileForEditor?.(path) ?? null,
-      write: (path: string, content: string): boolean =>
-        fsDevice.writeFileFromEditor?.(path, content) ?? false,
-    });
+    wireSqlPlusSession(device, session);
 
     return {
       subShell: new SqlPlusSubShell(session, session.getPrompt()),

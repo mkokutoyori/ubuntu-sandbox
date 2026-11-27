@@ -850,7 +850,8 @@ export abstract class BaseParser {
       return { type: 'ColumnConstraint', position: pos, constraintName, constraintType: 'CHECK', checkExpr };
     }
     if (this.matchKeyword('REFERENCES')) {
-      const refTable = this.expectIdentifier();
+      let refTable = this.expectIdentifier();
+      if (this.match(TokenType.DOT)) refTable = `${refTable}.${this.expectIdentifier()}`;
       let refColumn: string | undefined;
       if (this.match(TokenType.LPAREN)) {
         refColumn = this.expectIdentifier();

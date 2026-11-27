@@ -16,8 +16,8 @@ export function installOracleClientHooks(
     return lines.join('\n');
   };
   executor._oracleBootstrap = (args, stdin) => {
-    const { connArgs, sqlSource } = parseSqlPlusInvocation(args, stdin);
-    if (!connArgs || !connArgs[0].includes('@') || !sqlSource) return null;
-    return runSqlPlusScript(deviceId, connArgs, sqlSource);
+    const { connArgs, sqlSource, startScript } = parseSqlPlusInvocation(args, stdin);
+    if (!connArgs || !connArgs[0].includes('@') || (!sqlSource && startScript === null)) return null;
+    return runSqlPlusScript(deviceId, connArgs, sqlSource, startScript);
   };
 }
