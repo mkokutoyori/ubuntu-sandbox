@@ -14,6 +14,8 @@ export interface SqlModuleConfig {
   readonly accountingQueries: ReadonlyMap<string, readonly string[]>;
   readonly postAuthQueries: readonly string[];
   readonly readClients: boolean;
+  readonly readProfiles: boolean;
+  readonly defaultProfile: string;
   readonly pool: PoolSettings;
   readonly userName: string;
   readonly readGroups: boolean;
@@ -87,7 +89,7 @@ function accountingQueriesOf(section: ConfSection): ReadonlyMap<string, readonly
 
 export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { error: string } {
   const name = section.name2 ?? section.name1;
-  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section), readClients: false, postAuthQueries: section.sections.find((candidate) => candidate.name1 === 'post-auth')?.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value) ?? [], pool: DEFAULT_POOL, userName: '%{User-Name}', readGroups: true, queries: new Map<string, string>() };
+  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section), readClients: false, readProfiles: true, defaultProfile: '', postAuthQueries: section.sections.find((candidate) => candidate.name1 === 'post-auth')?.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value) ?? [], pool: DEFAULT_POOL, userName: '%{User-Name}', readGroups: true, queries: new Map<string, string>() };
   for (const pair of section.pairs) {
     const where = `${pair.file}[${pair.line}]`;
     if (pair.name === 'driver') config.driver = pair.value;
@@ -101,6 +103,12 @@ export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { e
       const flag = confBoolean(pair);
       if (typeof flag !== 'boolean') return flag;
       config.readGroups = flag;
+    } else if (pair.name === 'read_profiles') {
+      const flag = confBoolean(pair);
+      if (typeof flag !== 'boolean') return flag;
+      (config as { readProfiles: boolean }).readProfiles = flag;
+    } else if (pair.name === 'default_user_profile') {
+      (config as { defaultProfile: string }).defaultProfile = pair.value;
     } else if (pair.name === 'read_clients') {
       const flag = confBoolean(pair);
       if (typeof flag !== 'boolean') return flag;
@@ -248,7 +256,7 @@ export class SqlModuleInstance {
     return pairs;
   }
 
-  authorize(userName: string, expand: (template: string) => string, expandGroup: (template: string, group: string) => string): UsersEntry[] | 'fail' {
+  authorize(userName: string, expand: (template: string) => string, expandGroup: (template: string, group: string) => string, profileHint: () => string | undefined = () => undefined): UsersEntry[] | 'fail' {
     const session = this.open();
     if (session === null) return 'fail';
     const entries: UsersEntry[] = [];
@@ -259,10 +267,17 @@ export class SqlModuleInstance {
     const userReply = this.pairsOf(reply);
     if (userCheck === 'fail' || userReply === 'fail') return 'fail';
     if (userCheck.length > 0 || userReply.length > 0) entries.push({ name: userName, check: userCheck, reply: userReply, line: 0 });
-    if (!this.config.readGroups) return entries;
-    const groups = this.rows(this.config.queries.get('group_membership_query'), expand, session);
-    if (groups === 'fail') return 'fail';
-    for (const [group] of groups) {
+    const groups: string[] = [];
+    if (this.config.readGroups) {
+      const membership = this.rows(this.config.queries.get('group_membership_query'), expand, session);
+      if (membership === 'fail') return 'fail';
+      groups.push(...membership.map(([group]) => group));
+    }
+    if (this.config.readProfiles) {
+      const named = userCheck.find((pair) => pair.name.toLowerCase() === 'user-profile')?.value ?? profileHint() ?? this.config.defaultProfile;
+      if (named !== '') groups.push(named);
+    }
+    for (const group of groups) {
       const groupCheck = this.rows(this.config.queries.get('authorize_group_check_query'), (template) => expandGroup(template, group), session);
       const groupReply = this.rows(this.config.queries.get('authorize_group_reply_query'), (template) => expandGroup(template, group), session);
       if (groupCheck === 'fail' || groupReply === 'fail') return 'fail';

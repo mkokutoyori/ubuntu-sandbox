@@ -1074,7 +1074,7 @@ export class RadiusdService {
       const sqlEntries = sqlInstance.authorize(userName, expand, (template, group) => {
         context.overlay.set('sql-group', group);
         return expand(template);
-      });
+      }, () => context.control.get('user-profile'));
       if (sqlEntries === 'fail') return { result: 'fail', messages };
       const match = matchUsersEntries(sqlEntries, userName, requestViewOf(context, groupsOf));
       if (match === null) return { result: 'notfound', messages };
