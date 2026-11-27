@@ -1255,20 +1255,28 @@ export class RmanJobEngine implements IRmanJobEngine {
 
   private _doCrosscheck(job?: RmanJob): Result<void, RmanError> {
     const scope = (job?.params?.scope ?? 'BACKUP').toUpperCase();
+    let available = 0, expired = 0;
+    if (scope === 'ARCHIVELOG') {
+      for (const log of this._archivedLogs()) {
+        const present = this._ctx.vfs.fileExists(log.path);
+        if (present) available++; else expired++;
+        this._bus.emit({
+          type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '', kind: 'archived log',
+          status: present ? 'AVAILABLE' : 'EXPIRED', path: log.path, thread: log.thread, sequence: log.sequence,
+        });
+      }
+      this._bus.emit({ type: 'CROSSCHECK_DONE', available, expired });
+      return ok(undefined);
+    }
     const snap = this._catalog.listAll();
     if (snap.ok === false) return snap;
-    let available = 0, expired = 0;
     for (const p of snap.value.pieces) {
-      const set = snap.value.sets.find(s => s.bsKey === p.bsKey);
-      if (scope === 'ARCHIVELOG' && set?.type !== 'ARCHIVELOG') continue;
-      if (scope === 'BACKUP'     && set?.type === 'ARCHIVELOG') continue;
       const intacte = validateBackupPiece(this._ctx.vfs, p.path).fault === null;
       if (intacte) available++;
       else { this._catalog.expirePiece(p.key); expired++; }
       this._bus.emit({
-        type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '',
-        kind: scope === 'ARCHIVELOG' ? 'archived log' : 'backup piece',
-        status: intacte ? 'AVAILABLE' : 'EXPIRED',
+        type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '', kind: 'backup piece',
+        status: intacte ? 'AVAILABLE' : 'EXPIRED', path: p.path, recid: p.key.bpKey, stamp: oracleStamp(p.completionTime),
       });
     }
     this._bus.emit({ type: 'CROSSCHECK_DONE', available, expired });
