@@ -23,7 +23,7 @@ export interface TablespaceMeta {
   name: string;
   type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
   status: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
-  datafiles: { path: string; size: string; autoextend: boolean; maxSize?: string }[];
+  datafiles: { path: string; size: string; autoextend: boolean; maxSize?: string; offline?: boolean; needsRecovery?: boolean }[];
   blockSize: number;
   /** LOGGING / NOLOGGING — decides whether DML against the tablespace generates redo. */
   logging: boolean;
@@ -170,6 +170,36 @@ export class OracleStorage extends BaseStorage {
       }
     }
     return out;
+  }
+
+  datafileState(fileNo: number): { fileNo: number; path: string; tablespace: TablespaceMeta; entry: TablespaceMeta['datafiles'][number] } | null {
+    let number = 1;
+    for (const ts of this.getAllTablespaces()) {
+      if (ts.type === 'TEMPORARY') continue;
+      for (const entry of ts.datafiles) {
+        if (number === fileNo) return { fileNo, path: entry.path, tablespace: ts, entry };
+        number++;
+      }
+    }
+    return null;
+  }
+
+  datafileStateByPath(path: string): ReturnType<OracleStorage['datafileState']> {
+    const found = this.listDatafiles().find((file) => file.path === path);
+    return found === undefined ? null : this.datafileState(found.fileNo);
+  }
+
+  datafileIsOffline(fileNo: number): boolean {
+    const state = this.datafileState(fileNo);
+    return state !== null && (state.tablespace.status === 'OFFLINE' || state.entry.offline === true);
+  }
+
+  firstUnavailableDatafile(schema: string, table: string): { fileNo: number; path: string } | null {
+    const name = this.tablespaceOfTable(schema, table);
+    if (name === undefined) return null;
+    const files = this.listDatafiles().filter((file) => file.tablespace.toUpperCase() === name.toUpperCase());
+    for (const file of files) if (this.datafileIsOffline(file.fileNo)) return { fileNo: file.fileNo, path: file.path };
+    return null;
   }
 
   defaultTablespaceFor(schema: string): string {

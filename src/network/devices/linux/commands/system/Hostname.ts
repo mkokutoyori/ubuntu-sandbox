@@ -22,7 +22,9 @@ function programNamed(program: { name: string; usage: string; help: string }): L
     manSection: 1,
     usage: program.usage,
     help: program.help,
-    run: async (ctx, args) => commandResultOf(await outcome(ctx, args)).interleaved,
+    run: (ctx, args) => (program.name === 'hostname' && args.length === 0
+      ? `${linuxHostnameHost(ctx).hostname()}\n`
+      : (async () => commandResultOf(await outcome(ctx, args)).interleaved)()),
     runWithStatus: async (ctx, args) => completeLinesResultOf(await outcome(ctx, args)),
   };
 }

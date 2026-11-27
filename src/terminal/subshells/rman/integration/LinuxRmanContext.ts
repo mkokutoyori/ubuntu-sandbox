@@ -203,6 +203,15 @@ export class LinuxRmanContext implements IRmanOracleContext {
     ];
   }
 
+  isDatafileOffline(fileNo: number): boolean {
+    return this._oracle?.storage.datafileIsOffline(fileNo) ?? false;
+  }
+
+  setDatafileNeedsRecovery(fileNo: number, needsRecovery: boolean): void {
+    const state = this._oracle?.storage.datafileState(fileNo);
+    if (state) state.entry.needsRecovery = needsRecovery;
+  }
+
   getCurrentScn(): number {
     const distant = this.askRemoteScalar('SELECT current_scn FROM V$DATABASE', 'CURRENT_SCN');
     if (distant !== null) return Number(distant);

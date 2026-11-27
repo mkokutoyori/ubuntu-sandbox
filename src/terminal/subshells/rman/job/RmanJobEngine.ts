@@ -620,7 +620,20 @@ export class RmanJobEngine implements IRmanJobEngine {
     // l'etat MOUNT ne porte que sur la forme qui en REECRIT.
     const lectureSeule = params.preview === 'true' || params.validate === 'true';
     const inst = this._ctx.getInstanceState?.();
-    if (!lectureSeule && (inst === 'OPEN' || inst === 'SHUTDOWN')) {
+    const scopedFiles = params.fileNo !== undefined || params.tablespace !== undefined
+      ? this._ctx.getDatafiles().filter(df => params.fileNo !== undefined
+        ? df.fileNo === Number(params.fileNo)
+        : df.tablespace.toUpperCase() === params.tablespace!.toUpperCase())
+      : null;
+    if (!lectureSeule && inst === 'OPEN' && scopedFiles !== null && scopedFiles.length > 0) {
+      const online = scopedFiles.find(df => this._ctx.isDatafileOffline?.(df.fileNo) !== true);
+      if (online !== undefined) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `RMAN-03002: failure of restore command\nORA-19870: error while restoring backup piece\nORA-19573: cannot obtain exclusive enqueue for datafile ${online.fileNo}`,
+        });
+      }
+    } else if (!lectureSeule && (inst === 'OPEN' || inst === 'SHUTDOWN')) {
       return err({ code: 'RMAN_06403', message: 'database must be mounted (not open)' });
     }
     if (lectureSeule && inst === 'SHUTDOWN') {
@@ -736,6 +749,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       const saved = restoredImages[df.path];
       this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(
         saved ?? `[ORACLE DATAFILE - ${df.tablespace} tablespace - ${sizeMb}M]`));
+      this._ctx.setDatafileNeedsRecovery?.(df.fileNo, true);
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
         fileNo: df.fileNo, elapsedMs: 5_000,
@@ -969,6 +983,12 @@ export class RmanJobEngine implements IRmanJobEngine {
       });
     }
     this._applyArchivedLogs(arcPaths, params.untilScn !== undefined ? Number(params.untilScn) : undefined);
+    for (const df of this._ctx.getDatafiles()) {
+      const targeted = params.fileNo !== undefined ? df.fileNo === Number(params.fileNo)
+        : params.tablespace !== undefined ? df.tablespace.toUpperCase() === params.tablespace.toUpperCase()
+          : true;
+      if (targeted) this._ctx.setDatafileNeedsRecovery?.(df.fileNo, false);
+    }
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
     this._pendingRecoveryGap = false;
     return ok(undefined);

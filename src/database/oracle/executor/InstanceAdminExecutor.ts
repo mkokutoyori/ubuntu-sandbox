@@ -165,6 +165,11 @@ export class InstanceAdminExecutor {
       this.applyDatafileRename(renameMatch[1]);
       return emptyResult('Database altered.');
     }
+    const datafileState = /^\s*DATAFILE\s+(\d+|'[^']+')\s+(ONLINE|OFFLINE)(\s+FOR\s+DROP)?\s*$/i.exec(stmt.action);
+    if (datafileState) {
+      this.applyDatafileState(datafileState[1], datafileState[2].toUpperCase() === 'ONLINE', datafileState[3] !== undefined);
+      return emptyResult('Database altered.');
+    }
     // DATAFILE '…' RESIZE 200M
     const resizeMatch = /^\s*DATAFILE\s+'([^']+)'\s+.*\bRESIZE\s+(\d+\s*[KMGT]?)/i.exec(stmt.action);
     if (resizeMatch) {
@@ -181,6 +186,32 @@ export class InstanceAdminExecutor {
   }
 
   // ── Datafile maintenance ──────────────────────────────────────────
+
+  private requireDatafileUsable(fileNo: number, path: string): void {
+    if (this.instance.datafileIsMissing(path)) {
+      throw new OracleError(1157, `cannot identify/lock data file ${fileNo} - see DBWR trace file\nORA-01110: data file ${fileNo}: '${path}'`);
+    }
+    const state = this.storage.datafileState(fileNo);
+    if (state?.entry.needsRecovery === true) {
+      throw new OracleError(1113, `file ${fileNo} needs media recovery\nORA-01110: data file ${fileNo}: '${path}'`);
+    }
+  }
+
+  private applyDatafileState(designator: string, online: boolean, forDrop: boolean): void {
+    const state = designator.startsWith("'")
+      ? this.storage.datafileStateByPath(designator.slice(1, -1))
+      : this.storage.datafileState(Number(designator));
+    if (state === null) throw new OracleError(1516, `nonexistent log, data, or temporary file "${designator.replace(/'/g, '')}"`);
+    if (online) {
+      this.requireDatafileUsable(state.fileNo, state.path);
+      state.entry.offline = false;
+      return;
+    }
+    if (!this.instance.archiveLogMode && !forDrop) {
+      throw new OracleError(1145, 'offline immediate disallowed unless media recovery enabled');
+    }
+    state.entry.offline = true;
+  }
 
   private applyDatafileResize(path: string, size: string): void {
     const ts = this.storage.resizeDatafile(path, size);
@@ -311,11 +342,18 @@ export class InstanceAdminExecutor {
       }
       case 'ONLINE': case 'READ_WRITE': {
         const old = ts.status;
+        if (action.kind === 'ONLINE' && old === 'OFFLINE') {
+          for (const file of storage.listDatafiles().filter((candidate) => candidate.tablespace === ts.name)) this.requireDatafileUsable(file.fileNo, file.path);
+          for (const entry of ts.datafiles) entry.offline = false;
+        }
         if (storage.setTablespaceStatus(name, 'ONLINE')) publishStatus(old, 'ONLINE');
         return;
       }
       case 'OFFLINE': {
         const old = ts.status;
+        if (action.mode === 'IMMEDIATE' && !this.instance.archiveLogMode) {
+          throw new OracleError(1145, 'offline immediate disallowed unless media recovery enabled');
+        }
         if (storage.setTablespaceStatus(name, 'OFFLINE')) publishStatus(old, 'OFFLINE');
         return;
       }

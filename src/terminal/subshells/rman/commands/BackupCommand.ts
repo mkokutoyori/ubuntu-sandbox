@@ -64,6 +64,9 @@ export class BackupCommand implements IRmanCommand<void> {
     if (tolerances) opts.maxCorrupt = tolerances;
 
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
+    const configured = cmdCtx.config?.snapshot();
+    const channelFormat = configured?.channelFormat;
+    if (opts.format === undefined && channelFormat !== undefined && this.mode !== 'controlfile' && this.mode !== 'spfile') opts.format = channelFormat;
 
     // Tablespaces exclus via CONFIGURE EXCLUDE FOR TABLESPACE — appliqués
     // automatiquement à BACKUP DATABASE / INCREMENTAL DATABASE.
@@ -75,7 +78,7 @@ export class BackupCommand implements IRmanCommand<void> {
         const r = engine.run(JobBuilder.backupDatabase({ ...opts, excludeTablespaces: excluded }));
         if (!r.ok) return r;
         if (plusArchivelog) {
-          const r2 = engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput }));
+          const r2 = engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput, format: opts.format }));
           if (!r2.ok) return r2;
         }
         result = r;
@@ -112,6 +115,7 @@ export class BackupCommand implements IRmanCommand<void> {
         // args[1] = "CUMULATIVE" if present, args[2] = post-clauses
         const cumulative = (args[1] ?? '').toUpperCase() === 'CUMULATIVE';
         const clauseOpts = parseBackupOptions(args.slice(1).join(' '));
+        if (clauseOpts.format === undefined) clauseOpts.format = opts.format;
         clauseOpts.cumulative = cumulative || clauseOpts.cumulative;
         if (optimizationOn && clauseOpts.notBackedUpNTimes === undefined) clauseOpts.notBackedUpNTimes = 1;
         result = engine.run(JobBuilder.backupIncremental(level, clauseOpts));
@@ -142,7 +146,8 @@ export class BackupCommand implements IRmanCommand<void> {
     // behaviour. Self-trigger is guarded by `params.what === 'controlfile'`
     // so the autobackup doesn't recurse.
     if (result.ok && cmdCtx.config?.snapshot().controlfileAutobackup === true) {
-      engine.run(JobBuilder.backupControlfile({ tag: 'AUTOBACKUP' }));
+      const autobackupFormat = cmdCtx.config.snapshot().controlfileAutobackupFormat;
+      engine.run(JobBuilder.backupControlfile({ tag: 'AUTOBACKUP', ...(autobackupFormat === '%F' ? {} : { format: autobackupFormat }) }));
     }
     return result;
   }

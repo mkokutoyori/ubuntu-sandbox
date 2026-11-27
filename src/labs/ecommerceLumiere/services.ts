@@ -110,6 +110,7 @@ export async function configureLogServer(bench: LabWorkbench, log: Equipment): P
     'sudo systemctl restart rsyslog',
   );
   await bench.writeFile(log, '/etc/freeradius/3.0/clients.conf', [
+    'client localhost {', '  ipaddr = 127.0.0.1', '  secret = testing123', '  shortname = localhost', '}',
     'client reseau-siege {', '  ipaddr = 10.10.0.0/16', `  secret = ${RADIUS_SECRET}`, '  shortname = siege', '}',
     'client reseau-reprise {', '  ipaddr = 10.20.0.0/16', `  secret = ${RADIUS_SECRET}`, '  shortname = reprise', '}',
   ].join('\n'));

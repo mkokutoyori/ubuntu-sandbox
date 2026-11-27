@@ -2038,6 +2038,7 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     const meta = this.requireTableMeta(schema, tableName);
+    this.requireTablespaceOnline(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.privileges.requireObjectAccess(schema, tableName, 'SELECT');
     let storageRows = this.txn.visibleRows(schema, tableName) ?? this.storage.getRows(schema, tableName);
@@ -3089,6 +3090,12 @@ export class OracleExecutor extends BaseExecutor {
     return this.loadView(view, name);
   }
 
+  private requireTablespaceOnline(schema: string, tableName: string): void {
+    const unavailable = this.storage.firstUnavailableDatafile(schema, tableName);
+    if (unavailable === null) return;
+    throw new OracleError(376, `file ${unavailable.fileNo} cannot be read at this time\nORA-01110: data file ${unavailable.fileNo}: '${unavailable.path}'`);
+  }
+
   private executeInsert(stmt: InsertStatement): ResultSet {
     this.requireWritableTransaction();
     this.txn.begin();
@@ -3103,6 +3110,7 @@ export class OracleExecutor extends BaseExecutor {
       return rowsCreated(stmt.values.length);
     }
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.requireTablespaceOnline(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
     this.privileges.requireColumnAccess(schema, tableName, 'INSERT',
@@ -3275,6 +3283,7 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult(`${count} row${count !== 1 ? 's' : ''} updated.`, count);
     }
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.requireTablespaceOnline(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'UPDATE');
     this.privileges.requireColumnAccess(schema, tableName, 'UPDATE',
@@ -3344,6 +3353,7 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
     }
     const tableMeta = this.requireTableMeta(schema, tableName);
+    this.requireTablespaceOnline(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
 
