@@ -276,19 +276,24 @@ export class RadiusServerAgent {
     return this.featurePolicy(feature, this.servedPort ?? this.config.port);
   }
 
-  private simultaneousUseDenial(user: RadiusUser | undefined, username: string): { reply: RadiusAttribute[]; note: string } | null {
+  private simultaneousUseDenial(user: RadiusUser | undefined, username: string, request: readonly RadiusAttribute[] = []): { reply: RadiusAttribute[]; note: string } | null {
     if (user?.simultaneousUse === undefined) return null;
     const maximum = user.simultaneousUse;
     const active = this.utmpSessions().filter((record) => record.username === username);
     if (this.sessionHook === null ? !this.allows('session') : false) return null;
-    const counted = this.sessionHook === null ? active.length : this.sessionHook({ port: this.servedPort ?? this.config.port, username, active: active.length, maximum });
-    if (counted === null || counted < maximum) return null;
+    const answered = this.sessionHook === null ? active.length : this.sessionHook({ port: this.servedPort ?? this.config.port, username, active: active.length, maximum, request });
+    if (answered === null) return null;
+    const counted = typeof answered === 'number' ? answered : answered.count;
+    const multilink = typeof answered === 'object' && answered.mpp;
+    if (counted < maximum) return null;
+    const portLimit = Number(user.replyAttributes?.find((attribute) => attribute.type === 'port-limit')?.value ?? 0);
+    if (multilink && portLimit > maximum) return null;
     for (const record of active) {
       const nasType = this.clientTable.find(peerOf(record.nasIp))?.nasType ?? 'other';
       if (nasType !== 'other' && nasType !== '') return null;
     }
     const denied = this.config.deniedMessage ?? 'You are already logged in - access denied';
-    return { reply: [attr('reply-message', maximum > 1 ? `${denied} (${maximum})` : denied)], note: `Multiple logins (max ${maximum}) ` };
+    return { reply: [attr('reply-message', maximum > 1 ? `${denied} (${maximum})` : denied)], note: `Multiple logins (max ${maximum}) ${multilink ? '[MPP attempt]' : ''}` };
   }
 
   private wallClockMs: () => number = () => simulationNowMs();
@@ -413,9 +418,9 @@ export class RadiusServerAgent {
 
   setStatusHook(hook: ((info: { port: number; accounting: boolean; request: readonly RadiusAttribute[] }) => { verdict: 'ok' | 'reject' | 'drop'; reply: RadiusAttribute[] } | null) | null): void { this.statusHook = hook; }
 
-  private sessionHook: ((info: { port: number; username: string; active: number; maximum: number }) => number | null) | null = null;
+  private sessionHook: ((info: { port: number; username: string; active: number; maximum: number; request: readonly RadiusAttribute[] }) => number | { count: number; mpp: boolean } | null) | null = null;
 
-  setSessionHook(hook: ((info: { port: number; username: string; active: number; maximum: number }) => number | null) | null): void { this.sessionHook = hook; }
+  setSessionHook(hook: ((info: { port: number; username: string; active: number; maximum: number; request: readonly RadiusAttribute[] }) => number | { count: number; mpp: boolean } | null) | null): void { this.sessionHook = hook; }
 
   private authenticateHook: ((info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[]; messages?: readonly string[] }) => AuthenticateOutcome | null) | null = null;
 
@@ -985,7 +990,7 @@ export class RadiusServerAgent {
       if (!accepted && reason !== 'unknown-user') reason = 'bad-password';
       if (accepted && user !== undefined && authenticated.reply.length > 0) user = { ...user, replyAttributes: [...(user.replyAttributes ?? []), ...authenticated.reply] };
     }
-    const denial = accepted ? this.simultaneousUseDenial(user, username) : null;
+    const denial = accepted ? this.simultaneousUseDenial(user, username, payload.attributes) : null;
     const finalAccepted = accepted && denial === null;
     const post = this.postAuthHook?.({ port: this.servedPort ?? this.config.port, accepted: finalAccepted, userReply: user?.replyAttributes ?? [] }) ?? null;
     const finalUser = finalAccepted && post !== null && user !== undefined ? { ...user, replyAttributes: post.reply } : user;
@@ -1319,7 +1324,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    const denial = this.simultaneousUseDenial(user, username);
+    const denial = this.simultaneousUseDenial(user, username, request.attributes);
     if (denial !== null) {
       const extra = settle(true, false, authenticated?.trace);
       this.publishRejected(dstIp.toString(), username, 'simultaneous-use');
@@ -1430,7 +1435,7 @@ export class RadiusServerAgent {
       eapResult = { type: 'eap', code: accepted ? 'success' : 'failure', identifier: eapResult.identifier };
       if (accepted && user !== undefined && authenticated.reply.length > 0) user = { ...user, replyAttributes: [...(user.replyAttributes ?? []), ...authenticated.reply] };
     }
-    const denial = accepted && user ? this.simultaneousUseDenial(user, user.username) : null;
+    const denial = accepted && user ? this.simultaneousUseDenial(user, user.username, request.attributes) : null;
     if (denial !== null) {
       accepted = false;
       eapResult = { type: 'eap', code: 'failure', identifier: eapResult.identifier };

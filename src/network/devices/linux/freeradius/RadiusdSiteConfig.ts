@@ -17,6 +17,7 @@ export interface ListenerSpec {
   readonly stream?: boolean;
   readonly port: number;
   readonly server: string;
+  readonly clientsList?: string;
   readonly file: string;
   readonly line: number;
   readonly tls?: RadSecTls;
@@ -31,6 +32,8 @@ export interface SiteConfig {
   readonly listeners: ListenerSpec[];
   readonly serverClients: ReadonlyMap<string, RadiusClientEntry[]>;
   readonly controlSockets: readonly ControlSocket[];
+  readonly serverNames: ReadonlySet<string>;
+  readonly namedClients: ReadonlyMap<string, RadiusClientEntry[]>;
 }
 
 const SUPPORTED_TYPES = new Set<string>(['auth', 'acct', 'auth+acct', 'status']);
@@ -71,15 +74,22 @@ function readControlSocket(section: ConfSection): ControlSocket | { error: strin
   return { path, writable: mode !== undefined && CONTROL_MODES[mode] };
 }
 
-export function readSiteConfig(root: ConfSection): SiteConfig | { error: string } {
+export function readSiteConfig(root: ConfSection, extraListSections: readonly ConfSection[] = []): SiteConfig | { error: string } {
   const servers = root.sections.filter((section) => section.name1 === 'server');
+  const namedClients = new Map<string, RadiusClientEntry[]>();
+  for (const section of [...root.sections.filter((candidate) => candidate.name1 === 'clients' && candidate.name2 !== null), ...extraListSections]) {
+    const own: ParsedClients = { clients: [], errors: [], warnings: [] };
+    readClientSections(section.sections, own);
+    if (own.errors.length > 0) return { error: own.errors[0] };
+    namedClients.set(section.name2 as string, own.clients.map((entry) => ({ ...entry, list: section.name2 as string })));
+  }
   const controlSockets: ControlSocket[] = [];
   for (const section of root.sections.filter((candidate) => candidate.name1 === 'listen' && pairValue(candidate, 'type') === 'control')) {
     const path = readControlSocket(section);
     if ('error' in path) return path;
     controlSockets.push(path);
   }
-  if (servers.length === 0) return { listeners: defaultListeners(), serverClients: new Map(), controlSockets };
+  if (servers.length === 0) return { listeners: defaultListeners(), serverClients: new Map(), controlSockets, serverNames: new Set(['default']), namedClients };
   const listeners: ListenerSpec[] = [];
   const serverClients = new Map<string, RadiusClientEntry[]>();
   for (const server of servers) {
@@ -124,6 +134,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
       listeners.push({
         type: type as ListenerType, address, ...(v6Text === undefined ? {} : { ipv6: true }), port: port === 0 ? (tls === undefined ? DEFAULT_PORT[type as ListenerType] : RADSEC_DEFAULT_PORT) : port,
         server: pairValue(section, 'virtual_server') ?? serverName, file: section.file, line: section.line,
+        ...(pairValue(section, 'clients') === undefined ? {} : { clientsList: pairValue(section, 'clients') as string }),
         ...(tls === undefined ? {} : { tls }),
         ...(tls === undefined && protoText === 'tcp' ? { stream: true } : {}),
       });
@@ -131,9 +142,12 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
     const own: ParsedClients = { clients: [], errors: [], warnings: [] };
     readClientSections(server.sections, own);
     if (own.errors.length > 0) return { error: own.errors[0] };
-    if (own.clients.length > 0) serverClients.set(serverName, own.clients);
+    if (own.clients.length > 0) serverClients.set(serverName, own.clients.map((entry) => ({ ...entry, list: `server:${serverName}` })));
   }
-  return { listeners: listeners.length === 0 ? defaultListeners() : listeners, serverClients, controlSockets };
+  for (const listener of listeners) {
+    if (listener.clientsList !== undefined && !namedClients.has(listener.clientsList)) return { error: `${listener.file}[${listener.line}]: Failed to find clients ${listener.clientsList} {...}` };
+  }
+  return { listeners: listeners.length === 0 ? defaultListeners() : listeners, serverClients, controlSockets, serverNames: new Set(servers.map((server) => server.name2 ?? '')), namedClients };
 }
 
 export function listenerAddressText(spec: ListenerSpec): string {

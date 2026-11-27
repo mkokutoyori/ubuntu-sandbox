@@ -19,7 +19,7 @@ import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
-import { parseClientsConf } from './ClientsConfParser';
+import { parseClientsConf, readClientSections, type ParsedClients } from './ClientsConfParser';
 import { readEapModule, EAP_DEFAULT_FRAGMENT_SIZE, type EapModuleConfig } from './EapModuleConfig';
 import type { EapTlsConfig } from '@/network/radius/eaptls/EapTlsConfig';
 import { PeapMd5InnerAuthServer } from '@/network/radius/eaptls/PeapInnerAuth';
@@ -387,6 +387,8 @@ export class RadiusdService {
     if (this.running) return { ok: true };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
+    const unreachable = this.sqlStartFailure(loaded.sqlModules);
+    if (unreachable !== undefined) return { ok: false, error: unreachable };
     this.controlSockets = loaded.site.controlSockets;
     const specs: ListenerSpec[] = listen.authPort === undefined ? loaded.site.listeners : [
       { type: 'auth', address: listen.address ?? null, port: listen.authPort, server: 'default', file: '', line: 0 },
@@ -397,6 +399,8 @@ export class RadiusdService {
     const handlerOf = (spec: ListenerSpec) => (dgram: { inPort: string; sourceIP: unknown; udp: never }): void => {
       if (!(dgram.sourceIP instanceof IPAddress) && !(dgram.sourceIP instanceof IPv6Address)) return;
       if ((dgram.sourceIP instanceof IPv6Address) !== (spec.ipv6 === true)) return;
+      const clientList = spec.clientsList ?? (loaded.site.serverClients.has(spec.server) ? `server:${spec.server}` : undefined);
+      if (spec.type !== 'status' && this.radiusServer.clientTable.find(dgram.sourceIP) !== null && this.radiusServer.clientTable.findInList(dgram.sourceIP, clientList) === null) return;
       const udp = dgram.udp as { payload?: { code?: string } };
       const destination = (dgram as { destinationIP?: unknown }).destinationIP;
       if (destination instanceof IPv6Address) this.radiusServer.noteLocalAddress(dgram.sourceIP, destination);
@@ -512,6 +516,8 @@ export class RadiusdService {
     if (!this.running) return { ok: false, error: 'freeradius is not running' };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
+    const unreachable = this.sqlStartFailure(loaded.sqlModules);
+    if (unreachable !== undefined) return { ok: false, error: unreachable };
     this.applyConfig(loaded);
     return { ok: true };
   }
@@ -557,14 +563,16 @@ export class RadiusdService {
     return { verdict, reply: context.reply };
   }
 
-  private runSession(info: { port: number; username: string; active: number; maximum: number }): number | null {
+  private runSession(info: { port: number; username: string; active: number; maximum: number; request: readonly RadiusAttribute[] }): number | { count: number; mpp: boolean } | null {
     const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
     const program = pipeline?.session;
     if (program === undefined || program === null) return pipeline !== undefined && pipeline.sections.has('session') && !pipeline.sections.get('session')!.has('radutmp') ? null : info.active;
     let counted = 0;
+    let mpp = false;
     const context = this.newRequestContext(info.username, [], null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
+      mapRow: this.mapRowOf(context),
       runModule: (name): ModuleOutcome => {
         if (name === 'radutmp') {
           counted = info.active;
@@ -572,11 +580,20 @@ export class RadiusdService {
         }
         if (name === 'ok') return { result: 'ok', messages: [] };
         if (name === 'reject') return { result: 'reject', messages: [] };
+        const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+        if (sqlInstance !== undefined) {
+          context.overlay.set('sql-user-name', expandForContext(sqlInstance.config.userName, context, (value) => value));
+          const found = sqlInstance.simultaneousCount((template) => expandForContext(template, context, (value) => sqlInstance.escape(value)), info.maximum, (address) => { const ip = IPAddress.tryParse(address); return ip === null ? undefined : this.radiusServer.clientTable.find(ip)?.nasType; }, { framedIp: info.request.find((attribute) => attribute.type === 'framed-ip-address')?.value?.toString(), callingStation: info.request.find((attribute) => attribute.type === 'calling-station-id')?.value?.toString() });
+          if (typeof found === 'string') return { result: found, messages: [] };
+          counted = found.count;
+          mpp = found.mpp;
+          return { result: 'ok', messages: [] };
+        }
         return { result: 'noop', messages: [] };
       },
     };
     const outcome = run(program, context, host, lines, 3);
-    return outcome.result === 'ok' ? counted : null;
+    return outcome.result === 'ok' ? { count: counted, mpp } : null;
   }
 
   private runAuthenticate(info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[]; messages?: readonly string[] }): AuthenticateOutcome | null {
@@ -620,7 +637,7 @@ export class RadiusdService {
     context.proxyRequest = [...outbound];
     context.proxyReply = [...reply];
     const lines: string[] = [];
-    const host: UnlangHost = { runModule: (name, ctx) => (this.isRealmInstance(name) ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }) };
+    const host: UnlangHost = { runModule: (name, ctx) => (this.isRealmInstance(name) ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }), mapRow: this.mapRowOf(context) };
     const outcome = run(program, context, host, lines, 3);
     const place = pipeline?.locations.get(section);
     this.radiusServer.emitDebugLines([
@@ -643,6 +660,7 @@ export class RadiusdService {
       packet: { ...info.packet, attributes: context.request }, atMs: info.atMs,
     });
     const host: UnlangHost = {
+      mapRow: this.mapRowOf(context),
       runModule: (name, ctx) => {
         if (name === 'preprocess') {
           const rejected = applyPreprocess(this.preprocessFiles, ctx, info.sourceIp, Math.floor(this.wallClock.nowMs() / 1000), (user) => this.wallClock.groupsOf(user));
@@ -926,6 +944,7 @@ export class RadiusdService {
     const lines: string[] = [];
     const packetType = accepted ? 'Access-Accept' : 'Access-Reject';
     const host: UnlangHost = {
+      mapRow: this.mapRowOf(context, (key) => (key.toLowerCase() === 'reply:packet-type' ? packetType : undefined)),
       runModule: (name, ctx) => {
         const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
         if (sqlInstance === undefined) return { result: 'noop', messages: [] };
@@ -966,12 +985,12 @@ export class RadiusdService {
     this.lastContext = context;
     this.proxyDecision = null;
     const lines: string[] = [];
-    const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
+    const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf), mapRow: this.mapRowOf(context) };
     const outcome = run(program, context, host, lines, 3);
     const authType = context.control.get('auth-type')?.toLowerCase();
     const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : authType === 'mschap' ? 'MS-CHAP' : authType === 'eap' ? 'EAP' : null;
     this.lastResolution = { lines, result: outcome.result, authType: trace, authTypeName: context.control.get('auth-type') ?? null };
-    if (outcome.result === 'reject' || authType === 'reject') return undefined;
+    if (outcome.result === 'reject' || outcome.result === 'fail' || authType === 'reject') return undefined;
     if (this.proxyDecision !== null && this.proxyDecision !== undefined) return { username, password: '', proxy: this.proxyDecision };
     const customGroup = authType !== undefined && !BUILTIN_AUTH_TYPES.has(authType) && pipeline?.authGroups.has(authType) === true;
     if (customGroup) return { username, password: '', acceptAny: true, replyAttributes: context.reply };
@@ -987,6 +1006,15 @@ export class RadiusdService {
       acceptAny, replyAttributes: context.reply,
       ...(loginTime === undefined || !this.sectionAllows(listenPort, 'authorize', 'logintime') ? {} : { loginTime }),
       ...(simultaneous === undefined ? {} : { simultaneousUse: Number(simultaneous) }),
+    };
+  }
+
+  private mapRowOf(context: UnlangContext, extra?: (name: string) => string | undefined): NonNullable<UnlangHost['mapRow']> {
+    return (processor, template) => {
+      const instance = this.sqlInstances.find((candidate) => candidate.config.name === processor);
+      if (instance === undefined) return 'fail';
+      context.overlay.set('sql-user-name', expandForContext(instance.config.userName, context, (value) => value));
+      return instance.mapRow(expandForContext(template, context, (value) => instance.escape(value), extra));
     };
   }
 
@@ -1054,7 +1082,7 @@ export class RadiusdService {
       const sqlEntries = sqlInstance.authorize(userName, expand, (template, group) => {
         context.overlay.set('sql-group', group);
         return expand(template);
-      });
+      }, () => context.control.get('user-profile'));
       if (sqlEntries === 'fail') return { result: 'fail', messages };
       const match = matchUsersEntries(sqlEntries, userName, requestViewOf(context, groupsOf));
       if (match === null) return { result: 'notfound', messages };
@@ -1218,7 +1246,9 @@ export class RadiusdService {
       if ('error' in sql) return { ok: false, error: sql.error };
       sqlModules.push(sql);
     }
-    const site = readSiteConfig(main.root);
+    const clientsText = this.files.read(clientsPath);
+    const clientListSections = clientsText === null ? [] : parseClientsConf(clientsText, clientsPath, (path) => this.files.read(path)).listSections ?? [];
+    const site = readSiteConfig(main.root, clientListSections);
     if ('error' in site) return { ok: false, error: site.error };
     for (const spec of site.listeners) {
       if (spec.tls === undefined) continue;
@@ -1278,11 +1308,40 @@ export class RadiusdService {
     };
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; sqlModules: SqlModuleConfig[]; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
+  private sqlStartFailure(configs: SqlModuleConfig[]): string | undefined {
+    for (const config of configs) {
+      const probe = new SqlModuleInstance(config, () => this.sqlConnector, () => undefined, () => this.wallClock.nowMs());
+      probe.start();
+      const failure = probe.startFailure();
+      probe.close();
+      if (failure !== undefined) return `rlm_sql (${config.name}): Failed to connect to the database: ${failure}; Instantiation failed for module "${config.name}"`;
+    }
+    return undefined;
+  }
+
+  private clientsFromSql(serverNames: ReadonlySet<string>): RadiusClientEntry[] {
+    const found: ParsedClients = { clients: [], errors: [], warnings: [] };
+    for (const instance of this.sqlInstances) {
+      const sections = instance.clientSections();
+      if (sections === 'fail') continue;
+      const known = sections.filter((section) => {
+        const server = section.pairs.find((pair) => pair.name === 'virtual_server')?.value;
+        if (server === undefined || serverNames.has(server)) return true;
+        found.errors.push(`Cannot add client - virtual server ${server} does not exist`);
+        return false;
+      });
+      readClientSections(known, found);
+    }
+    for (const message of found.errors) this.writeLogLine('Error', message);
+    return found.clients;
+  }
+
+  private applyConfig(loaded: { site: SiteConfig; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; sqlModules: SqlModuleConfig[]; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
     this.logConfig = loaded.log;
     this.threadPool = loaded.threadPool;
     for (const instance of this.sqlInstances) instance.close();
-    this.sqlInstances = loaded.sqlModules.map((config) => new SqlModuleInstance(config, () => this.sqlConnector, (message) => this.writeLogLine('Error', message)));
+    this.sqlInstances = loaded.sqlModules.map((config) => new SqlModuleInstance(config, () => this.sqlConnector, (message) => this.writeLogLine('Error', message), () => this.wallClock.nowMs()));
+    for (const instance of this.sqlInstances) instance.start();
     this.sqlExpansions = new Map(this.sqlInstances.map((instance) => [instance.config.name, instance.expansion()]));
     this.threadPoolStartedMs = this.wallClock.nowMs();
     this.radiusServer.setEapTlsConfig(loaded.eapTls);
@@ -1322,7 +1381,8 @@ export class RadiusdService {
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
-    for (const client of loaded.clients) this.radiusServer.clientTable.add(client);
+    const scoped = [...loaded.site.serverClients.values(), ...loaded.site.namedClients.values()].flat();
+    for (const client of [...loaded.clients, ...this.clientsFromSql(loaded.site.serverNames), ...scoped]) this.radiusServer.clientTable.add(client);
     this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? '', context?.listenPort, context?.packet));
   }
 }

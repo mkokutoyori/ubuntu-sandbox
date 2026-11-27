@@ -7,6 +7,7 @@ export interface RadiusClientEntry {
   readonly name: string;
   readonly shortname: string;
   readonly section?: string;
+  readonly list?: string;
   readonly confLines?: readonly string[];
   readonly address: IPAddress | IPv6Address;
   readonly prefix: number;
@@ -38,7 +39,7 @@ export class RadiusClientTable {
 
   add(entry: RadiusClientEntry): boolean {
     const duplicate = this.entries.some(
-      (known) => known.prefix === entry.prefix && known.address.toString() === entry.address.toString() && protocolOf(known) === protocolOf(entry),
+      (known) => known.prefix === entry.prefix && known.address.toString() === entry.address.toString() && protocolOf(known) === protocolOf(entry) && known.list === entry.list,
     );
     if (duplicate) return false;
     this.entries.push(entry);
@@ -46,8 +47,13 @@ export class RadiusClientTable {
     return true;
   }
 
-  find(ip: IPAddress | IPv6Address, transport: ClientTransport = 'udp'): RadiusClientEntry | null {
+  findInList(ip: IPAddress | IPv6Address, list: string | undefined, transport: ClientTransport = 'udp'): RadiusClientEntry | null {
+    return this.find(ip, transport, list, true);
+  }
+
+  find(ip: IPAddress | IPv6Address, transport: ClientTransport = 'udp', list?: string, restrict = false): RadiusClientEntry | null {
     for (const entry of this.entries) {
+      if (restrict && entry.list !== list) continue;
       const carried = transport === 'udp' ? 'udp' : 'tcp';
       if (protocolOf(entry) !== '*' && protocolOf(entry) !== carried) continue;
       if (entry.tlsRequired === true && transport !== 'tls') continue;

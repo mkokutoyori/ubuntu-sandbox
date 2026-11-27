@@ -39,8 +39,12 @@ const MODULE = [
   '  login = "system"',
   '  password = "oracle"',
   '  acct_table1 = "system.radacct"',
+  '  acct_table2 = "system.radacct_off"',
   '  accounting {',
   '    type {',
+  '      accounting-off {',
+  '        query = "INSERT INTO ${....acct_table2} (acctsessionid, username, nasipaddress, acctstoptime) VALUES (\'%{Acct-Session-Id}\', \'%{User-Name}\', \'%{NAS-IP-Address}\', TO_DATE(\'%S\', \'YYYY-MM-DD HH24:MI:SS\'))"',
+  '      }',
   '      start {',
   '        query = "INSERT INTO ${....acct_table1} (acctsessionid, username, nasipaddress, acctstarttime) VALUES (\'%{Acct-Session-Id}\', \'%{User-Name}\', \'%{NAS-IP-Address}\', TO_DATE(\'%S\', \'YYYY-MM-DD HH24:MI:SS\'))"',
   '      }',
@@ -67,6 +71,7 @@ async function lab(callSql = true) {
   radius.getPorts()[0].configureIP(new IPAddress('10.0.0.3'), mask);
   dbhost.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), mask);
   const far = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']).subShell;
+  far.processLine('CREATE TABLE system.radacct_off (acctsessionid VARCHAR2(64), username VARCHAR2(64), nasipaddress VARCHAR2(15), acctstoptime DATE);');
   far.processLine('CREATE TABLE system.radacct (acctsessionid VARCHAR2(64), username VARCHAR2(64), nasipaddress VARCHAR2(15), acctstarttime DATE, acctstoptime DATE, acctsessiontime VARCHAR2(12));');
   far.dispose();
   write(radius, CLIENTS_CONF_PATH, 'client lab {\n  ipaddr = 10.0.0.1\n  secret = shared\n}\n');
@@ -128,5 +133,13 @@ describe('rlm_sql: accounting', () => {
     const { client, dbhost } = await lab();
     await account(client, 'Start', 'S3');
     expect(await rows(dbhost, "acctsessionid = 'S3'")).toContain('S3|alice|');
+  });
+
+  it('acct_table2 is a module setting the queries read through ${....acct_table2}: the row lands in the second table, not the first', async () => {
+    const { client, dbhost } = await lab();
+    await account(client, 'Accounting-Off', 'S7');
+    const second = await dbhost.executeCommand("sqlplus -s / as sysdba <<'E'\nSELECT acctsessionid AS line FROM system.radacct_off;\nE");
+    expect(second).toContain('S7');
+    expect(await count(dbhost)).toBe(0);
   });
 });

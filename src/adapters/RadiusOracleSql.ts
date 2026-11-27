@@ -21,6 +21,7 @@ class OracleSqlSession implements SqlSession {
         rows: result.rows.map((row) => row.map(textOf)),
         affected: result.affectedRows ?? 0,
         isQuery: result.isQuery,
+        columns: result.columns.map((column) => column.name),
       };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };

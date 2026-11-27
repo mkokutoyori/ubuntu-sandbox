@@ -8,6 +8,7 @@ export interface ParsedClients {
   readonly clients: RadiusClientEntry[];
   readonly errors: string[];
   readonly warnings: string[];
+  listSections?: ConfSection[];
 }
 
 const POLICIES = new Set(['yes', 'no', 'auto', 'true', 'false']);
@@ -135,6 +136,7 @@ export function parseClientsConf(source: string, fileName: string, readFile: Con
     return result;
   }
   readClientSections(parsed.root.sections, result);
+  result.listSections = parsed.root.sections.filter((section) => section.name1 === 'clients' && section.name2 !== null);
   if (result.clients.length === 0 && result.errors.length === 0) {
     result.errors.push(`${fileName}: No "client" section found in client file`);
   }
