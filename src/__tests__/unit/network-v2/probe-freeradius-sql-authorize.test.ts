@@ -8,6 +8,8 @@
  * known good password, Fall-Through, reply), so one grammar answers both; they cross a real Oracle Net session to another host, counted on its port. Still refused where
  * used: sql in post-auth and session, map sql, read_clients.
  *
+ * Lazy group read added later: the last case (a broken group_membership_query is not sent for a user with its own entry and no Fall-Through) is the 1 case of 13 that falls on git stash of src/network.
+ *
  * Discriminated with git stash on src/network: 7 of 12 fall before the fix (every case that needs a row of the database to be read, applied or refused for its operator). The five
  * that pass either way, with their reason: the witness (a users-file user, module not called); the wrong password, the unsatisfied check item, read_groups = no and the quoted
  * user name are REFUSALS, and before the fix every request to this site failed to load, so they were refused for the wrong reason; they only mean something read with their
@@ -166,5 +168,12 @@ describe('rlm_sql: authorize', () => {
     const { client, radius } = await lab();
     expect(accepted(await ask(client, "o'brien"))).toBe(false);
     expect(await radius.executeCommand('cat /var/log/freeradius/radius.log')).not.toContain('SQL query failed');
+  });
+
+  it('a group query that cannot run is never sent for a user with its own entry and no Fall-Through, and fails the module for one that falls through', async () => {
+    const broken = '  group_membership_query = "SELECT groupname FROM system.no_such_table WHERE username = \'%{SQL-User-Name}\'"';
+    const { client } = await lab(true, broken);
+    expect(accepted(await ask(client, 'alice'))).toBe(true);
+    expect(accepted(await ask(client, 'carl'))).toBe(false);
   });
 });

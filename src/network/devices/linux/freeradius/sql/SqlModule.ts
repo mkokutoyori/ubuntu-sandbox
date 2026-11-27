@@ -267,6 +267,8 @@ export class SqlModuleInstance {
     const userReply = this.pairsOf(reply);
     if (userCheck === 'fail' || userReply === 'fail') return 'fail';
     if (userCheck.length > 0 || userReply.length > 0) entries.push({ name: userName, check: userCheck, reply: userReply, line: 0 });
+    const fallsThrough = [...userCheck, ...userReply].some((pair) => pair.name.toLowerCase() === 'fall-through' && pair.value.toLowerCase() === 'yes');
+    if (entries.length > 0 && !fallsThrough) return entries;
     const groups: string[] = [];
     if (this.config.readGroups) {
       const membership = this.rows(this.config.queries.get('group_membership_query'), expand, session);
