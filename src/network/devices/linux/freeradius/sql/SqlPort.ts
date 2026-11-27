@@ -2,6 +2,7 @@ export interface SqlResult {
   readonly rows: readonly (readonly (string | null)[])[];
   readonly affected: number;
   readonly isQuery: boolean;
+  readonly columns?: readonly string[];
 }
 
 export interface SqlSession {

@@ -319,6 +319,19 @@ export class SqlModuleInstance {
     });
   }
 
+  mapRow(query: string): ReadonlyMap<string, string> | 'fail' | null {
+    const session = this.open();
+    if (session === null) return 'fail';
+    const answer = this.execute(session, query);
+    if ('error' in answer) {
+      this.log(`rlm_sql (${this.config.name}): SQL query failed: ${answer.error}`);
+      return 'fail';
+    }
+    const first = answer.rows[0];
+    if (first === undefined) return null;
+    return new Map((answer.columns ?? []).map((column, index) => [column.toLowerCase(), first[index] ?? ''] as const));
+  }
+
   postAuth(expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
     return this.runQueries(this.config.postAuthQueries, expand);
   }

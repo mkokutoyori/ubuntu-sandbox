@@ -565,6 +565,7 @@ export class RadiusdService {
     const context = this.newRequestContext(info.username, [], null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
+      mapRow: this.mapRowOf(context),
       runModule: (name): ModuleOutcome => {
         if (name === 'radutmp') {
           counted = info.active;
@@ -651,6 +652,7 @@ export class RadiusdService {
       packet: { ...info.packet, attributes: context.request }, atMs: info.atMs,
     });
     const host: UnlangHost = {
+      mapRow: this.mapRowOf(context),
       runModule: (name, ctx) => {
         if (name === 'preprocess') {
           const rejected = applyPreprocess(this.preprocessFiles, ctx, info.sourceIp, Math.floor(this.wallClock.nowMs() / 1000), (user) => this.wallClock.groupsOf(user));
@@ -934,6 +936,7 @@ export class RadiusdService {
     const lines: string[] = [];
     const packetType = accepted ? 'Access-Accept' : 'Access-Reject';
     const host: UnlangHost = {
+      mapRow: this.mapRowOf(context, (key) => (key.toLowerCase() === 'reply:packet-type' ? packetType : undefined)),
       runModule: (name, ctx) => {
         const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
         if (sqlInstance === undefined) return { result: 'noop', messages: [] };
@@ -974,12 +977,12 @@ export class RadiusdService {
     this.lastContext = context;
     this.proxyDecision = null;
     const lines: string[] = [];
-    const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf) };
+    const host: UnlangHost = { runModule: (name, ctx) => this.runAuthorizeModule(name, ctx, entries, nasIp, groupsOf), mapRow: this.mapRowOf(context) };
     const outcome = run(program, context, host, lines, 3);
     const authType = context.control.get('auth-type')?.toLowerCase();
     const trace: ResolutionTrace['authType'] = authType === 'accept' ? 'Accept' : authType === 'pap' ? 'PAP' : authType === 'chap' ? 'CHAP' : authType === 'mschap' ? 'MS-CHAP' : authType === 'eap' ? 'EAP' : null;
     this.lastResolution = { lines, result: outcome.result, authType: trace, authTypeName: context.control.get('auth-type') ?? null };
-    if (outcome.result === 'reject' || authType === 'reject') return undefined;
+    if (outcome.result === 'reject' || outcome.result === 'fail' || authType === 'reject') return undefined;
     if (this.proxyDecision !== null && this.proxyDecision !== undefined) return { username, password: '', proxy: this.proxyDecision };
     const customGroup = authType !== undefined && !BUILTIN_AUTH_TYPES.has(authType) && pipeline?.authGroups.has(authType) === true;
     if (customGroup) return { username, password: '', acceptAny: true, replyAttributes: context.reply };
@@ -995,6 +998,15 @@ export class RadiusdService {
       acceptAny, replyAttributes: context.reply,
       ...(loginTime === undefined || !this.sectionAllows(listenPort, 'authorize', 'logintime') ? {} : { loginTime }),
       ...(simultaneous === undefined ? {} : { simultaneousUse: Number(simultaneous) }),
+    };
+  }
+
+  private mapRowOf(context: UnlangContext, extra?: (name: string) => string | undefined): NonNullable<UnlangHost['mapRow']> {
+    return (processor, template) => {
+      const instance = this.sqlInstances.find((candidate) => candidate.config.name === processor);
+      if (instance === undefined) return 'fail';
+      context.overlay.set('sql-user-name', expandForContext(instance.config.userName, context, (value) => value));
+      return instance.mapRow(expandForContext(template, context, (value) => instance.escape(value), extra));
     };
   }
 

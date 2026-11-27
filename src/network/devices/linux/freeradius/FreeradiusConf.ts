@@ -245,6 +245,14 @@ function readInto(
       stack.push(conditional);
       continue;
     }
+    const mapHeader = /^map\s+(\S+)\s+((["']).*\3)\s*\{\s*$/.exec(trimmed);
+    if (mapHeader !== null && stack[stack.length - 1].name1 !== '') {
+      const mapping: ConfSection = { name1: 'map', name2: `${mapHeader[1]} ${mapHeader[2]}`, pairs: [], sections: [], items: [], file, line };
+      stack[stack.length - 1].sections.push(mapping);
+      stack[stack.length - 1].items.push(mapping);
+      stack.push(mapping);
+      continue;
+    }
     const tokens = tokenize(text, file, line);
     const current = stack[stack.length - 1];
     const first = tokens[0];
