@@ -94,6 +94,7 @@ export interface RadiusServerHost {
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
   sendUdpDatagramTo?(destination: PeerAddress, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
+  sendUdpDatagramFrom?(source: IPv6Address, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
   /** Real RIB lookup (LPM) — needed to reach a proxy realm's home server on another subnet (mirrors `RadiusClientHost`). */
 }
@@ -451,6 +452,19 @@ export class RadiusServerAgent {
     });
   }
 
+  private isHomeServer(address: string, port: number): boolean {
+    for (const route of this.realms.values()) if (route.homeServerIp === address && route.homePort === port) return true;
+    return this.homeStatistics.has(`auth:${address}:${port}`) || this.homeStatistics.has(`acct:${address}:${port}`);
+  }
+
+  private countStrayProxyReply(srcIp: PeerAddress, port: number, payload: RadiusPacket): void {
+    const kind = payload.code === 'accounting-response' ? 'acct' : payload.code === 'access-accept' || payload.code === 'access-reject' || payload.code === 'access-challenge' ? 'auth' : null;
+    if (kind === null || !this.isHomeServer(srcIp.toString(), port)) return;
+    let stats = this.homeStatistics.get(`${kind}:*`);
+    if (stats === undefined) { stats = emptyStats(); this.homeStatistics.set(`${kind}:*`, stats); }
+    stats.noRecords++;
+  }
+
   homeServerStatistics(kind: 'auth' | 'acct', address: string | null, port: number | null): { stats: RadiusStats; outstanding: number } {
     const stats = this.homeStatistics.get(`${kind}:${address === null ? '*' : `${address}:${port}`}`) ?? emptyStats();
     const outstanding = address === null ? 0 : [...this.pendingProxy.values()].filter((pending) => pending.homeServerIp === address && pending.homePort === port).length;
@@ -654,6 +668,10 @@ export class RadiusServerAgent {
   private secretOverride: string | null = null;
   private streamSink: ((response: RadiusPacket) => void) | null = null;
 
+  private requestLocal: { peer: string; local: PeerAddress } | null = null;
+
+  noteLocalAddress(peer: PeerAddress, local: PeerAddress): void { this.requestLocal = { peer: peer.toString(), local }; }
+
   handleAcctUdp(inPort: string, srcIp: PeerAddress, udp: UDPPacket, viaStream = false): void {
     if (!this.running || !this.config.enabled) return;
     if (!viaStream && !this.anyPort && udp.destinationPort !== this.config.acctPort) return;
@@ -663,7 +681,7 @@ export class RadiusServerAgent {
       this.handleStatusServer(inPort, srcIp, udp, payload, 'accounting-response', this.recentAcctReplies);
       return;
     }
-    if (payload?.type === 'radius' && payload.code === 'accounting-response' && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0) && this.tryCompleteProxyReply(srcIp, udp, payload)) return;
+    if (payload?.type === 'radius' && payload.code === 'accounting-response' && this.tryCompleteProxyReply(srcIp, udp, payload)) return;
     if (!payload || payload.type !== 'radius') {
       this.countGlobal('acct', (stats) => { stats.requests++; stats.malformed++; });
       return;
@@ -713,7 +731,10 @@ export class RadiusServerAgent {
           packet: payload, sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort,
           destinationPort: udp.destinationPort, atMs: at, recordUtmp: () => undefined,
         });
-        if (answered === false) return;
+        if (answered === false) {
+          this.count('acct', senderIp, (stats) => { stats.dropped++; });
+          return;
+        }
       } else {
         this.accountingListener?.({
           sourceIp: senderIp, destinationIp: srcIpOfPort(this.host.getPort(inPort)), sourcePort: udp.sourcePort, destinationPort: udp.destinationPort,
@@ -787,7 +808,10 @@ export class RadiusServerAgent {
         this.forwardToRealm(inPort, srcIp, udp.sourcePort, payload, forwardName, proxiedRealm, route, dedupKey, fallbacks, 'acct');
         return;
       }
-      if (!answered) return;
+      if (!answered) {
+        this.count('acct', senderIp, (stats) => { stats.dropped++; });
+        return;
+      }
     } else {
       if (this.allows('accounting-utmp')) recordUtmp(payload.attributes);
       this.accountingListener?.({
@@ -808,7 +832,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    if ((payload.code === 'access-accept' || payload.code === 'access-reject') && (this.pendingProxy.size > 0 || this.pendingProbes.size > 0)) {
+    if (payload.code === 'access-accept' || payload.code === 'access-reject' || payload.code === 'access-challenge') {
       if (this.tryCompleteProxyReply(srcIp, udp, payload)) return;
     }
     if (payload.code === 'status-server') {
@@ -1639,6 +1663,7 @@ export class RadiusServerAgent {
       this.homeActivity.set(`${route.homeServerIp}:${route.homePort}`, activity);
       this.startProbing(route, kind === 'acct');
       if (fallbacks.length > 0) this.forwardToRealm(inPort, nasIp, nasPort, request, username, realm, fallbacks[0], dedupKey, fallbacks.slice(1), kind);
+      else this.count(kind, nasIp.toString(), (stats) => { stats.dropped++; });
     };
     const context = (timer: TimerHandle | null): PendingProxyContext => ({
       nasInPort: inPort, nasIp: nasIp.toString(), nasPort,
@@ -1771,9 +1796,14 @@ export class RadiusServerAgent {
   private tryCompleteProxyReply(srcIp: PeerAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
     if (this.tryCompleteProbe(srcIp, udp, payload)) return true;
     const ctx = this.pendingProxy.get(payload.identifier);
-    if (!ctx) return false;
-    if (srcIp.toString() !== ctx.homeServerIp || udp.sourcePort !== ctx.homePort) return false;
-    if (!verifyResponseAuthenticator(payload, ctx.outAuthenticator, ctx.homeSecret)) return false;
+    if (!ctx || srcIp.toString() !== ctx.homeServerIp || udp.sourcePort !== ctx.homePort) {
+      this.countStrayProxyReply(srcIp, udp.sourcePort, payload);
+      return false;
+    }
+    if (!verifyResponseAuthenticator(payload, ctx.outAuthenticator, ctx.homeSecret)) {
+      this.countHome(ctx.kind, ctx.homeServerIp, ctx.homePort, (stats) => { stats.badAuthenticator++; });
+      return false;
+    }
 
     this.pendingProxy.delete(payload.identifier);
     if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
@@ -1836,6 +1866,8 @@ export class RadiusServerAgent {
     inPort: string, port: Port, srcIp: PeerAddress, dstIp: PeerAddress,
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
+    const local = dstIp instanceof IPv6Address && this.requestLocal?.peer === dstIp.toString() && this.requestLocal.local instanceof IPv6Address ? this.requestLocal.local : null;
+    if (local !== null) srcIp = local;
     this.traceSent(response, srcIp, sourcePort, dstIp, clientPort);
     this.count(response.code === 'accounting-response' ? 'acct' : 'auth', dstIp.toString(), (stats) => {
       stats.responses++;
@@ -1846,6 +1878,10 @@ export class RadiusServerAgent {
     });
     if (this.streamSink !== null) {
       this.streamSink(response);
+      return;
+    }
+    if (local !== null && dstIp instanceof IPv6Address && this.host.sendUdpDatagramFrom !== undefined) {
+      this.host.sendUdpDatagramFrom(local, dstIp, clientPort, sourcePort, response, 20 + 16 - 8);
       return;
     }
     if (dstIp instanceof IPv6Address || srcIp instanceof IPv6Address) {

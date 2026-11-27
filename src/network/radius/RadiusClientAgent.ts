@@ -1,4 +1,4 @@
-import { peerOf, type PeerAddress } from './sourceAddress';
+import { peerOf, ipv6SourceFor, type PeerAddress, type Ipv6EgressHost } from './sourceAddress';
 import { clientSourceAddress } from './sourceAddress';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
@@ -23,7 +23,7 @@ import { NAS_PORT_TYPE_ETHERNET } from './eap';
 import { MICROSOFT_VENDOR_ID } from './dictionary';
 import { generateNtResponse, generateAuthenticatorResponse } from './mschapv2';
 import {
-  MACAddress, IPAddress,
+  MACAddress, IPAddress, type IPv6Address,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
@@ -33,7 +33,7 @@ import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 const SERVICE_TYPE_LOGIN = 1;
 
-export interface RadiusClientHost {
+export interface RadiusClientHost extends Ipv6EgressHost {
   readonly id: string;
   readonly name: string;
   getHostname(): string;
@@ -388,6 +388,11 @@ export class RadiusClientAgent {
 
   private sendToServer(server: RadiusServerConfig, srcIp: IPAddress | null, sourcePort: number, payload: RadiusPacket, payloadBytes: number): void {
     if (srcIp === null) {
+      const source6 = ipv6SourceFor(this.host, peerOf(server.ip));
+      if (source6 !== null && this.host.sendUdpDatagramFrom !== undefined) {
+        this.host.sendUdpDatagramFrom(source6, peerOf(server.ip) as IPv6Address, server.authPort, sourcePort, payload, payloadBytes);
+        return;
+      }
       this.host.sendUdpDatagramTo?.(peerOf(server.ip), server.authPort, sourcePort, payload, payloadBytes);
       return;
     }
@@ -400,12 +405,18 @@ export class RadiusClientAgent {
     return { srcIp, usable: srcIp !== null };
   }
 
+  private nasIpv6Attribute(server: RadiusServerConfig): RadiusAttribute[] {
+    const source6 = ipv6SourceFor(this.host, peerOf(server.ip));
+    return source6 === null ? [] : [attr('nas-ipv6-address', source6.toString())];
+  }
+
   private transmitEap(server: RadiusServerConfig, pending: PendingEapRound): void {
     const { srcIp, usable } = this.sourceFor(server);
     if (!usable) return;
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
       ...(srcIp === null ? [] : [attr('nas-ip-address', srcIp.toString())]),
+      ...this.nasIpv6Attribute(server),
       attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
       ...eapMessageAttributes(pending.eapMessageHex),
     ];
@@ -497,6 +508,7 @@ export class RadiusClientAgent {
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
       ...(srcIp === null ? [] : [attr('nas-ip-address', srcIp.toString())]),
+      ...this.nasIpv6Attribute(server),
       attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
       attr('vendor-specific', bytesToHex(pending.authChallenge), { id: MICROSOFT_VENDOR_ID, type: 11 }),
       attr('vendor-specific', bytesToHex(msChap2Response), { id: MICROSOFT_VENDOR_ID, type: 25 }),
@@ -830,6 +842,7 @@ export class RadiusClientAgent {
       attrs.push(attr('user-password', encryptUserPassword(pending.password, server.sharedSecret, pending.authenticator)));
     }
     if (srcIp !== null) attrs.push(attr('nas-ip-address', this.attributePolicy.nasIpAddress ?? srcIp.toString()));
+    attrs.push(...this.nasIpv6Attribute(server));
     if (this.attributePolicy.serviceTypeInLoginRequest) attrs.push(attr('service-type', SERVICE_TYPE_LOGIN));
     if (pending.state) attrs.push(attr('state', pending.state));
     const identifier = this.attributePolicy.nasIdentifier?.(srcIp === null ? '' : srcIp.toString()) ?? this.config.nasIdentifier;

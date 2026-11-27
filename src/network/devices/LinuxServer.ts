@@ -91,6 +91,9 @@ export class LinuxServer extends LinuxMachine {
         this.sendUdpDatagram(request),
       sendUdpDatagramTo: (destination: IPAddress | IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
         this.sendUdpDatagramTo(destination, destinationPort, sourcePort, payload, payloadBytes),
+      sourceAddress6For: (destination: IPv6Address) => this.sourceAddress6For(destination),
+      sendUdpDatagramFrom: (source: IPv6Address, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number) =>
+        this.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, payloadBytes, { sourceIp: source }),
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
     };
     this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());
@@ -131,7 +134,7 @@ export class LinuxServer extends LinuxMachine {
     this.coaClient.start();
     this.coaClient.setFixedSourcePort(RADCLIENT_COA_SOURCE_PORT);
     this.udpBind(RADCLIENT_COA_SOURCE_PORT, (dgram) => {
-      if (dgram.sourceIP instanceof IPAddress) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+      if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.coaClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, RADIUS_UTILS_SOCKET);
     this.udpBind(RADCLIENT_ACCT_SOURCE_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress || dgram.sourceIP instanceof IPv6Address) this.radacctClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);

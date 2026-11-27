@@ -261,8 +261,8 @@ describe('la tabulation complete ce que l\'aide propose', () => {
       .toEqual(['revocation-check']);
   });
 
-  it('`address ip` garde son mot dans le serveur RADIUS', async () => {
+  it('`address ip` offre les deux familles dans le serveur RADIUS', async () => {
     expect((await dans(RADIUS)).cliTabCandidates('address ip'))
-      .toEqual(['address ipv4']);
+      .toEqual(['address ipv4', 'address ipv6']);
   });
 });

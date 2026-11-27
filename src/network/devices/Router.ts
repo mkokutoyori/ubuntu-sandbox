@@ -2175,6 +2175,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * interface up/down, and protocol packets arriving from the wire.
    */
   egressInterfaceFor(address: string): string | null {
+    if (address.includes(':')) return this.ipv6Engine.resolvePath(new IPv6Address(address))?.iface ?? null;
     return this.lookupRoute(new IPAddress(address))?.iface ?? null;
   }
 
@@ -3360,18 +3361,26 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
     if (verdict.accepted === false) return true;
     const udp = verdict.datagram;
+    if (this.handleLocalUdp6(ipv6, udp)) return true;
     return this.udpEndpoint?.deliver6(
       ipv6.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
     ) ?? false;
   }
 
+  protected handleLocalUdp6(_ipv6: IPv6Packet, _udp: UDPPacket): boolean { return false; }
+
+  sourceAddress6For(destination: IPv6Address): IPv6Address | null {
+    const path = this.ipv6Engine.resolvePath(destination);
+    return path === null || path === undefined ? null : selectIpv6SourceAddress(path.port, destination);
+  }
+
   sendUdpDatagram6(
     destination: IPv6Address, destinationPort: number, sourcePort: number,
-    payload: unknown, payloadBytes = 0,
+    payload: unknown, payloadBytes = 0, sourceIp?: IPv6Address,
   ): boolean {
     const path = this.ipv6Engine.resolvePath(destination);
     if (!path) return false;
-    const source = selectIpv6SourceAddress(path.port, destination);
+    const source = sourceIp ?? selectIpv6SourceAddress(path.port, destination);
     if (!source) return false;
     const udp: UDPPacket = {
       type: 'udp', sourcePort, destinationPort,

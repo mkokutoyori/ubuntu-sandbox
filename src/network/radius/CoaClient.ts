@@ -1,4 +1,4 @@
-import { clientSourceAddress } from './sourceAddress';
+import { clientSourceAddress, peerOf, type PeerAddress } from './sourceAddress';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -33,6 +33,7 @@ export interface CoaClientHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
+  sendUdpDatagramTo?(destination: PeerAddress, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes?: number): boolean;
   sourceAddressFor(destination: IPAddress): IPAddress | null;
 }
 
@@ -155,7 +156,7 @@ export class CoaClient {
     });
   }
 
-  handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleUdp(_inPort: string, srcIp: PeerAddress, udp: UDPPacket): void {
     if (!this.running) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
@@ -206,6 +207,17 @@ export class CoaClient {
   }
 
   private transmit(pending: PendingCoa): void {
+    if (pending.nas.ip.includes(':')) {
+      if (this.host.sendUdpDatagramTo === undefined) return;
+      const sourcePort = this.fixedSourcePort ?? 49220 + (pending.identifier & 0x3fff);
+      const previous = this.lastExchange !== null && this.lastExchange.request.identifier === pending.identifier ? this.lastExchange : null;
+      this.lastExchange = {
+        request: pending.request, serverIp: pending.nas.ip, serverPort: pending.nas.port, sourcePort, localIp: '::',
+        length: encodeRadiusPacket(pending.request).length, transmissions: (previous?.transmissions ?? 0) + 1, reply: null, replyLength: 0,
+      };
+      this.host.sendUdpDatagramTo(peerOf(pending.nas.ip), pending.nas.port, sourcePort, pending.request, 12);
+      return;
+    }
     const srcIp = clientSourceAddress(this.host, new IPAddress(pending.nas.ip));
     if (!srcIp) return;
     const sourcePort = this.fixedSourcePort ?? 49220 + (pending.identifier & 0x3fff);
