@@ -582,7 +582,7 @@ export class RadiusdService {
         const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
         if (sqlInstance !== undefined) {
           context.overlay.set('sql-user-name', expandForContext(sqlInstance.config.userName, context, (value) => value));
-          const found = sqlInstance.simultaneousCount((template) => expandForContext(template, context, (value) => sqlInstance.escape(value)));
+          const found = sqlInstance.simultaneousCount((template) => expandForContext(template, context, (value) => sqlInstance.escape(value)), info.maximum, (address) => { const ip = IPAddress.tryParse(address); return ip === null ? undefined : this.radiusServer.clientTable.find(ip)?.nasType; });
           if (typeof found !== 'number') return { result: found, messages: [] };
           counted = found;
           return { result: 'ok', messages: [] };

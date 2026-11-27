@@ -1,3 +1,4 @@
+import { IPAddress } from '@/network/core/types';
 import { confBoolean, type ConfPair, type ConfSection } from '../FreeradiusConf';
 import type { ExternalExpansion } from '../Xlat';
 import type { UsersEntry, UsersOperator, UsersPair } from '../UsersFileParser';
@@ -68,7 +69,7 @@ function readPool(section: ConfSection): PoolSettings | { error: string } {
   return values as unknown as PoolSettings;
 }
 
-const AUTHORIZE_QUERIES = ['client_query', 'simul_count_query', 'authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
+const AUTHORIZE_QUERIES = ['client_query', 'simul_count_query', 'simul_verify_query', 'authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
 const OPERATORS = new Set<string>(['=', ':=', '+=', '-=', '==', '!=', '<', '>', '<=', '>=', '=~', '!~', '=*', '!*']);
 
 const SAFE_CHARACTERS = '@abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_: /';
@@ -316,7 +317,7 @@ export class SqlModuleInstance {
     return this.runQueries(this.config.accountingQueries.get(statusType.toLowerCase()) ?? [], expand);
   }
 
-  simultaneousCount(expand: (template: string) => string): number | 'noop' | 'fail' {
+  simultaneousCount(expand: (template: string) => string, maximum = Number.POSITIVE_INFINITY, nasTypeOf: (address: string) => string | undefined = () => undefined): number | 'noop' | 'fail' {
     const query = this.config.queries.get('simul_count_query');
     if (query === undefined) return 'noop';
     const session = this.open();
@@ -324,7 +325,29 @@ export class SqlModuleInstance {
     const rows = this.rows(query, expand, session);
     if (rows === 'fail') return 'fail';
     const count = Number(rows[0]?.[0] ?? '');
-    return Number.isInteger(count) && count >= 0 ? count : 'fail';
+    if (!Number.isInteger(count) || count < 0) return 'fail';
+    const verify = this.config.queries.get('simul_verify_query');
+    if (count < maximum || verify === undefined) return count;
+    const sessions = this.rows(verify, expand, session);
+    if (sessions === 'fail') return 'fail';
+    let logged = 0;
+    for (const row of sessions) {
+      if (row.length < 8) {
+        this.log(`rlm_sql (${this.config.name}): SELECT returned too few fields.  Please do not edit 'simul_verify_query'`);
+        return 'fail';
+      }
+      if ((row[2] ?? '') === '' || (row[1] ?? '') === '') return 'fail';
+      const address = row[3] ?? '';
+      if (address !== '' && IPAddress.tryParse(address) === null) return 'fail';
+      const type = nasTypeOf(address);
+      if (type === undefined || type === '' || type === 'other') {
+        logged++;
+        continue;
+      }
+      this.log(`rlm_sql (${this.config.name}): Failed to check the terminal server for user '${row[2]}'.`);
+      return 'fail';
+    }
+    return logged;
   }
 
   clientSections(): ConfSection[] | 'fail' {

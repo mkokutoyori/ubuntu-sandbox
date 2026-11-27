@@ -4,8 +4,11 @@
  * sql_user_name, simul_count_query returns the number of open sessions of the user in its first column; the server compares it to Simultaneous-Use and refuses the login with
  * "Multiple logins (max n)" when the count reaches the limit; no simul_count_query is a noop), raddb/mods-config/sql/main/oracle/queries.conf (simul_count_query = "SELECT COUNT(*)
  * FROM radacct WHERE UserName = '%{SQL-User-Name}' AND AcctStopTime IS NULL"). The count is read over a real Oracle Net session to another host, counted on its port. Limit
- * recorded in TODO.md: simul_verify_query (the per-session check of the NAS) and delete_stale_sessions are accepted and not evaluated; a NAS declared as type other, the only
- * one the server already supports for the radutmp count, is trusted as the real server trusts it.
+ * Verify brick: when the count reaches Simultaneous-Use and simul_verify_query is set, each row it returns (8 columns minimum, a username and a session id, a parsable NAS address) is
+ * a login if the NAS is unknown or of type other (session.c rad_check_ts returns 1 without running checkrad); any other NAS type runs the checkrad script, which fails here, so the
+ * module fails; a session section that does not answer ok never refuses the login (process_checksimul returns 0). delete_stale_sessions only acts on rad_check_ts = 0, which no supported NAS type returns: stored, with nothing to delete.
+ *
+ * Verify cases: the filtered verify and the too-few-columns log fall on git stash; the witness passes either way.
  *
  * Discriminated with git stash on src/network: 4 of 6 fall before the fix, the witness included (with `sql` in the session section the old loader refused the site, so every
  * request failed). The two that pass either way, with their reason: the limit of 2 with two open sessions (refused, but because nothing was served) and the run without
@@ -105,5 +108,24 @@ describe('rlm_sql: session (simultaneous use)', () => {
   it('without sql in the session section the table is not read: the same open session does not refuse', async () => {
     const { client } = await lab(['alice'], 1, false);
     expect(accepted(await ask(client))).toBe(true);
+  });
+
+  const VERIFY = (filter: string, columns = "1, acctsessionid, username, '10.0.0.1', '1', '', '', 'PPP'") =>
+    `  simul_verify_query = "SELECT ${columns} FROM system.radacct WHERE username = '%{SQL-User-Name}' AND acctstoptime IS NULL${filter}"`;
+
+  it('when the count reaches the limit, simul_verify_query decides: sessions it does not return are not logins', async () => {
+    const { client } = await lab(['alice'], 1, true, VERIFY(" AND acctsessionid <> 'S0'"));
+    expect(accepted(await ask(client))).toBe(true);
+  });
+
+  it('witness for the case above: a verify query that returns the session keeps the refusal', async () => {
+    const { client } = await lab(['alice'], 1, true, VERIFY(''));
+    expect(accepted(await ask(client))).toBe(false);
+  });
+
+  it('a verify query that returns fewer than 8 columns is logged and, the session section not answering ok, the login is not refused (modules.c process_checksimul)', async () => {
+    const { client, radius } = await lab(['alice'], 1, true, VERIFY('', 'acctsessionid, username'));
+    expect(accepted(await ask(client))).toBe(true);
+    expect(await radius.executeCommand('cat /var/log/freeradius/radius.log')).toContain("SELECT returned too few fields.  Please do not edit 'simul_verify_query'");
   });
 });
