@@ -1566,13 +1566,19 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
   for (const connData of json.connections) {
     const sourceDevice = idMap.get(connData.sourceDeviceId);
     const targetDevice = idMap.get(connData.targetDeviceId);
-    if (!sourceDevice || !targetDevice) continue;
+    if (!sourceDevice || !targetDevice) {
+      warnings.push(`Cable ${connData.sourceDeviceId}:${connData.sourceInterfaceId} - ${connData.targetDeviceId}:${connData.targetInterfaceId}: a device of this cable is not in the file`);
+      continue;
+    }
 
     const connection = buildConnection(
       sourceDevice, connData.sourceInterfaceId,
       targetDevice, connData.targetInterfaceId,
       connData.type,
     );
+    if (!connection) {
+      warnings.push(`Cable ${sourceDevice.getName()}:${connData.sourceInterfaceId} - ${targetDevice.getName()}:${connData.targetInterfaceId} was not restored: a port does not exist on this device model, or is already cabled`);
+    }
     if (connection) {
       connections.push(connection);
       const cable = sourceDevice.getPort(connData.sourceInterfaceId)?.getCable();
