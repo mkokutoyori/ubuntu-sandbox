@@ -18,7 +18,7 @@ export interface SqlModuleConfig {
   readonly queries: ReadonlyMap<string, string>;
 }
 
-const AUTHORIZE_QUERIES = ['authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
+const AUTHORIZE_QUERIES = ['simul_count_query', 'authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
 const OPERATORS = new Set<string>(['=', ':=', '+=', '-=', '==', '!=', '<', '>', '<=', '>=', '=~', '!~']);
 
 const SAFE_CHARACTERS = '@abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_: /';
@@ -187,6 +187,17 @@ export class SqlModuleInstance {
 
   accounting(statusType: string, expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
     return this.runQueries(this.config.accountingQueries.get(statusType.toLowerCase()) ?? [], expand);
+  }
+
+  simultaneousCount(expand: (template: string) => string): number | 'noop' | 'fail' {
+    const query = this.config.queries.get('simul_count_query');
+    if (query === undefined) return 'noop';
+    const session = this.open();
+    if (session === null) return 'fail';
+    const rows = this.rows(query, expand, session);
+    if (rows === 'fail') return 'fail';
+    const count = Number(rows[0]?.[0] ?? '');
+    return Number.isInteger(count) && count >= 0 ? count : 'fail';
   }
 
   postAuth(expand: (template: string) => string): 'ok' | 'noop' | 'fail' {

@@ -572,6 +572,14 @@ export class RadiusdService {
         }
         if (name === 'ok') return { result: 'ok', messages: [] };
         if (name === 'reject') return { result: 'reject', messages: [] };
+        const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+        if (sqlInstance !== undefined) {
+          context.overlay.set('sql-user-name', expandForContext(sqlInstance.config.userName, context, (value) => value));
+          const found = sqlInstance.simultaneousCount((template) => expandForContext(template, context, (value) => sqlInstance.escape(value)));
+          if (typeof found !== 'number') return { result: found, messages: [] };
+          counted = found;
+          return { result: 'ok', messages: [] };
+        }
         return { result: 'noop', messages: [] };
       },
     };
