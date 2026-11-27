@@ -144,6 +144,27 @@ export function escapeSqlValue(value: string, safeCharacters: string): string {
   return out;
 }
 
+export interface AuthorizeHost {
+  expand(subject: string, template: string, group?: string): string;
+  matches(entry: UsersEntry): boolean;
+  profileHint(): string | undefined;
+}
+
+type FallThrough = 'yes' | 'no' | 'default';
+
+function fallThroughOf(pairs: readonly UsersPair[]): FallThrough {
+  const found = pairs.find((pair) => pair.name.toLowerCase() === 'fall-through');
+  if (found === undefined) return 'default';
+  return /^(yes|1)$/i.test(found.value) ? 'yes' : 'no';
+}
+
+function chained(entries: UsersEntry[]): UsersEntry[] {
+  return entries.map((entry, index) => {
+    const reply = entry.reply.filter((pair) => pair.name.toLowerCase() !== 'fall-through');
+    return { ...entry, reply: index < entries.length - 1 ? [...reply, { name: 'Fall-Through', op: '=' as UsersOperator, value: 'Yes', tag: null }] : reply };
+  });
+}
+
 const MODIFYING = /^\s*(insert|update|delete)/i;
 
 interface PooledSession {
@@ -295,39 +316,81 @@ export class SqlModuleInstance {
     return pairs;
   }
 
-  authorize(userName: string, expand: (template: string) => string, expandGroup: (template: string, group: string) => string, profileHint: () => string | undefined = () => undefined): UsersEntry[] | 'fail' {
+  authorize(userName: string, host: AuthorizeHost): UsersEntry[] | 'fail' {
     const session = this.open();
     if (session === null) return 'fail';
     const entries: UsersEntry[] = [];
-    const check = this.rows(this.config.queries.get('authorize_check_query'), expand, session);
-    const reply = this.rows(this.config.queries.get('authorize_reply_query'), expand, session);
-    if (check === 'fail' || reply === 'fail') return 'fail';
-    const userCheck = this.pairsOf(check);
-    const userReply = this.pairsOf(reply);
-    if (userCheck === 'fail' || userReply === 'fail') return 'fail';
-    if (userCheck.length > 0 || userReply.length > 0) entries.push({ name: userName, check: userCheck, reply: userReply, line: 0 });
-    const fallsThrough = [...userCheck, ...userReply].some((pair) => pair.name.toLowerCase() === 'fall-through' && pair.value.toLowerCase() === 'yes');
-    if (entries.length > 0 && !fallsThrough) return entries;
-    const groups: string[] = [];
-    if (this.config.readGroups) {
-      const membership = this.rows(this.config.queries.get('group_membership_query'), expand, session);
-      if (membership === 'fail') return 'fail';
-      groups.push(...membership.map(([group]) => group));
+    let fallThrough: FallThrough = 'default';
+    const checkQuery = this.config.queries.get('authorize_check_query');
+    let userCheck: UsersPair[] = [];
+    let userMatches = true;
+    if (checkQuery !== undefined) {
+      const check = this.rows(checkQuery, (template) => host.expand(userName, template), session);
+      if (check === 'fail') return 'fail';
+      const pairs = this.pairsOf(check);
+      if (pairs === 'fail') return 'fail';
+      userCheck = pairs;
+      userMatches = pairs.length > 0 && host.matches({ name: userName, check: pairs, reply: [], line: 0 });
     }
-    if (this.config.readProfiles) {
-      const named = userCheck.find((pair) => pair.name.toLowerCase() === 'user-profile')?.value ?? profileHint() ?? this.config.defaultProfile;
-      if (named !== '') groups.push(named);
+    const readsReply = checkQuery === undefined || userMatches;
+    if (readsReply) {
+      const reply = this.rows(this.config.queries.get('authorize_reply_query'), (template) => host.expand(userName, template), session);
+      if (reply === 'fail') return 'fail';
+      const userReply = this.pairsOf(reply);
+      if (userReply === 'fail') return 'fail';
+      if (userReply.length > 0) fallThrough = fallThroughOf(userReply);
+      if (userCheck.length > 0 || userReply.length > 0) entries.push({ name: userName, check: userCheck, reply: userReply, line: 0 });
     }
-    for (const group of groups) {
-      const groupCheck = this.rows(this.config.queries.get('authorize_group_check_query'), (template) => expandGroup(template, group), session);
-      const groupReply = this.rows(this.config.queries.get('authorize_group_reply_query'), (template) => expandGroup(template, group), session);
-      if (groupCheck === 'fail' || groupReply === 'fail') return 'fail';
-      const checkPairs = this.pairsOf(groupCheck);
-      const replyPairs = this.pairsOf(groupReply);
-      if (checkPairs === 'fail' || replyPairs === 'fail') return 'fail';
-      if (checkPairs.length > 0 || replyPairs.length > 0) entries.push({ name: userName, check: checkPairs, reply: replyPairs, line: 0 });
+    if (fallThrough === 'yes' || (this.config.readGroups && fallThrough === 'default')) {
+      const processed = this.processGroups(userName, host, session, fallThrough, entries);
+      if (processed === 'fail') return 'fail';
+      fallThrough = processed;
     }
-    return entries;
+    if (fallThrough === 'yes' || (this.config.readProfiles && fallThrough === 'default')) {
+      const profile = userCheck.find((pair) => pair.name.toLowerCase() === 'user-profile')?.value ?? host.profileHint() ?? this.config.defaultProfile;
+      if (profile !== '') {
+        const processed = this.processGroups(profile, host, session, fallThrough, entries, userName);
+        if (processed === 'fail') return 'fail';
+      }
+    }
+    return chained(entries);
+  }
+
+  private processGroups(subject: string, host: AuthorizeHost, session: SqlSession, incoming: FallThrough, entries: UsersEntry[], entryName = subject): FallThrough | 'fail' {
+    const membership = this.config.queries.get('group_membership_query');
+    if (membership === undefined) {
+      this.log(`rlm_sql (${this.config.name}): Cannot do check groups when group_membership_query is not set`);
+      return 'default';
+    }
+    const members = this.rows(membership, (template) => host.expand(subject, template), session);
+    if (members === 'fail') return 'fail';
+    if (members.length === 0) return 'default';
+    let fallThrough = incoming;
+    for (const [group] of members) {
+      const groupCheckQuery = this.config.queries.get('authorize_group_check_query');
+      let checkPairs: UsersPair[] = [];
+      if (groupCheckQuery !== undefined) {
+        const groupCheck = this.rows(groupCheckQuery, (template) => host.expand(subject, template, group), session);
+        if (groupCheck === 'fail') return 'fail';
+        const pairs = this.pairsOf(groupCheck);
+        if (pairs === 'fail') return 'fail';
+        checkPairs = pairs;
+        if (pairs.length > 0 && !host.matches({ name: entryName, check: pairs, reply: [], line: 0 })) continue;
+      }
+      let replyPairs: UsersPair[] = [];
+      const groupReplyQuery = this.config.queries.get('authorize_group_reply_query');
+      if (groupReplyQuery !== undefined) {
+        const groupReply = this.rows(groupReplyQuery, (template) => host.expand(subject, template, group), session);
+        if (groupReply === 'fail') return 'fail';
+        const pairs = this.pairsOf(groupReply);
+        if (pairs === 'fail') return 'fail';
+        replyPairs = pairs;
+        fallThrough = fallThroughOf(pairs);
+      } else fallThrough = 'default';
+      entries.push({ name: entryName, check: checkPairs, reply: replyPairs, line: 0 });
+      if (fallThrough !== 'yes') break;
+    }
+    return fallThrough;
   }
 
   private runQueries(queries: readonly string[], expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
