@@ -41,3 +41,7 @@ export async function loadShopSchema(bench: LabWorkbench, db: Equipment): Promis
     `sqlplus -s / as sysdba @${SCRIPT_DIR}/02_seed.sql`,
   );
 }
+
+export async function giveHomeToOracle(bench: LabWorkbench, db: Equipment): Promise<void> {
+  await bench.shell(db, "sqlplus -s / as sysdba <<'LAB_EOF'\nSELECT instance_name FROM v$instance;\nLAB_EOF", 'sudo mkdir -p /home/oracle/logs', 'sudo chown -R oracle:oinstall /home/oracle');
+}

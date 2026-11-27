@@ -4773,3 +4773,15 @@ en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatect
 ### [linux/nfs] `df` sur un montage NFS affiche des zeros, `touch` sur un fichier distant existant ne change pas son mtime
 **Mesure** : `df -h /mnt/backup_nfs` rend une taille 0 (la ligne est construite depuis la table de montage et l'inventaire des disques locaux, jamais depuis le serveur) ; Linux interroge FSSTAT. `touch` sur un fichier NFS existant rend 0 sans SETATTR : le fil FSSTAT et SETATTR existent cote serveur (`NfsServer.fsStat`, setattr), il manque le port `RemoteMountPort.statfs/setTimes` et un client synchrone jusqu'a `DfContext`.
 **Pas ferme** : chantier de plomberie a part (le contexte de `df` ne porte aucun client reseau) ; la creation par `touch` et les proprietaires uid/gid sont fermes (sonde `probe-nfs-client-identity-and-touch`).
+
+### [oracle] Le super-utilisateur est admis comme OSDBA
+**Mesure** : `sqlplus / as sysdba` et `rman target /` lances par root passent meme si root n'est pas dans le groupe dba ; Oracle refuse (ORA-01031) tout utilisateur hors du groupe OSDBA, root compris. Les utilisateurs ordinaires hors dba sont refuses (sonde `probe-oracle-bequeath-needs-dba-group`).
+**Pas ferme** : toutes les machines de test et les labs tournent en root sans groupe dba ; exiger l'appartenance a root reecrit des centaines de tests.
+
+### [linux] Un script de plusieurs lignes envoye a une session `oracle` du lab inverse l'identite de la session
+**Mesure** : sur ORA-PRD du lab Lumiere rouvert, `openShellSession({ user: 'oracle' })` puis `touch /home/oracle/x` est refuse (dossier root:root 755) ; apres un seul `date` suivi d'un saut de ligne et d'un second `date` dans la meme commande, le `touch` suivant reussit et `whoami` repond root ; un second envoi du meme script rend la session a oracle. Rien de tel sur une machine seule (`LinuxServer`, utilisateur ordinaire, meme script) : la bascule vient de l'etat du lab (comptes, groupe dba, services restaures), pas du chemin multi-ligne seul.
+**Pas ferme** : cause non isolee ; les sites qui posent `currentUser` puis le restaurent sont nombreux (`runServiceScript`, `withIdentity`, sudo, su) et se croisent a un `await`. Le banc du tutoriel envoie donc ses commandes shell une par une.
+
+### [rman] CROSSCHECK BACKUP omet les sauvegardes de journaux, CROSSCHECK ARCHIVELOG ALL controle des pieces et non des journaux
+**Mesure** : apres neuf jeux de sauvegarde (dont deux de journaux), `CROSSCHECK BACKUP` annonce `Crosschecked 7 objects` (les jeux de type ARCHIVELOG sont sautes) et `CROSSCHECK ARCHIVELOG ALL` controle les pieces de ces deux jeux sous l'etiquette « archived log ». Oracle : `CROSSCHECK BACKUP` couvre toutes les sauvegardes, journaux compris ; `CROSSCHECK ARCHIVELOG ALL` verifie les fichiers de journaux archives (pas leurs sauvegardes).
+**Pas ferme** : `_doCrosscheck` partage son traitement entre les deux portees depuis ses debuts et des tests le figent.

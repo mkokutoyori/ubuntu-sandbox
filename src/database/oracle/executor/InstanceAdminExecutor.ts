@@ -123,6 +123,11 @@ export class InstanceAdminExecutor {
       this.instance.mountDatabase(stmt.details === 'STANDBY');
       return emptyResult('Database altered.');
     }
+    const forcedLogging = /^\s*(NO\s+)?FORCE\s+LOGGING\s*$/i.exec(stmt.action);
+    if (forcedLogging) {
+      this.instance.setForceLogging(forcedLogging[1] === undefined);
+      return emptyResult('Database altered.');
+    }
     if (/^\s*(?:FAILOVER\s+TO\s+\S+|ACTIVATE\s+(?:PHYSICAL\s+)?STANDBY\s+DATABASE)\s*$/i
       .test(stmt.action)) {
       return emptyResult(this.instance.failover());

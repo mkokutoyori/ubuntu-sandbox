@@ -5,7 +5,7 @@ import { LabWorkbench } from '../LabWorkbench';
 import { configureCiscoSwitch, configureDrRouter, configureFortiGateAgency, configureFortiGateDr, configureFortiGateHq, configureHqRouter, configureHuaweiSwitch, configureIsp } from './network';
 import { configureLinux, configureWindows, forwardSyslog } from './hosts';
 import { configureDomainControllers, configureLogServer, configurePublicDns, publishWebSite } from './services';
-import { configureBackupServer, createOracleOsUser, declareBackupShare, loadShopSchema, shipScripts } from './oracle';
+import { configureBackupServer, createOracleOsUser, declareBackupShare, giveHomeToOracle, loadShopSchema, shipScripts } from './oracle';
 import { AGENCIES, DR, HQ, INTERNET, SYSLOG_PORT } from './plan';
 
 export const BACKUP_EXPORT = '/srv/backup/rman';
@@ -154,6 +154,8 @@ export async function buildLumiere(): Promise<LumiereLab> {
   await shipScripts(bench, oraPrd);
   await shipScripts(bench, oraStb);
   await loadShopSchema(bench, oraPrd);
+  await giveHomeToOracle(bench, oraPrd);
+  await giveHomeToOracle(bench, oraStb);
   await declareBackupShare(bench, oraPrd, HQ.db.backup, BACKUP_EXPORT, BACKUP_MOUNT);
   await declareBackupShare(bench, oraStb, DR.db.backup, BACKUP_EXPORT, BACKUP_MOUNT);
   return { bench, devices };

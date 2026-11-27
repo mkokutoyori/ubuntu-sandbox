@@ -1529,8 +1529,13 @@ export class OracleExecutor extends BaseExecutor {
     const row: CellValue[] = [];
 
     for (const item of stmt.columns) {
+      if (item.expr.type === 'Star') {
+        columns.push({ name: 'DUMMY', dataType: parseOracleType('VARCHAR2', 1) });
+        row.push('X');
+        continue;
+      }
       const colName = item.alias || this.exprToString(item.expr);
-      const value = this.evaluateExpression(item.expr, [], []);
+      const value = item.expr.type === 'Identifier' && item.expr.name.toUpperCase() === 'DUMMY' ? 'X' : this.evaluateExpression(item.expr, [], []);
       // SYSDATE/CURRENT_DATE bare (no TO_CHAR) must render via
       // NLS_DATE_FORMAT, not the internal storage string — same pseudo-
       // column type tagging as expandSelectItems() for table-based SELECTs.

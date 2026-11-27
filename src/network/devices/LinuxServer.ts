@@ -13,7 +13,7 @@ import { IPAddress, IPv6Address, type DeviceType, type EthernetFrame, type IPv4P
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
 import { oracleSqlConnector } from '@/adapters/RadiusOracleSql';
-import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
+import { createSQLPlusSession, getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
 import { installOracleClientHooks } from './linux/oracleClientHooks';
 import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
@@ -178,7 +178,7 @@ export class LinuxServer extends LinuxMachine {
       const script = `${args.join(' ')}\n${stdin ?? ''}`;
       const invocation = parseSqlPlusInvocation(args, stdin);
       if ((invocation.sqlSource || invocation.startScript !== null) && invocation.connArgs) {
-        return runSqlPlusScript(this.id, invocation.connArgs, invocation.sqlSource, invocation.startScript);
+        return runSqlPlusScript(this.id, invocation.connArgs, invocation.sqlSource, invocation.startScript, this.executor.oracleCaller('sqlplus'));
       }
 
       // SHUTDOWN [ABORT|IMMEDIATE|TRANSACTIONAL|NORMAL] — stop the
@@ -250,8 +250,34 @@ export class LinuxServer extends LinuxMachine {
     if (!serveOracleNetConnection(this.id, socket)) socket.close();
   }
 
+  private rmanBequeathDenial(args: string[]): RmanRun | null {
+    const caller = this.executor.oracleCaller('rman');
+    const targetIndex = args.findIndex((argument) => argument.toLowerCase() === 'target');
+    const target = targetIndex === -1 ? undefined : args[targetIndex + 1];
+    if (caller.isDbaGroup || (target !== undefined && target !== '/')) return null;
+    const probe = createSQLPlusSession(this.id, ['/', 'as', 'sysdba'], caller);
+    if (!probe.loginOutput.some((line) => /ORA-01031/.test(line))) {
+      probe.session.disconnect();
+      return null;
+    }
+    return {
+      output: [
+        'Recovery Manager: Release 19.0.0.0.0 - Production', '',
+        'RMAN-00571: ===========================================================',
+        'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
+        'RMAN-00571: ===========================================================',
+        'RMAN-00554: initialization of internal recovery manager package failed',
+        'RMAN-04005: error from target database: ',
+        'ORA-01031: insufficient privileges',
+      ].join('\n'),
+      exitCode: 1,
+    };
+  }
+
   private *rmanScriptSteps(args: string[], stdin?: string): Generator<void, RmanRun> {
     const invocation = parseRmanInvocation(args);
+    const denied = this.rmanBequeathDenial(args);
+    if (denied !== null) return denied;
     const vfs = this.executor.vfs;
     const cwd = this.executor.getCwd();
     let source = stdin ?? '';
