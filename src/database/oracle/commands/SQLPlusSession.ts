@@ -27,6 +27,7 @@ import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../OracleConfig';
 import { ParserError } from '../../engine/parser/ParserError';
 import { DatabaseError } from '../../engine/types/DatabaseError';
+import type { RecoveryRunner } from './RecoveryRunner';
 import type { HostCommandRunner } from './HostCommandRunner';
 
 import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
@@ -128,6 +129,7 @@ export class SQLPlusSession {
   private columnFormats: Map<string, ColumnFormat> = new Map();
   /** Optional host-shell executor for HOST / `!` commands. */
   private hostRunner: HostCommandRunner | null = null;
+  private recoveryRunner: RecoveryRunner | null = null;
   /** Oracle Net client for CONNECT @identifier — injected by the terminal layer. */
   private tnsResolver: ((identifier: string) =>
     { ok: true; db: OracleDatabase; session?: OracleNetSession }
@@ -188,6 +190,18 @@ export class SQLPlusSession {
   /** Wire a HOST executor (typically delegated to the underlying device). */
   setHostCommandRunner(runner: HostCommandRunner | null): void {
     this.hostRunner = runner;
+  }
+
+  private recover(statement: string): string[] {
+    const parsed = /^RECOVER\s+(?:AUTOMATIC\s+)?(?:FROM\s+'[^']*'\s+)?(DATABASE|TABLESPACE\s+\S+|DATAFILE\s+\d+)(?:\s+UNTIL\s+(CANCEL|TIME\s+'[^']+'|CHANGE\s+\d+))?(?:\s+USING\s+BACKUP\s+CONTROLFILE)?\s*;?\s*$/i.exec(statement);
+    if (parsed === null) return ['ORA-00905: missing keyword'];
+    if (this.recoveryRunner === null) return ['ORA-01034: ORACLE not available'];
+    const until = parsed[2] === undefined ? '' : ` UNTIL ${parsed[2].replace(/^CHANGE\b/i, 'SCN')}`;
+    return this.recoveryRunner.recover(`RECOVER ${parsed[1]}${until}`);
+  }
+
+  setRecoveryRunner(runner: RecoveryRunner | null): void {
+    this.recoveryRunner = runner;
   }
 
   /** Wire the device VFS surface used by SPOOL and @script. */
@@ -593,6 +607,10 @@ export class SQLPlusSession {
 
     if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
       return this.startPLSQLBlock(trimmed);
+    }
+
+    if (upper.startsWith('RECOVER')) {
+      return { output: this.recover(trimmed), exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
     // Unknown command

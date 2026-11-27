@@ -4768,9 +4768,6 @@ en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatect
 **Mesure** : sur le lab e-commerce, `BACKUP DATABASE` sur une instance ouverte en NOARCHIVELOG reussit ; Oracle repond `RMAN-06149: cannot BACKUP DATABASE in NOARCHIVELOG mode` (une sauvegarde a chaud exige ARCHIVELOG, a froid se fait en MOUNT).
 **Pas ferme** : le refus a ete ecrit puis retire — plusieurs dizaines de fichiers de test (`audit/rman-*`, `oracle-rman-*`, `probe-rman-*`) sauvegardent une instance par defaut ouverte en NOARCHIVELOG et encodent cette permissivite ; les reecrire est un chantier a part. Le tutoriel du lab passe l'instance en ARCHIVELOG avant toute sauvegarde.
 
-### [oracle/sql] RECOVER ... UNTIL en SQL*Plus ne marque pas le besoin de RESETLOGS
-**Mesure** : seul le `RECOVER DATABASE UNTIL ...` de RMAN positionne `markIncompleteRecovery` ; la forme SQL*Plus `RECOVER DATABASE UNTIL CANCEL|TIME|CHANGE` ouvre sans ORA-01589.
-
 ### [oracle] Le super-utilisateur est admis comme OSDBA
 **Mesure** : `sqlplus / as sysdba` et `rman target /` lances par root passent meme si root n'est pas dans le groupe dba ; Oracle refuse (ORA-01031) tout utilisateur hors du groupe OSDBA, root compris. Les utilisateurs ordinaires hors dba sont refuses (sonde `probe-oracle-bequeath-needs-dba-group`).
 **Pas ferme** : toutes les machines de test et les labs tournent en root sans groupe dba ; exiger l'appartenance a root reecrit des centaines de tests.
