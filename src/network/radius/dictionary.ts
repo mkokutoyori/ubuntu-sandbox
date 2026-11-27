@@ -112,6 +112,7 @@ export interface RadiusVsaDef {
   vendorId: number;
   vendorType: number;
   name: string;
+  displayName: string;
   valueType: RadiusValueType;
 }
 
@@ -122,14 +123,14 @@ export interface RadiusVsaDef {
 export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   // Cisco (vendor 9): the single catch-all AV-pair sub-attribute (type 1),
   // e.g. "shell:priv-lvl=15" for privilege-level authorization.
-  { vendorId: CISCO_VENDOR_ID, vendorType: 1, name: 'cisco-avpair', valueType: 'text' },
+  { vendorId: CISCO_VENDOR_ID, vendorType: 1, name: 'cisco-avpair', displayName: 'Cisco-AVPair', valueType: 'text' },
   // Microsoft (vendor 311, RFC 2548).
-  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 1, name: 'ms-chap-response', valueType: 'octets' },
-  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 11, name: 'ms-chap-challenge', valueType: 'octets' },
-  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 16, name: 'ms-mppe-send-key', valueType: 'octets' },
-  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 17, name: 'ms-mppe-recv-key', valueType: 'octets' },
-  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 25, name: 'ms-chap2-response', valueType: 'octets' },
-  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 26, name: 'ms-chap2-success', valueType: 'octets' },
+  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 1, name: 'ms-chap-response', displayName: 'MS-CHAP-Response', valueType: 'octets' },
+  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 11, name: 'ms-chap-challenge', displayName: 'MS-CHAP-Challenge', valueType: 'octets' },
+  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 16, name: 'ms-mppe-send-key', displayName: 'MS-MPPE-Send-Key', valueType: 'octets' },
+  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 17, name: 'ms-mppe-recv-key', displayName: 'MS-MPPE-Recv-Key', valueType: 'octets' },
+  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 25, name: 'ms-chap2-response', displayName: 'MS-CHAP2-Response', valueType: 'octets' },
+  { vendorId: MICROSOFT_VENDOR_ID, vendorType: 26, name: 'ms-chap2-success', displayName: 'MS-CHAP2-Success', valueType: 'octets' },
 ];
 
 const VSA_BY_VENDOR_AND_TYPE = new Map<string, RadiusVsaDef>(
