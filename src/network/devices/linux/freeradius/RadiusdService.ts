@@ -924,7 +924,15 @@ export class RadiusdService {
     context.reply = accepted ? [...userReply] : [];
     const place = pipeline?.locations.get('post-auth');
     const lines: string[] = [];
-    const host: UnlangHost = { runModule: () => ({ result: 'noop', messages: [] }) };
+    const packetType = accepted ? 'Access-Accept' : 'Access-Reject';
+    const host: UnlangHost = {
+      runModule: (name, ctx) => {
+        const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+        if (sqlInstance === undefined) return { result: 'noop', messages: [] };
+        const expand = (template: string) => expandForContext(template, ctx, (value) => sqlInstance.escape(value), (key) => (key.toLowerCase() === 'reply:packet-type' ? packetType : undefined));
+        return { result: sqlInstance.postAuth(expand), messages: [] };
+      },
+    };
     const at = (text: string, depth: number): void => { lines.push(`${'  '.repeat(depth)}${text}`); };
     if (accepted) {
       at(`# Executing section post-auth from file ${place?.file ?? ''} line ${place?.line ?? 0}`, 1);

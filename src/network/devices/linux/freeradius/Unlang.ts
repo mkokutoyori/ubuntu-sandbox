@@ -202,8 +202,10 @@ function valueOf(context: UnlangContext, term: Term): string | number | undefine
   }, context.nowMs, (value) => value, context.externals);
 }
 
-export function expandForContext(template: string, context: UnlangContext, escape: (value: string) => string): string {
+export function expandForContext(template: string, context: UnlangContext, escape: (value: string) => string, extra: (name: string) => string | undefined = () => undefined): string {
   return expandTemplate(template, (name) => {
+    const supplied = extra(name);
+    if (supplied !== undefined) return supplied;
     const colon = name.indexOf(':');
     const list = colon > 0 ? LIST_ALIASES[name.slice(0, colon)] : undefined;
     const found = list === undefined ? lookup(context, 'request', name) : lookup(context, list, name.slice(colon + 1));

@@ -12,6 +12,7 @@ export interface SqlModuleConfig {
   readonly password: string;
   readonly safeCharacters: string;
   readonly accountingQueries: ReadonlyMap<string, readonly string[]>;
+  readonly postAuthQueries: readonly string[];
   readonly userName: string;
   readonly readGroups: boolean;
   readonly queries: ReadonlyMap<string, string>;
@@ -38,7 +39,7 @@ function accountingQueriesOf(section: ConfSection): ReadonlyMap<string, readonly
 
 export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { error: string } {
   const name = section.name2 ?? section.name1;
-  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section), userName: '%{User-Name}', readGroups: true, queries: new Map<string, string>() };
+  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section), postAuthQueries: section.sections.find((candidate) => candidate.name1 === 'post-auth')?.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value) ?? [], userName: '%{User-Name}', readGroups: true, queries: new Map<string, string>() };
   for (const pair of section.pairs) {
     const where = `${pair.file}[${pair.line}]`;
     if (pair.name === 'driver') config.driver = pair.value;
@@ -169,9 +170,8 @@ export class SqlModuleInstance {
     return entries;
   }
 
-  accounting(statusType: string, expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
-    const queries = this.config.accountingQueries.get(statusType.toLowerCase());
-    if (queries === undefined || queries.length === 0) return 'noop';
+  private runQueries(queries: readonly string[], expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
+    if (queries.length === 0) return 'noop';
     const session = this.open();
     if (session === null) return 'fail';
     for (const template of queries) {
@@ -183,6 +183,14 @@ export class SqlModuleInstance {
       if (answer.affected > 0) return 'ok';
     }
     return 'noop';
+  }
+
+  accounting(statusType: string, expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
+    return this.runQueries(this.config.accountingQueries.get(statusType.toLowerCase()) ?? [], expand);
+  }
+
+  postAuth(expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
+    return this.runQueries(this.config.postAuthQueries, expand);
   }
 
   close(): void {

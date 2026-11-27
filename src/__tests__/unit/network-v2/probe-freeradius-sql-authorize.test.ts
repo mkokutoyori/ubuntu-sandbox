@@ -92,7 +92,8 @@ async function lab(callSql = true, extra = '', users = 'zed Cleartext-Password :
   return { radius, dbhost, client, started };
 }
 
-const ask = (client: LinuxServer, user: string, password = 'pw') => client.executeCommand(`printf 'User-Name = "${user}"\\nUser-Password = "${password}"\\nNAS-IP-Address = 10.0.0.1\\n' | radclient -x 10.0.0.3 auth shared`);
+const quoted = (text: string) => text.replace(/'/g, "'\\''");
+const ask = (client: LinuxServer, user: string, password = 'pw') => client.executeCommand(`printf 'User-Name = "${quoted(user)}"\\nUser-Password = "${password}"\\nNAS-IP-Address = 10.0.0.1\\n' | radclient -x 10.0.0.3 auth shared`);
 const accepted = (output: string) => output.includes('Received Access-Accept');
 const message = (output: string) => /Reply-Message = "([^"]*)"/.exec(output)?.[1];
 

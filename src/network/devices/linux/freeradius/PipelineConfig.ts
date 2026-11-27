@@ -81,7 +81,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
       if (section.name1 === 'authorize' || section.name1 === 'post-auth' || section.name1 === 'preacct' || section.name1 === 'accounting' || section.name1 === 'pre-proxy' || section.name1 === 'post-proxy' || section.name1 === 'session') {
         let program: Statement[];
         try {
-          program = parseStatements(section, section.name1 === 'accounting' || section.name1 === 'authorize' ? resolveWithSql : resolve, false, expansions);
+          program = parseStatements(section, section.name1 === 'accounting' || section.name1 === 'authorize' || section.name1 === 'post-auth' ? resolveWithSql : resolve, false, expansions);
         } catch (error) {
           if (error instanceof UnlangError) return { error: error.message };
           throw error;
