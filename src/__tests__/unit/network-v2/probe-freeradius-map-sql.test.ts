@@ -3,8 +3,9 @@
  * src/modules/rlm_sql/rlm_sql.c (mod_map_proc: the query is expanded with the module escape, only the FIRST row is used, each line of the block `&list:Attribute op 'column'` assigns
  * the value of the named column of that row to the attribute, a NULL or missing column is skipped, no row is noop, a query error is fail, at least one attribute written is
  * updated). The assignments go through the same code as `update` (operators, lists reply and control, attribute parsing), so one grammar answers both; the query crosses a real
- * Oracle Net session to another host. map sql is accepted in authorize, accounting, post-auth and session, the sections where an sql module is called, with the name of a loaded sql
- * module; elsewhere it is refused naming that limit.
+ * Oracle Net session to another host. map sql is accepted in every processing section, with the name of a loaded sql module.
+ *
+ * Later extension to preacct, pre-proxy and post-proxy: the two cases covering them (pre-proxy loads, preacct runs) are the 2 of 12 that fall on git stash of src/network; the map-in-proxy host is wired the same way, only the load is observable without a proxy.
  *
  * Discriminated with git stash on src/network and src/adapters: 7 of 10 fall before the fix; the three that pass either way, with their reason: the witness (a users-file login with the
  * module loaded, no map) and two NEGATIVE assertions (the second row does not appear, a quote raises no SQL error), which hold when nothing is served; they only mean something next to
@@ -129,10 +130,22 @@ describe('unlang: map sql', () => {
     expect(await radius.executeCommand('cat /var/log/freeradius/radius.log')).toContain('SQL query failed');
   });
 
-  it('an unknown processor, and a section where no sql module is called, are refused at load', async () => {
+  it('an unknown processor is refused at load', async () => {
     const unknown = await lab("\t\tmap nosuch \"SELECT 1 FROM dual\" {\n\t\t\t&reply:Reply-Message := 'x'\n\t\t}\n");
     expect(unknown.started).toContain('Unknown map processor "nosuch"');
-    const elsewhere = await lab('', undefined, (site) => site.replace('\tpre-proxy {\n\t}\n', `\tpre-proxy {\n${MAP()}\t}\n`));
-    expect(elsewhere.started).toContain('Unknown map processor "sql"');
+  });
+
+  it('map sql loads in pre-proxy, where no sql module is called', async () => {
+    const { started } = await lab('', undefined, (site) => site.replace('\tpre-proxy {\n\t}\n', `\tpre-proxy {\n${MAP()}\t}\n`));
+    expect(started).not.toContain('Unknown map processor');
+  });
+
+  it('map sql runs in preacct: a failing query refuses the accounting request, a good one answers it', async () => {
+    const acct = (client: LinuxServer) => client.executeCommand(`printf 'User-Name = "alice"\\nAcct-Session-Id = "S1"\\nAcct-Status-Type = Start\\nNAS-IP-Address = 10.0.0.1\\n' | radclient 10.0.0.3 acct shared`);
+    const inPreacct = (block: string) => (site: string) => site.replace('\tpreacct {\n', `\tpreacct {\n${block}`);
+    const bad = await lab('', undefined, inPreacct("\t\tmap sql \"SELECT msg FROM system.no_such_table\" {\n\t\t\t&control:Reply-Message := 'msg'\n\t\t}\n"));
+    expect(await acct(bad.client)).not.toContain('Received Accounting-Response');
+    const good = await lab('', undefined, inPreacct("\t\tmap sql \"SELECT msg FROM system.profile WHERE username = 'alice'\" {\n\t\t\t&control:Reply-Message := 'msg'\n\t\t}\n"));
+    expect(await acct(good.client)).toContain('Received Accounting-Response');
   });
 });

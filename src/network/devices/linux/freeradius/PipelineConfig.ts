@@ -82,7 +82,7 @@ export function readPipelines(root: ConfSection): Map<string, Pipeline> | { erro
         let program: Statement[];
         try {
           const sqlSection = section.name1 === 'accounting' || section.name1 === 'authorize' || section.name1 === 'post-auth' || section.name1 === 'session';
-          program = parseStatements(section, sqlSection ? resolveWithSql : resolve, false, expansions, sqlSection ? expansions : undefined);
+          program = parseStatements(section, sqlSection ? resolveWithSql : resolve, false, expansions, expansions);
         } catch (error) {
           if (error instanceof UnlangError) return { error: error.message };
           throw error;

@@ -633,7 +633,7 @@ export class RadiusdService {
     context.proxyRequest = [...outbound];
     context.proxyReply = [...reply];
     const lines: string[] = [];
-    const host: UnlangHost = { runModule: (name, ctx) => (this.isRealmInstance(name) ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }) };
+    const host: UnlangHost = { runModule: (name, ctx) => (this.isRealmInstance(name) ? this.runRealmModule(name, ctx) : { result: 'noop', messages: [] }), mapRow: this.mapRowOf(context) };
     const outcome = run(program, context, host, lines, 3);
     const place = pipeline?.locations.get(section);
     this.radiusServer.emitDebugLines([

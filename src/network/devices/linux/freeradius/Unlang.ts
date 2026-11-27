@@ -306,7 +306,7 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       pending = null;
       const header = /^(\S+)\s+(["'])([\s\S]*)\2$/.exec((item.name2 ?? '').trim());
       if (header === null) fail(item.file, item.line, 'The unlang construct "map" is not implemented in this simulator');
-      if (!mapProcessors.has(header[1])) fail(item.file, item.line, `Unknown map processor "${header[1]}": map sql is available in authorize, accounting, post-auth and session, with the name of a loaded sql module`);
+      if (!mapProcessors.has(header[1])) fail(item.file, item.line, `Unknown map processor "${header[1]}": map sql takes the name of a loaded sql module`);
       checkTemplate(header[3], item.file, item.line, expansions);
       if (item.pairs.length === 0) fail(item.file, item.line, "'map' blocks cannot be empty");
       statements.push({
