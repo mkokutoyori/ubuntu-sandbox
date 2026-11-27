@@ -19,7 +19,7 @@ const BASE = ['  driver = "rlm_sql_oracle"', '  dialect = "oracle"', '  radius_d
 function configOf(extra: string[] = [], pool: string[] | null = null): SqlModuleConfig | { error: string } {
   const lines = ['sql {', ...BASE, ...extra, ...(pool === null ? [] : ['  pool {', ...pool.map((line) => `    ${line}`), '  }']), '}', ''];
   const parsed = parseFreeradiusConf(lines.join('\n'), '/etc/freeradius/3.0/mods-enabled/sql');
-  if (!parsed.ok) throw new Error(parsed.error);
+  if (parsed.ok === false) throw new Error(parsed.error);
   return readSqlModuleConfig(parsed.root.sections[0]);
 }
 
