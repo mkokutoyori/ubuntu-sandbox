@@ -165,7 +165,7 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
     ctx.vfs.setTimes(path, {
       atime: both || setAccess ? at : undefined,
       mtime: both || setModify ? at : undefined,
-    });
+    }, ctx.uid, ctx.gid);
   }
   return errors.join('\n');
 }

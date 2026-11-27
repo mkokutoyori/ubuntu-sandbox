@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-filesystem-files
-Generated: 2026-11-27T15:24:27.604Z
+Generated: 2026-11-27T23:15:52.527Z
 Engine: linux
 host=L-PC-FS-DBG (linux-pc) — focus: système de fichiers & opérations fichiers
 Total commands: 327
@@ -82,127 +82,127 @@ $ [23/327]> ls -l
 
 $ [24/327]> ls -la
   total 8
-  drwxrwxrwt  2 root root 4096 Nov 27 15:24 .
-  drwxr-xr-x 17 root root 4096 Nov 27 15:24 ..
+  drwxrwxrwt  2 root root 4096 Nov 27 23:15 .
+  drwxr-xr-x 17 root root 4096 Nov 27 23:15 ..
 
 $ [25/327]> ls -al /etc
   total 316
-  drwxr-xr-x 31 root root    4096 Nov 27 15:24 .
-  drwxr-xr-x 17 root root    4096 Nov 27 15:24 ..
-  -rw-r--r--  1 root root     377 Nov 27 15:24 adduser.conf
-  -rw-r--r--  1 root root     335 Nov 27 15:24 anacrontab
-  drwxr-xr-x  7 root root    4096 Nov 27 15:24 apache2
-  -rw-r-----  1 root daemon   144 Nov 27 15:24 at.deny
-  drwxr-x---  4 root root    4096 Nov 27 15:24 audit
-  -rw-r--r--  1 root root     151 Nov 27 15:24 bash.bashrc
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 chrony
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 cron.d
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 cron.daily
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 cron.hourly
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 cron.monthly
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 cron.weekly
-  -rw-r--r--  1 root root     420 Nov 27 15:24 crontab
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 default
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 dhcp
-  -rw-r--r--  1 root root     106 Nov 27 15:24 environment
-  -rw-r--r--  1 root root     389 Nov 27 15:24 exports
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 fail2ban
-  -rw-r--r--  1 root root     469 Nov 27 15:24 fstab
-  -rw-r--r--  1 root root     132 Nov 27 15:24 ftpusers
-  -rw-r--r--  1 root root    2584 Nov 27 15:24 gai.conf
-  -rw-r--r--  1 root root     218 Nov 27 15:24 group
-  -rw-r--r--  1 root root     213 Nov 27 15:24 group-
-  -rw-r-----  1 root root     174 Nov 27 15:24 gshadow
-  -rw-------  1 root root     169 Nov 27 15:24 gshadow-
-  -rw-r--r--  1 root root      92 Nov 27 15:24 host.conf
-  -rw-r--r--  1 root root      12 Nov 27 15:24 hostname
-  -rw-r--r--  1 root root     143 Nov 27 15:24 hosts
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 iptables
-  -rw-r--r--  1 root root      26 Nov 27 15:24 issue
-  -rw-r--r--  1 root root      19 Nov 27 15:24 issue.net
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 ldap
-  -rw-r--r--  1 root root     421 Nov 27 15:24 login.defs
-  -rw-r--r--  1 root root     592 Nov 27 15:24 logrotate.conf
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 logrotate.d
-  -rw-r--r--  1 root root     104 Nov 27 15:24 lsb-release
-  -rw-r--r--  1 root root      33 Nov 27 15:24 machine-id
-  -rw-r--r--  1 root root      68 Nov 27 15:24 motd
-  -r--r--r--  1 root root       0 Nov 27 15:24 mtab
-  -rw-r--r--  1 root root   11422 Nov 27 15:24 nanorc
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 netplan
-  drwxr-xr-x  7 root root    4096 Nov 27 15:24 network
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 NetworkManager
-  -rw-r--r--  1 root root      96 Nov 27 15:24 networks
-  drwxr-xr-x  6 root root    4096 Nov 27 15:24 nginx
-  -rw-r--r--  1 root root     510 Nov 27 15:24 nsswitch.conf
-  -rw-r--r--  1 root root     302 Nov 27 15:24 os-release
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 pam.d
-  -rw-r--r--  1 root root     334 Nov 27 15:24 passwd
-  -rw-r--r--  1 root root     334 Nov 27 15:24 passwd-
-  -rw-r--r--  1 root root     327 Nov 27 15:24 profile
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 profile.d
-  -rw-r--r--  1 root root    3144 Nov 27 15:24 protocols
-  -rw-r--r--  1 root root       0 Nov 27 15:24 resolv.conf
-  -rw-r--r--  1 root root     583 Nov 27 15:24 rpc
-  -rw-r--r--  1 root root    1136 Nov 27 15:24 rsyslog.conf
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 rsyslog.d
-  drwxr-xr-x  4 root root    4096 Nov 27 15:24 security
-  -rw-r--r--  1 root root   12813 Nov 27 15:24 services
-  -rw-r-----  1 root root     844 Nov 27 15:24 shadow
-  -rw-------  1 root root     844 Nov 27 15:24 shadow-
-  -rw-r--r--  1 root root      18 Nov 27 15:24 shells
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 skel
-  drwxr-xr-x  4 root root    4096 Nov 27 15:24 ssh
-  drwxr-xr-x  4 root root    4096 Nov 27 15:24 ssl
-  -rw-r--r--  1 root root      90 Nov 27 15:24 subgid
-  -rw-r--r--  1 root root      90 Nov 27 15:24 subuid
-  -r--r-----  1 root root      75 Nov 27 15:24 sudoers
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 sudoers.d
-  -rw-r--r--  1 root root    2209 Nov 27 15:24 sysctl.conf
-  drwxr-xr-x  2 root root    4096 Nov 27 15:24 sysctl.d
-  drwxr-xr-x  4 root root    4096 Nov 27 15:24 systemd
-  -rw-r--r--  1 root root       8 Nov 27 15:24 timezone
-  drwxr-xr-x  3 root root    4096 Nov 27 15:24 ufw
+  drwxr-xr-x 31 root root    4096 Nov 27 23:15 .
+  drwxr-xr-x 17 root root    4096 Nov 27 23:15 ..
+  -rw-r--r--  1 root root     377 Nov 27 23:15 adduser.conf
+  -rw-r--r--  1 root root     335 Nov 27 23:15 anacrontab
+  drwxr-xr-x  7 root root    4096 Nov 27 23:15 apache2
+  -rw-r-----  1 root daemon   144 Nov 27 23:15 at.deny
+  drwxr-x---  4 root root    4096 Nov 27 23:15 audit
+  -rw-r--r--  1 root root     151 Nov 27 23:15 bash.bashrc
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 chrony
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 cron.d
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 cron.daily
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 cron.hourly
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 cron.monthly
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 cron.weekly
+  -rw-r--r--  1 root root     420 Nov 27 23:15 crontab
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 default
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 dhcp
+  -rw-r--r--  1 root root     106 Nov 27 23:15 environment
+  -rw-r--r--  1 root root     389 Nov 27 23:15 exports
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 fail2ban
+  -rw-r--r--  1 root root     469 Nov 27 23:15 fstab
+  -rw-r--r--  1 root root     132 Nov 27 23:15 ftpusers
+  -rw-r--r--  1 root root    2584 Nov 27 23:15 gai.conf
+  -rw-r--r--  1 root root     218 Nov 27 23:15 group
+  -rw-r--r--  1 root root     213 Nov 27 23:15 group-
+  -rw-r-----  1 root root     174 Nov 27 23:15 gshadow
+  -rw-------  1 root root     169 Nov 27 23:15 gshadow-
+  -rw-r--r--  1 root root      92 Nov 27 23:15 host.conf
+  -rw-r--r--  1 root root      12 Nov 27 23:15 hostname
+  -rw-r--r--  1 root root     143 Nov 27 23:15 hosts
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 iptables
+  -rw-r--r--  1 root root      26 Nov 27 23:15 issue
+  -rw-r--r--  1 root root      19 Nov 27 23:15 issue.net
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 ldap
+  -rw-r--r--  1 root root     421 Nov 27 23:15 login.defs
+  -rw-r--r--  1 root root     592 Nov 27 23:15 logrotate.conf
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 logrotate.d
+  -rw-r--r--  1 root root     104 Nov 27 23:15 lsb-release
+  -rw-r--r--  1 root root      33 Nov 27 23:15 machine-id
+  -rw-r--r--  1 root root      68 Nov 27 23:15 motd
+  -r--r--r--  1 root root       0 Nov 27 23:15 mtab
+  -rw-r--r--  1 root root   11422 Nov 27 23:15 nanorc
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 netplan
+  drwxr-xr-x  7 root root    4096 Nov 27 23:15 network
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 NetworkManager
+  -rw-r--r--  1 root root      96 Nov 27 23:15 networks
+  drwxr-xr-x  6 root root    4096 Nov 27 23:15 nginx
+  -rw-r--r--  1 root root     510 Nov 27 23:15 nsswitch.conf
+  -rw-r--r--  1 root root     302 Nov 27 23:15 os-release
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 pam.d
+  -rw-r--r--  1 root root     334 Nov 27 23:15 passwd
+  -rw-r--r--  1 root root     334 Nov 27 23:15 passwd-
+  -rw-r--r--  1 root root     327 Nov 27 23:15 profile
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 profile.d
+  -rw-r--r--  1 root root    3144 Nov 27 23:15 protocols
+  -rw-r--r--  1 root root       0 Nov 27 23:15 resolv.conf
+  -rw-r--r--  1 root root     583 Nov 27 23:15 rpc
+  -rw-r--r--  1 root root    1136 Nov 27 23:15 rsyslog.conf
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 rsyslog.d
+  drwxr-xr-x  4 root root    4096 Nov 27 23:15 security
+  -rw-r--r--  1 root root   12813 Nov 27 23:15 services
+  -rw-r-----  1 root root     844 Nov 27 23:15 shadow
+  -rw-------  1 root root     844 Nov 27 23:15 shadow-
+  -rw-r--r--  1 root root      18 Nov 27 23:15 shells
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 skel
+  drwxr-xr-x  4 root root    4096 Nov 27 23:15 ssh
+  drwxr-xr-x  4 root root    4096 Nov 27 23:15 ssl
+  -rw-r--r--  1 root root      90 Nov 27 23:15 subgid
+  -rw-r--r--  1 root root      90 Nov 27 23:15 subuid
+  -r--r-----  1 root root      75 Nov 27 23:15 sudoers
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 sudoers.d
+  -rw-r--r--  1 root root    2209 Nov 27 23:15 sysctl.conf
+  drwxr-xr-x  2 root root    4096 Nov 27 23:15 sysctl.d
+  drwxr-xr-x  4 root root    4096 Nov 27 23:15 systemd
+  -rw-r--r--  1 root root       8 Nov 27 23:15 timezone
+  drwxr-xr-x  3 root root    4096 Nov 27 23:15 ufw
 
 $ [26/327]> ls -lh /var/log
   total 332K
-  drwxr-xr-x 2 root root 4.0K Nov 27 15:24 apache2
-  drwxr-x--- 2 root adm  4.0K Nov 27 15:24 audit
-  -rw-r----- 1 root adm   305 Nov 27 15:24 auth.log
-  -rw-r----- 1 root adm  2.1K Nov 27 15:24 boot.log
-  -rw-rw---- 1 root utmp    0 Nov 27 15:24 btmp
-  drwxr-xr-x 2 root root 4.0K Nov 27 15:24 chrony
-  drwxr-sr-x 3 root adm  4.0K Nov 27 15:24 journal
-  -rw-r----- 1 root adm  1.6K Nov 27 15:24 kern.log
-  -rw-rw-r-- 1 root utmp 286K Nov 27 15:24 lastlog
-  -rw-r--r-- 1 root root  245 Nov 27 15:24 messages
-  drwxr-xr-x 2 root root 4.0K Nov 27 15:24 nginx
-  -rw-r----- 1 root adm  3.1K Nov 27 15:24 syslog
-  -rw-rw-r-- 1 root utmp 1.2K Nov 27 15:24 wtmp
+  drwxr-xr-x 2 root root 4.0K Nov 27 23:15 apache2
+  drwxr-x--- 2 root adm  4.0K Nov 27 23:15 audit
+  -rw-r----- 1 root adm   305 Nov 27 23:15 auth.log
+  -rw-r----- 1 root adm  2.1K Nov 27 23:15 boot.log
+  -rw-rw---- 1 root utmp    0 Nov 27 23:15 btmp
+  drwxr-xr-x 2 root root 4.0K Nov 27 23:15 chrony
+  drwxr-sr-x 3 root adm  4.0K Nov 27 23:15 journal
+  -rw-r----- 1 root adm  1.6K Nov 27 23:15 kern.log
+  -rw-rw-r-- 1 root utmp 286K Nov 27 23:15 lastlog
+  -rw-r--r-- 1 root root  245 Nov 27 23:15 messages
+  drwxr-xr-x 2 root root 4.0K Nov 27 23:15 nginx
+  -rw-r----- 1 root adm  3.1K Nov 27 23:15 syslog
+  -rw-rw-r-- 1 root utmp 1.2K Nov 27 23:15 wtmp
 
 $ [27/327]> ls -lha /
   total 68K
-  drwxr-xr-x 17 root root 4.0K Nov 27 15:24 .
-  drwxr-xr-x 17 root root 4.0K Nov 27 15:24 ..
-  lrwxrwxrwx  1 root root    7 Nov 27 15:24 bin -> usr/bin
-  drwxr-xr-x  2 root root 4.0K Nov 27 15:24 boot
-  drwxr-xr-x  3 root root 4.0K Nov 27 15:24 dev
-  drwxr-xr-x 31 root root 4.0K Nov 27 15:24 etc
-  drwxr-xr-x  8 root root 4.0K Nov 27 15:24 home
-  lrwxrwxrwx  1 root root    7 Nov 27 15:24 lib -> usr/lib
-  lrwxrwxrwx  1 root root    9 Nov 27 15:24 lib64 -> usr/lib64
-  drwxr-xr-x  2 root root 4.0K Nov 27 15:24 media
-  drwxr-xr-x  2 root root 4.0K Nov 27 15:24 mnt
-  drwxr-xr-x  2 root root 4.0K Nov 27 15:24 opt
-  drwxr-xr-x 43 root root 4.0K Nov 27 15:24 proc
-  drwx------  2 root root 4.0K Nov 27 15:24 root
-  drwxr-xr-x  6 root root 4.0K Nov 27 15:24 run
-  lrwxrwxrwx  1 root root    8 Nov 27 15:24 sbin -> usr/sbin
-  drwxr-xr-x  2 root root 4.0K Nov 27 15:24 srv
-  drwxr-xr-x  6 root root 4.0K Nov 27 15:24 sys
-  drwxrwxrwt  2 root root 4.0K Nov 27 15:24 tmp
-  drwxr-xr-x 12 root root 4.0K Nov 27 15:24 usr
-  drwxr-xr-x 13 root root 4.0K Nov 27 15:24 var
+  drwxr-xr-x 17 root root 4.0K Nov 27 23:15 .
+  drwxr-xr-x 17 root root 4.0K Nov 27 23:15 ..
+  lrwxrwxrwx  1 root root    7 Nov 27 23:15 bin -> usr/bin
+  drwxr-xr-x  2 root root 4.0K Nov 27 23:15 boot
+  drwxr-xr-x  3 root root 4.0K Nov 27 23:15 dev
+  drwxr-xr-x 31 root root 4.0K Nov 27 23:15 etc
+  drwxr-xr-x  8 root root 4.0K Nov 27 23:15 home
+  lrwxrwxrwx  1 root root    7 Nov 27 23:15 lib -> usr/lib
+  lrwxrwxrwx  1 root root    9 Nov 27 23:15 lib64 -> usr/lib64
+  drwxr-xr-x  2 root root 4.0K Nov 27 23:15 media
+  drwxr-xr-x  2 root root 4.0K Nov 27 23:15 mnt
+  drwxr-xr-x  2 root root 4.0K Nov 27 23:15 opt
+  drwxr-xr-x 43 root root 4.0K Nov 27 23:15 proc
+  drwx------  2 root root 4.0K Nov 27 23:15 root
+  drwxr-xr-x  6 root root 4.0K Nov 27 23:15 run
+  lrwxrwxrwx  1 root root    8 Nov 27 23:15 sbin -> usr/sbin
+  drwxr-xr-x  2 root root 4.0K Nov 27 23:15 srv
+  drwxr-xr-x  6 root root 4.0K Nov 27 23:15 sys
+  drwxrwxrwt  2 root root 4.0K Nov 27 23:15 tmp
+  drwxr-xr-x 12 root root 4.0K Nov 27 23:15 usr
+  drwxr-xr-x 13 root root 4.0K Nov 27 23:15 var
 
 $ [28/327]> ls -a
   .  ..
@@ -214,7 +214,7 @@ $ [30/327]> ls -d */
   ls: cannot access '*/': No such file or directory
 
 $ [31/327]> ls -ld /etc
-  drwxr-xr-x 31 root root 4096 Nov 27 15:24 /etc
+  drwxr-xr-x 31 root root 4096 Nov 27 23:15 /etc
 
 $ [32/327]> ls -R /etc
   ls: cannot open directory '/etc/audit': Permission denied
@@ -408,51 +408,51 @@ $ [32/327]> ls -R /etc
 
 $ [33/327]> ls -lt /var/log
   total 332
-  -rw-r----- 1 root adm    3093 Nov 27 15:24 syslog
-  -rw-r----- 1 root adm     305 Nov 27 15:24 auth.log
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 apache2
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 chrony
-  -rw-r----- 1 root adm    1600 Nov 27 15:24 kern.log
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 nginx
-  -rw-rw-r-- 1 root utmp 292292 Nov 27 15:24 lastlog
-  -rw-rw-r-- 1 root utmp   1152 Nov 27 15:24 wtmp
-  -rw-rw---- 1 root utmp      0 Nov 27 15:24 btmp
-  -rw-r--r-- 1 root root    245 Nov 27 15:24 messages
-  drwxr-x--- 2 root adm    4096 Nov 27 15:24 audit
-  -rw-r----- 1 root adm    2148 Nov 27 15:24 boot.log
-  drwxr-sr-x 3 root adm    4096 Nov 27 15:24 journal
+  -rw-r----- 1 root adm    3093 Nov 27 23:15 syslog
+  -rw-r----- 1 root adm     305 Nov 27 23:15 auth.log
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 apache2
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 chrony
+  -rw-r----- 1 root adm    1600 Nov 27 23:15 kern.log
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 nginx
+  -rw-rw-r-- 1 root utmp 292292 Nov 27 23:15 lastlog
+  -rw-rw-r-- 1 root utmp   1152 Nov 27 23:15 wtmp
+  -rw-rw---- 1 root utmp      0 Nov 27 23:15 btmp
+  -rw-r--r-- 1 root root    245 Nov 27 23:15 messages
+  drwxr-x--- 2 root adm    4096 Nov 27 23:15 audit
+  -rw-r----- 1 root adm    2148 Nov 27 23:15 boot.log
+  drwxr-sr-x 3 root adm    4096 Nov 27 23:15 journal
 
 $ [34/327]> ls -ltr /var/log
   total 332
-  drwxr-sr-x 3 root adm    4096 Nov 27 15:24 journal
-  -rw-r----- 1 root adm    2148 Nov 27 15:24 boot.log
-  drwxr-x--- 2 root adm    4096 Nov 27 15:24 audit
-  -rw-r--r-- 1 root root    245 Nov 27 15:24 messages
-  -rw-rw---- 1 root utmp      0 Nov 27 15:24 btmp
-  -rw-rw-r-- 1 root utmp   1152 Nov 27 15:24 wtmp
-  -rw-rw-r-- 1 root utmp 292292 Nov 27 15:24 lastlog
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 nginx
-  -rw-r----- 1 root adm    1600 Nov 27 15:24 kern.log
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 chrony
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 apache2
-  -rw-r----- 1 root adm     305 Nov 27 15:24 auth.log
-  -rw-r----- 1 root adm    3093 Nov 27 15:24 syslog
+  drwxr-sr-x 3 root adm    4096 Nov 27 23:15 journal
+  -rw-r----- 1 root adm    2148 Nov 27 23:15 boot.log
+  drwxr-x--- 2 root adm    4096 Nov 27 23:15 audit
+  -rw-r--r-- 1 root root    245 Nov 27 23:15 messages
+  -rw-rw---- 1 root utmp      0 Nov 27 23:15 btmp
+  -rw-rw-r-- 1 root utmp   1152 Nov 27 23:15 wtmp
+  -rw-rw-r-- 1 root utmp 292292 Nov 27 23:15 lastlog
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 nginx
+  -rw-r----- 1 root adm    1600 Nov 27 23:15 kern.log
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 chrony
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 apache2
+  -rw-r----- 1 root adm     305 Nov 27 23:15 auth.log
+  -rw-r----- 1 root adm    3093 Nov 27 23:15 syslog
 
 $ [35/327]> ls -lS /var/log
   total 332
-  -rw-rw-r-- 1 root utmp 292292 Nov 27 15:24 lastlog
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 apache2
-  drwxr-x--- 2 root adm    4096 Nov 27 15:24 audit
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 chrony
-  drwxr-sr-x 3 root adm    4096 Nov 27 15:24 journal
-  drwxr-xr-x 2 root root   4096 Nov 27 15:24 nginx
-  -rw-r----- 1 root adm    3093 Nov 27 15:24 syslog
-  -rw-r----- 1 root adm    2148 Nov 27 15:24 boot.log
-  -rw-r----- 1 root adm    1600 Nov 27 15:24 kern.log
-  -rw-rw-r-- 1 root utmp   1152 Nov 27 15:24 wtmp
-  -rw-r----- 1 root adm     305 Nov 27 15:24 auth.log
-  -rw-r--r-- 1 root root    245 Nov 27 15:24 messages
-  -rw-rw---- 1 root utmp      0 Nov 27 15:24 btmp
+  -rw-rw-r-- 1 root utmp 292292 Nov 27 23:15 lastlog
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 apache2
+  drwxr-x--- 2 root adm    4096 Nov 27 23:15 audit
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 chrony
+  drwxr-sr-x 3 root adm    4096 Nov 27 23:15 journal
+  drwxr-xr-x 2 root root   4096 Nov 27 23:15 nginx
+  -rw-r----- 1 root adm    3093 Nov 27 23:15 syslog
+  -rw-r----- 1 root adm    2148 Nov 27 23:15 boot.log
+  -rw-r----- 1 root adm    1600 Nov 27 23:15 kern.log
+  -rw-rw-r-- 1 root utmp   1152 Nov 27 23:15 wtmp
+  -rw-r----- 1 root adm     305 Nov 27 23:15 auth.log
+  -rw-r--r-- 1 root root    245 Nov 27 23:15 messages
+  -rw-rw---- 1 root utmp      0 Nov 27 23:15 btmp
 
 $ [36/327]> ls -lr
   total 0
@@ -480,80 +480,80 @@ $ [37/327]> ls -i /etc
 
 $ [38/327]> ls -n /etc
   total 308
-  -rw-r--r-- 1 0 0   377 Nov 27 15:24 adduser.conf
-  -rw-r--r-- 1 0 0   335 Nov 27 15:24 anacrontab
-  drwxr-xr-x 7 0 0  4096 Nov 27 15:24 apache2
-  -rw-r----- 1 0 1   144 Nov 27 15:24 at.deny
-  drwxr-x--- 4 0 0  4096 Nov 27 15:24 audit
-  -rw-r--r-- 1 0 0   151 Nov 27 15:24 bash.bashrc
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 chrony
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 cron.d
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 cron.daily
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 cron.hourly
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 cron.monthly
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 cron.weekly
-  -rw-r--r-- 1 0 0   420 Nov 27 15:24 crontab
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 default
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 dhcp
-  -rw-r--r-- 1 0 0   106 Nov 27 15:24 environment
-  -rw-r--r-- 1 0 0   389 Nov 27 15:24 exports
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 fail2ban
-  -rw-r--r-- 1 0 0   469 Nov 27 15:24 fstab
-  -rw-r--r-- 1 0 0   132 Nov 27 15:24 ftpusers
-  -rw-r--r-- 1 0 0  2584 Nov 27 15:24 gai.conf
-  -rw-r--r-- 1 0 0   218 Nov 27 15:24 group
-  -rw-r--r-- 1 0 0   213 Nov 27 15:24 group-
-  -rw-r----- 1 0 0   174 Nov 27 15:24 gshadow
-  -rw------- 1 0 0   169 Nov 27 15:24 gshadow-
-  -rw-r--r-- 1 0 0    92 Nov 27 15:24 host.conf
-  -rw-r--r-- 1 0 0    12 Nov 27 15:24 hostname
-  -rw-r--r-- 1 0 0   143 Nov 27 15:24 hosts
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 iptables
-  -rw-r--r-- 1 0 0    26 Nov 27 15:24 issue
-  -rw-r--r-- 1 0 0    19 Nov 27 15:24 issue.net
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 ldap
-  -rw-r--r-- 1 0 0   421 Nov 27 15:24 login.defs
-  -rw-r--r-- 1 0 0   592 Nov 27 15:24 logrotate.conf
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 logrotate.d
-  -rw-r--r-- 1 0 0   104 Nov 27 15:24 lsb-release
-  -rw-r--r-- 1 0 0    33 Nov 27 15:24 machine-id
-  -rw-r--r-- 1 0 0    68 Nov 27 15:24 motd
-  -r--r--r-- 1 0 0     0 Nov 27 15:24 mtab
-  -rw-r--r-- 1 0 0 11422 Nov 27 15:24 nanorc
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 netplan
-  drwxr-xr-x 7 0 0  4096 Nov 27 15:24 network
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 NetworkManager
-  -rw-r--r-- 1 0 0    96 Nov 27 15:24 networks
-  drwxr-xr-x 6 0 0  4096 Nov 27 15:24 nginx
-  -rw-r--r-- 1 0 0   510 Nov 27 15:24 nsswitch.conf
-  -rw-r--r-- 1 0 0   302 Nov 27 15:24 os-release
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 pam.d
-  -rw-r--r-- 1 0 0   334 Nov 27 15:24 passwd
-  -rw-r--r-- 1 0 0   334 Nov 27 15:24 passwd-
-  -rw-r--r-- 1 0 0   327 Nov 27 15:24 profile
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 profile.d
-  -rw-r--r-- 1 0 0  3144 Nov 27 15:24 protocols
-  -rw-r--r-- 1 0 0     0 Nov 27 15:24 resolv.conf
-  -rw-r--r-- 1 0 0   583 Nov 27 15:24 rpc
-  -rw-r--r-- 1 0 0  1136 Nov 27 15:24 rsyslog.conf
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 rsyslog.d
-  drwxr-xr-x 4 0 0  4096 Nov 27 15:24 security
-  -rw-r--r-- 1 0 0 12813 Nov 27 15:24 services
-  -rw-r----- 1 0 0   844 Nov 27 15:24 shadow
-  -rw------- 1 0 0   844 Nov 27 15:24 shadow-
-  -rw-r--r-- 1 0 0    18 Nov 27 15:24 shells
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 skel
-  drwxr-xr-x 4 0 0  4096 Nov 27 15:24 ssh
-  drwxr-xr-x 4 0 0  4096 Nov 27 15:24 ssl
-  -rw-r--r-- 1 0 0    90 Nov 27 15:24 subgid
-  -rw-r--r-- 1 0 0    90 Nov 27 15:24 subuid
-  -r--r----- 1 0 0    75 Nov 27 15:24 sudoers
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 sudoers.d
-  -rw-r--r-- 1 0 0  2209 Nov 27 15:24 sysctl.conf
-  drwxr-xr-x 2 0 0  4096 Nov 27 15:24 sysctl.d
-  drwxr-xr-x 4 0 0  4096 Nov 27 15:24 systemd
-  -rw-r--r-- 1 0 0     8 Nov 27 15:24 timezone
-  drwxr-xr-x 3 0 0  4096 Nov 27 15:24 ufw
+  -rw-r--r-- 1 0 0   377 Nov 27 23:15 adduser.conf
+  -rw-r--r-- 1 0 0   335 Nov 27 23:15 anacrontab
+  drwxr-xr-x 7 0 0  4096 Nov 27 23:15 apache2
+  -rw-r----- 1 0 1   144 Nov 27 23:15 at.deny
+  drwxr-x--- 4 0 0  4096 Nov 27 23:15 audit
+  -rw-r--r-- 1 0 0   151 Nov 27 23:15 bash.bashrc
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 chrony
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 cron.d
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 cron.daily
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 cron.hourly
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 cron.monthly
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 cron.weekly
+  -rw-r--r-- 1 0 0   420 Nov 27 23:15 crontab
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 default
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 dhcp
+  -rw-r--r-- 1 0 0   106 Nov 27 23:15 environment
+  -rw-r--r-- 1 0 0   389 Nov 27 23:15 exports
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 fail2ban
+  -rw-r--r-- 1 0 0   469 Nov 27 23:15 fstab
+  -rw-r--r-- 1 0 0   132 Nov 27 23:15 ftpusers
+  -rw-r--r-- 1 0 0  2584 Nov 27 23:15 gai.conf
+  -rw-r--r-- 1 0 0   218 Nov 27 23:15 group
+  -rw-r--r-- 1 0 0   213 Nov 27 23:15 group-
+  -rw-r----- 1 0 0   174 Nov 27 23:15 gshadow
+  -rw------- 1 0 0   169 Nov 27 23:15 gshadow-
+  -rw-r--r-- 1 0 0    92 Nov 27 23:15 host.conf
+  -rw-r--r-- 1 0 0    12 Nov 27 23:15 hostname
+  -rw-r--r-- 1 0 0   143 Nov 27 23:15 hosts
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 iptables
+  -rw-r--r-- 1 0 0    26 Nov 27 23:15 issue
+  -rw-r--r-- 1 0 0    19 Nov 27 23:15 issue.net
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 ldap
+  -rw-r--r-- 1 0 0   421 Nov 27 23:15 login.defs
+  -rw-r--r-- 1 0 0   592 Nov 27 23:15 logrotate.conf
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 logrotate.d
+  -rw-r--r-- 1 0 0   104 Nov 27 23:15 lsb-release
+  -rw-r--r-- 1 0 0    33 Nov 27 23:15 machine-id
+  -rw-r--r-- 1 0 0    68 Nov 27 23:15 motd
+  -r--r--r-- 1 0 0     0 Nov 27 23:15 mtab
+  -rw-r--r-- 1 0 0 11422 Nov 27 23:15 nanorc
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 netplan
+  drwxr-xr-x 7 0 0  4096 Nov 27 23:15 network
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 NetworkManager
+  -rw-r--r-- 1 0 0    96 Nov 27 23:15 networks
+  drwxr-xr-x 6 0 0  4096 Nov 27 23:15 nginx
+  -rw-r--r-- 1 0 0   510 Nov 27 23:15 nsswitch.conf
+  -rw-r--r-- 1 0 0   302 Nov 27 23:15 os-release
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 pam.d
+  -rw-r--r-- 1 0 0   334 Nov 27 23:15 passwd
+  -rw-r--r-- 1 0 0   334 Nov 27 23:15 passwd-
+  -rw-r--r-- 1 0 0   327 Nov 27 23:15 profile
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 profile.d
+  -rw-r--r-- 1 0 0  3144 Nov 27 23:15 protocols
+  -rw-r--r-- 1 0 0     0 Nov 27 23:15 resolv.conf
+  -rw-r--r-- 1 0 0   583 Nov 27 23:15 rpc
+  -rw-r--r-- 1 0 0  1136 Nov 27 23:15 rsyslog.conf
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 rsyslog.d
+  drwxr-xr-x 4 0 0  4096 Nov 27 23:15 security
+  -rw-r--r-- 1 0 0 12813 Nov 27 23:15 services
+  -rw-r----- 1 0 0   844 Nov 27 23:15 shadow
+  -rw------- 1 0 0   844 Nov 27 23:15 shadow-
+  -rw-r--r-- 1 0 0    18 Nov 27 23:15 shells
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 skel
+  drwxr-xr-x 4 0 0  4096 Nov 27 23:15 ssh
+  drwxr-xr-x 4 0 0  4096 Nov 27 23:15 ssl
+  -rw-r--r-- 1 0 0    90 Nov 27 23:15 subgid
+  -rw-r--r-- 1 0 0    90 Nov 27 23:15 subuid
+  -r--r----- 1 0 0    75 Nov 27 23:15 sudoers
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 sudoers.d
+  -rw-r--r-- 1 0 0  2209 Nov 27 23:15 sysctl.conf
+  drwxr-xr-x 2 0 0  4096 Nov 27 23:15 sysctl.d
+  drwxr-xr-x 4 0 0  4096 Nov 27 23:15 systemd
+  -rw-r--r-- 1 0 0     8 Nov 27 23:15 timezone
+  drwxr-xr-x 3 0 0  4096 Nov 27 23:15 ufw
 
 $ [39/327]> ls -F /
   bin@   dev/  home/  lib64@  mnt/  proc/  run/	srv/  tmp/  var/
@@ -667,7 +667,7 @@ $ [43/327]> ls /bin/ls
   /bin/ls
 
 $ [44/327]> ls -l /bin/ls
-  -rwxr-xr-x 1 root root 29 Nov 27 15:24 /bin/ls
+  -rwxr-xr-x 1 root root 29 Nov 27 23:15 /bin/ls
 
 $ [45/327]> ls /etc/*.conf
   /etc/adduser.conf  /etc/host.conf	/etc/nsswitch.conf  /etc/rsyslog.conf
@@ -1158,16 +1158,16 @@ $ [70/327]> touch fichier1.txt
 <empty>
 
 $ [71/327]> ls -l fichier1.txt
-  -rw-r--r-- 1 user user 0 Nov 27 15:24 fichier1.txt
+  -rw-r--r-- 1 user user 0 Nov 27 23:15 fichier1.txt
 
 $ [72/327]> touch fichier2.txt fichier3.txt fichier4.txt
 <empty>
 
 $ [73/327]> ls -l fichier*.txt
-  -rw-r--r-- 1 user user 0 Nov 27 15:24 fichier1.txt
-  -rw-r--r-- 1 user user 0 Nov 27 15:24 fichier2.txt
-  -rw-r--r-- 1 user user 0 Nov 27 15:24 fichier3.txt
-  -rw-r--r-- 1 user user 0 Nov 27 15:24 fichier4.txt
+  -rw-r--r-- 1 user user 0 Nov 27 23:15 fichier1.txt
+  -rw-r--r-- 1 user user 0 Nov 27 23:15 fichier2.txt
+  -rw-r--r-- 1 user user 0 Nov 27 23:15 fichier3.txt
+  -rw-r--r-- 1 user user 0 Nov 27 23:15 fichier4.txt
 
 $ [74/327]> echo "ligne unique" > simple.txt
 <empty>
@@ -1217,9 +1217,9 @@ $ [87/327]> stat fichier1.txt
     Size: 0         	Blocks: 0          IO Block: 4096   regular empty file
   Device: 1h/1d	Inode: 2201        Links: 1
   Access: (0644/-rw-r--r--)  Uid: ( 1000/    user)   Gid: ( 1000/    user)
-  Access: 2026-11-27 15:24:27.761000000 +0000
-  Modify: 2026-11-27 15:24:27.761000000 +0000
-  Change: 2026-11-27 15:24:27.761000000 +0000
+  Access: 2026-11-27 23:15:52.656000000 +0000
+  Modify: 2026-11-27 23:15:52.656000000 +0000
+  Change: 2026-11-27 23:15:52.656000000 +0000
    Birth: -
 
 $ [88/327]> touch /repertoire/inexistant_xyz/fichier.txt
@@ -1231,7 +1231,7 @@ $ [89/327]> mkdir projet
 <empty>
 
 $ [90/327]> ls -ld projet
-  drwxr-xr-x 2 user user 4096 Nov 27 15:24 projet
+  drwxr-xr-x 2 user user 4096 Nov 27 23:15 projet
 
 $ [91/327]> mkdir -p projet/src/lib/utils
 <empty>
@@ -1272,7 +1272,7 @@ $ [95/327]> mkdir -m 700 securisé
 <empty>
 
 $ [96/327]> ls -ld securisé
-  drwx------ 2 user user 4096 Nov 27 15:24 securisé
+  drwx------ 2 user user 4096 Nov 27 23:15 securisé
 
 $ [97/327]> mkdir projet
   mkdir: cannot create directory 'projet': File exists
@@ -1351,8 +1351,8 @@ $ [116/327]> cp -p simple.txt preserve.txt
 <empty>
 
 $ [117/327]> ls -l preserve.txt simple.txt
-  -rw-r--r-- 1 user user 27 Nov 27 15:24 preserve.txt
-  -rw-r--r-- 1 user user 27 Nov 27 15:24 simple.txt
+  -rw-r--r-- 1 user user 27 Nov 27 23:15 preserve.txt
+  -rw-r--r-- 1 user user 27 Nov 27 23:15 simple.txt
 
 $ [118/327]> cp -v lettres.txt verbose.txt
   'lettres.txt' -> 'verbose.txt'
@@ -1380,7 +1380,7 @@ $ [124/327]> mv copie.txt renomme.txt
 
 $ [125/327]> ls -l renomme.txt copie.txt
   ls: cannot access 'copie.txt': No such file or directory
-  -rw-r--r-- 1 user user 27 Nov 27 15:24 renomme.txt
+  -rw-r--r-- 1 user user 27 Nov 27 23:15 renomme.txt
 
 $ [126/327]> mkdir destination
 <empty>
@@ -1410,7 +1410,7 @@ $ [134/327]> mv projet_backup projet_renomme
 <empty>
 
 $ [135/327]> ls -ld projet_renomme
-  drwxr-xr-x 3 user user 4096 Nov 27 15:24 projet_renomme
+  drwxr-xr-x 3 user user 4096 Nov 27 23:15 projet_renomme
 
 $ [136/327]> mv fichier_inexistant_xyz cible.txt
   mv: cannot stat 'fichier_inexistant_xyz': No such file or directory
@@ -1480,8 +1480,8 @@ $ [155/327]> ln cible_lien.txt lien_dur.txt
 <empty>
 
 $ [156/327]> ls -li cible_lien.txt lien_dur.txt
-  2233 -rw-r--r-- 2 user user 14 Nov 27 15:24 cible_lien.txt
-  2233 -rw-r--r-- 2 user user 14 Nov 27 15:24 lien_dur.txt
+  2233 -rw-r--r-- 2 user user 14 Nov 27 23:15 cible_lien.txt
+  2233 -rw-r--r-- 2 user user 14 Nov 27 23:15 lien_dur.txt
 
 $ [157/327]> cat lien_dur.txt
   cible du lien
@@ -1490,7 +1490,7 @@ $ [158/327]> ln -s cible_lien.txt lien_symbolique.txt
 <empty>
 
 $ [159/327]> ls -l lien_symbolique.txt
-  lrwxrwxrwx 1 user user 14 Nov 27 15:24 lien_symbolique.txt -> cible_lien.txt
+  lrwxrwxrwx 1 user user 14 Nov 27 23:15 lien_symbolique.txt -> cible_lien.txt
 
 $ [160/327]> cat lien_symbolique.txt
   cible du lien
@@ -1499,7 +1499,7 @@ $ [161/327]> ln -s /etc/passwd lien_passwd
 <empty>
 
 $ [162/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 user user 11 Nov 27 15:24 lien_passwd -> /etc/passwd
+  lrwxrwxrwx 1 user user 11 Nov 27 23:15 lien_passwd -> /etc/passwd
 
 $ [163/327]> readlink lien_symbolique.txt
   cible_lien.txt
@@ -1514,7 +1514,7 @@ $ [166/327]> ln -s cible_inexistante_xyz lien_casse
 <empty>
 
 $ [167/327]> ls -l lien_casse
-  lrwxrwxrwx 1 user user 21 Nov 27 15:24 lien_casse -> cible_inexistante_xyz
+  lrwxrwxrwx 1 user user 21 Nov 27 23:15 lien_casse -> cible_inexistante_xyz
 
 $ [168/327]> readlink lien_casse
   cible_inexistante_xyz
@@ -1523,7 +1523,7 @@ $ [169/327]> ln -sf /etc/hostname lien_passwd
 <empty>
 
 $ [170/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 user user 13 Nov 27 15:24 lien_passwd -> /etc/hostname
+  lrwxrwxrwx 1 user user 13 Nov 27 23:15 lien_passwd -> /etc/hostname
 
 $ [171/327]> ln
   ln: missing file operand
@@ -1673,9 +1673,9 @@ $ [190/327]> stat /etc/passwd
     Size: 334       	Blocks: 8          IO Block: 4096   regular file
   Device: 1h/1d	Inode: 467         Links: 1
   Access: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)
-  Access: 2026-11-27 15:24:27.441000000 +0000
-  Modify: 2026-11-27 15:24:27.426000000 +0000
-  Change: 2026-11-27 15:24:27.043000000 +0000
+  Access: 2026-11-27 23:15:52.401000000 +0000
+  Modify: 2026-11-27 23:15:52.385000000 +0000
+  Change: 2026-11-27 23:15:52.059000000 +0000
    Birth: -
 
 $ [191/327]> stat /etc
@@ -1683,9 +1683,9 @@ $ [191/327]> stat /etc
     Size: 0         	Blocks: 8          IO Block: 4096   directory
   Device: 1h/1d	Inode: 23          Links: 31
   Access: (0755/drwxr-xr-x)  Uid: (    0/    root)   Gid: (    0/    root)
-  Access: 2026-11-27 15:24:26.960000000 +0000
-  Modify: 2026-11-27 15:24:27.601000000 +0000
-  Change: 2026-11-27 15:24:26.960000000 +0000
+  Access: 2026-11-27 23:15:51.959000000 +0000
+  Modify: 2026-11-27 23:15:52.525000000 +0000
+  Change: 2026-11-27 23:15:51.959000000 +0000
    Birth: -
 
 $ [192/327]> stat -c "%n %s %a %U:%G" /etc/passwd
@@ -1701,7 +1701,7 @@ $ [195/327]> stat --format="%a %n" /etc/hostname
   644 /etc/hostname
 
 $ [196/327]> stat -t /etc/passwd
-  /etc/passwd 334 8 81a4 0 0 1 467 1 0 0 1795793067 1795793067 1795793067 0 4096
+  /etc/passwd 334 8 81a4 0 0 1 467 1 0 0 1795821352 1795821352 1795821352 0 4096
 
 $ [197/327]> file /etc/passwd
   /etc/passwd: ASCII text
@@ -2309,43 +2309,43 @@ $ [242/327]> touch perm.txt
 <empty>
 
 $ [243/327]> ls -l perm.txt
-  -rw-r--r-- 1 user user 0 Nov 27 15:24 perm.txt
+  -rw-r--r-- 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [244/327]> chmod 644 perm.txt
 <empty>
 
 $ [245/327]> ls -l perm.txt
-  -rw-r--r-- 1 user user 0 Nov 27 15:24 perm.txt
+  -rw-r--r-- 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [246/327]> chmod 755 perm.txt
 <empty>
 
 $ [247/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Nov 27 15:24 perm.txt
+  -rwxr-xr-x 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [248/327]> chmod u+x perm.txt
 <empty>
 
 $ [249/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Nov 27 15:24 perm.txt
+  -rwxr-xr-x 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [250/327]> chmod g-w perm.txt
 <empty>
 
 $ [251/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Nov 27 15:24 perm.txt
+  -rwxr-xr-x 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [252/327]> chmod o=r perm.txt
 <empty>
 
 $ [253/327]> ls -l perm.txt
-  -rwxr-xr-- 1 user user 0 Nov 27 15:24 perm.txt
+  -rwxr-xr-- 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [254/327]> chmod a+x perm.txt
 <empty>
 
 $ [255/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Nov 27 15:24 perm.txt
+  -rwxr-xr-x 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [256/327]> chmod 600 perm.txt
 <empty>
@@ -2360,7 +2360,7 @@ $ [259/327]> chmod -R 700 permdir
 <empty>
 
 $ [260/327]> ls -ld permdir
-  drwx------ 2 user user 4096 Nov 27 15:24 permdir
+  drwx------ 2 user user 4096 Nov 27 23:15 permdir
 
 $ [261/327]> umask
   0022
@@ -2381,7 +2381,7 @@ $ [266/327]> touch apres_umask.txt
 <empty>
 
 $ [267/327]> ls -l apres_umask.txt
-  -rw------- 1 user user 0 Nov 27 15:24 apres_umask.txt
+  -rw------- 1 user user 0 Nov 27 23:15 apres_umask.txt
 
 $ [268/327]> chmod 999 perm.txt
   chmod: invalid mode: ‘999’
@@ -2400,25 +2400,25 @@ $ [271/327]> chown root perm.txt
   chown: changing ownership of ‘perm.txt’: Operation not permitted
 
 $ [272/327]> ls -l perm.txt
-  -rw------- 1 user user 0 Nov 27 15:24 perm.txt
+  -rw------- 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [273/327]> chown root:root perm.txt
   chown: changing ownership of ‘perm.txt’: Operation not permitted
 
 $ [274/327]> ls -l perm.txt
-  -rw------- 1 user user 0 Nov 27 15:24 perm.txt
+  -rw------- 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [275/327]> chgrp root perm.txt
   chgrp: changing group of ‘perm.txt’: Operation not permitted
 
 $ [276/327]> ls -l perm.txt
-  -rw------- 1 user user 0 Nov 27 15:24 perm.txt
+  -rw------- 1 user user 0 Nov 27 23:15 perm.txt
 
 $ [277/327]> chown -R root:root permdir
   chown: changing ownership of ‘permdir’: Operation not permitted
 
 $ [278/327]> ls -ld permdir
-  drwx------ 2 user user 4096 Nov 27 15:24 permdir
+  drwx------ 2 user user 4096 Nov 27 23:15 permdir
 
 $ [279/327]> chown utilisateur_inexistant_xyz perm.txt
   chown: invalid user: ‘utilisateur_inexistant_xyz’
@@ -2462,13 +2462,13 @@ $ [291/327]> readlink -f /etc/passwd
   /etc/passwd
 
 $ [292/327]> mktemp
-  /tmp/tmp.dYY7TZcwze
+  /tmp/tmp.TYKUnISXQ2
 
 $ [293/327]> mktemp -d
-  /tmp/tmp.66cTexmyeD
+  /tmp/tmp.6DgEywuazS
 
 $ [294/327]> mktemp /tmp/debug.XXXXXX
-  /tmp/debug.gqrjOJ
+  /tmp/debug.Cqxphw
 
 $ [295/327]> basename
   basename: missing operand
@@ -2656,9 +2656,9 @@ $ [325/327]> find
   ./perm.txt
   ./permdir
   ./apres_umask.txt
-  ./tmp.dYY7TZcwze
-  ./tmp.66cTexmyeD
-  ./debug.gqrjOJ
+  ./tmp.TYKUnISXQ2
+  ./tmp.6DgEywuazS
+  ./debug.Cqxphw
   ./liste_etc.txt
   ./err.txt
   ./fin.txt

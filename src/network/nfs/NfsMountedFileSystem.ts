@@ -1,5 +1,5 @@
 import type { IPAddress } from '@/network/core/types';
-import type { RemoteMountPort, RemoteMountStat } from '@/network/devices/linux/VirtualFileSystem';
+import type { RemoteMountPort, RemoteMountSpace, RemoteMountStat } from '@/network/devices/linux/VirtualFileSystem';
 import type { FileType } from '@/network/devices/linux/VirtualFileSystem';
 import { Ftype3, NfsStatus } from './wire/NfsConstants';
 import type { NfsClient } from './NfsClient';
@@ -163,6 +163,25 @@ export class NfsMountedFileSystem implements RemoteMountPort {
     if (!parentHandle) return false;
     return this.client.actAs(uid, gid).mkdir(binding.server, parentHandle.handle, name, permissions)
       instanceof Uint8Array;
+  }
+
+  setTimes(path: string, times: { atimeMs?: number; mtimeMs?: number }, uid: number, gid: number): boolean {
+    const found = this.handleOf(path);
+    if (!found || found.binding.readOnly) return false;
+    return this.client.actAs(uid, gid).setTimes(found.binding.server, found.handle, times) === NfsStatus.NFS3_OK;
+  }
+
+  spaceOf(path: string): RemoteMountSpace | null {
+    const binding = this.bindingFor(path);
+    if (!binding) return null;
+    const answer = this.client.fsStat(binding.server, binding.rootHandle);
+    if (!answer || answer.status !== NfsStatus.NFS3_OK) return null;
+    return {
+      totalBytes: Number(answer.totalBytes),
+      freeBytes: Number(answer.freeBytes),
+      totalFiles: Number(answer.totalFiles),
+      freeFiles: Number(answer.freeFiles),
+    };
   }
 
   list(path: string): readonly string[] | null {

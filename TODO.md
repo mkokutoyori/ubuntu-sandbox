@@ -4771,10 +4771,6 @@ en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatect
 ### [oracle/sql] RECOVER ... UNTIL en SQL*Plus ne marque pas le besoin de RESETLOGS
 **Mesure** : seul le `RECOVER DATABASE UNTIL ...` de RMAN positionne `markIncompleteRecovery` ; la forme SQL*Plus `RECOVER DATABASE UNTIL CANCEL|TIME|CHANGE` ouvre sans ORA-01589.
 
-### [linux/nfs] `df` sur un montage NFS affiche des zeros, `touch` sur un fichier distant existant ne change pas son mtime
-**Mesure** : `df -h /mnt/backup_nfs` rend une taille 0 (la ligne est construite depuis la table de montage et l'inventaire des disques locaux, jamais depuis le serveur) ; Linux interroge FSSTAT. `touch` sur un fichier NFS existant rend 0 sans SETATTR : le fil FSSTAT et SETATTR existent cote serveur (`NfsServer.fsStat`, setattr), il manque le port `RemoteMountPort.statfs/setTimes` et un client synchrone jusqu'a `DfContext`.
-**Pas ferme** : chantier de plomberie a part (le contexte de `df` ne porte aucun client reseau) ; la creation par `touch` et les proprietaires uid/gid sont fermes (sonde `probe-nfs-client-identity-and-touch`).
-
 ### [oracle] Le super-utilisateur est admis comme OSDBA
 **Mesure** : `sqlplus / as sysdba` et `rman target /` lances par root passent meme si root n'est pas dans le groupe dba ; Oracle refuse (ORA-01031) tout utilisateur hors du groupe OSDBA, root compris. Les utilisateurs ordinaires hors dba sont refuses (sonde `probe-oracle-bequeath-needs-dba-group`).
 **Pas ferme** : toutes les machines de test et les labs tournent en root sans groupe dba ; exiger l'appartenance a root reecrit des centaines de tests.

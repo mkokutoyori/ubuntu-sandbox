@@ -108,6 +108,18 @@ function dfRow(
       inodesUsed: ctx.vfs.usedInodes(),
     };
   }
+  const remote = /^nfs/.test(entry.fstype) ? ctx.vfs.remoteSpaceOf(entry.target) : null;
+  if (remote !== null) {
+    const sizeKb = Math.floor(remote.totalBytes / 1024);
+    const availKb = Math.floor(remote.freeBytes / 1024);
+    const usedKb = Math.max(0, sizeKb - availKb);
+    return {
+      ...base, sizeKb, usedKb, availKb,
+      usePct: sizeKb === 0 ? 0 : Math.min(100, Math.ceil((usedKb / sizeKb) * 100)),
+      inodesTotal: remote.totalFiles,
+      inodesUsed: Math.max(0, remote.totalFiles - remote.freeFiles),
+    };
+  }
   const sizeKb = partSizeKb ?? TMPFS_SIZES_KB[entry.target] ?? 0;
   const usedKb = partSizeKb !== undefined
     ? Math.round(partSizeKb * DEFAULT_PARTITION_USE / 100)
