@@ -69,7 +69,7 @@ function readPool(section: ConfSection): PoolSettings | { error: string } {
 }
 
 const AUTHORIZE_QUERIES = ['client_query', 'simul_count_query', 'authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
-const OPERATORS = new Set<string>(['=', ':=', '+=', '-=', '==', '!=', '<', '>', '<=', '>=', '=~', '!~']);
+const OPERATORS = new Set<string>(['=', ':=', '+=', '-=', '==', '!=', '<', '>', '<=', '>=', '=~', '!~', '=*', '!*']);
 
 const SAFE_CHARACTERS = '@abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_: /';
 const SUPPORTED_DRIVER = 'rlm_sql_oracle';

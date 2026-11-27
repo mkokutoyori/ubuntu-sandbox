@@ -2,7 +2,7 @@ import { RADIUS_ATTR, type RadiusAttribute, type RadiusAttrType } from '@/networ
 import { isKnownGoodName, type KnownGoodItem } from '@/network/radius/KnownGoodPassword';
 import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, lookupVsaByName, type RadiusValueType } from '@/network/radius/dictionary';
 
-export type UsersOperator = '=' | ':=' | '+=' | '-=' | '==' | '!=' | '<' | '>' | '<=' | '>=' | '=~' | '!~';
+export type UsersOperator = '=' | ':=' | '+=' | '-=' | '==' | '!=' | '<' | '>' | '<=' | '>=' | '=~' | '!~' | '=*' | '!*';
 
 export interface UsersPair {
   name: string;
@@ -82,7 +82,7 @@ export interface UsersMatch {
   reply: RadiusAttribute[];
 }
 
-const OPERATORS: UsersOperator[] = ['=~', '!~', ':=', '+=', '-=', '==', '!=', '<=', '>=', '=', '<', '>'];
+const OPERATORS: UsersOperator[] = ['=~', '!~', '=*', '!*', ':=', '+=', '-=', '==', '!=', '<=', '>=', '=', '<', '>'];
 
 export type PairListResult = { ok: true; pairs: UsersPair[]; trailingComma: boolean } | { ok: false; error: string };
 
@@ -255,7 +255,7 @@ export function usersPairToAttribute(pair: UsersPair): RadiusAttribute | null {
 }
 
 function matches(op: UsersOperator, actual: string | number | undefined, wanted: string): boolean {
-  if (actual === undefined) return op === '!=' || op === '!~';
+  if (actual === undefined) return op === '!=' || op === '!~' || op === '!*';
   const left = String(actual);
   switch (op) {
     case '==': case '=': return left === wanted;
@@ -266,6 +266,8 @@ function matches(op: UsersOperator, actual: string | number | undefined, wanted:
     case '>=': return Number(left) >= Number(wanted);
     case '=~': return new RegExp(wanted).test(left);
     case '!~': return !new RegExp(wanted).test(left);
+    case '=*': return true;
+    case '!*': return false;
     default: return true;
   }
 }
