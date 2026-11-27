@@ -35,6 +35,10 @@ registerView({
         // typical Oracle deployment's `size 50m` redo log clause.
         Math.round(52_428_800 / 512),
         512,
+        new Date(l.firstTime),
+        1,
+        'NO',
+        instance.databaseRole === 'PHYSICAL STANDBY' && l.sequence <= instance.appliedSequence ? 'YES' : 'NO',
       ])
     );
   },
@@ -56,5 +60,9 @@ function columns() {
     { name: 'STATUS', dataType: oracleVarchar2(1) },
     { name: 'BLOCKS', dataType: oracleNumber(20) },
     { name: 'BLOCK_SIZE', dataType: oracleNumber(10) },
+    { name: 'COMPLETION_TIME', dataType: oracleDate() },
+    { name: 'DEST_ID', dataType: oracleNumber(10) },
+    { name: 'STANDBY_DEST', dataType: oracleVarchar2(3) },
+    { name: 'APPLIED', dataType: oracleVarchar2(9) },
   ];
 }

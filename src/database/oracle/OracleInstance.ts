@@ -951,6 +951,8 @@ export class OracleInstance {
       this.logAlert('Database mounted');
       if (asStandby) {
         this.setDatabaseRole('PHYSICAL STANDBY');
+        this._archiveLogMode = true;
+        this._parameters.set('archive_log_mode', 'ENABLED');
         this.logAlert('Physical standby database mounted');
       }
     });

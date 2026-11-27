@@ -54,6 +54,16 @@ export const LUMIERE_CHECKS: readonly LabCheck[] = [
     lesson: 'DC2, au site de reprise, est un controleur de domaine supplementaire : le domaine survit a la perte du siege.',
   },
   {
+    id: 'database-server-emits-a-log', device: 'ORA-PRD', shell: 'bash', command: 'logger -t lumiere-check "journal emis depuis le serveur de bases"; echo emis',
+    expects: [/emis/],
+    lesson: 'Les serveurs de bases et de sauvegarde envoient leurs journaux a LOG-HQ (rsyslog, UDP 514) : une sauvegarde RMAN laisse donc une trace centrale.',
+  },
+  {
+    id: 'log-server-received-it', device: 'LOG-HQ', shell: 'bash', command: 'grep lumiere-check /var/log/syslog',
+    expects: [/ora-prd/, /journal emis depuis le serveur de bases/],
+    lesson: 'LOG-HQ range le message recu sous le nom de la machine emettrice.',
+  },
+  {
     id: 'aaa-server-answers-network-admin', device: 'LOG-HQ', shell: 'bash', command: 'radtest netadmin Net@Lum1ere! 127.0.0.1 0 testing123',
     expects: [/Received Access-Accept/, /Cisco-AVPair = "shell:priv-lvl=15"/],
     lesson: 'FreeRADIUS sur LOG-HQ authentifie les administrateurs reseau et renvoie leur niveau de privilege IOS (Cisco-AVPair).',

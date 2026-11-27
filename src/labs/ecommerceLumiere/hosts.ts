@@ -31,3 +31,8 @@ export async function configureWindows(
     `Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ServerAddresses ${dnsServers.join(',')}`,
   );
 }
+
+export async function forwardSyslog(bench: LabWorkbench, device: Equipment, logServer: string, port: number): Promise<void> {
+  await bench.writeFile(device, '/etc/rsyslog.d/90-forward-lumiere.conf', `*.* @${logServer}:${port}`);
+  await bench.shell(device, 'sudo systemctl restart rsyslog');
+}
