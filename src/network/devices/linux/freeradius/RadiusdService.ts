@@ -387,6 +387,8 @@ export class RadiusdService {
     if (this.running) return { ok: true };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
+    const unreachable = this.sqlStartFailure(loaded.sqlModules);
+    if (unreachable !== undefined) return { ok: false, error: unreachable };
     this.controlSockets = loaded.site.controlSockets;
     const specs: ListenerSpec[] = listen.authPort === undefined ? loaded.site.listeners : [
       { type: 'auth', address: listen.address ?? null, port: listen.authPort, server: 'default', file: '', line: 0 },
@@ -512,6 +514,8 @@ export class RadiusdService {
     if (!this.running) return { ok: false, error: 'freeradius is not running' };
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
+    const unreachable = this.sqlStartFailure(loaded.sqlModules);
+    if (unreachable !== undefined) return { ok: false, error: unreachable };
     this.applyConfig(loaded);
     return { ok: true };
   }
@@ -1296,6 +1300,17 @@ export class RadiusdService {
       ...(tls.cache === undefined ? {} : { resumption: { store: this.eapTicketStore, lifetimeSeconds: tls.cache.lifetimeHours * 3600 } }),
       ...(module.defaultType === 'peap' ? { innerAuth: module.peapInner === 'md5' ? new PeapMd5InnerAuthServer(lookup) : new PeapMsChapV2InnerAuthServer(lookup) } : module.defaultType === 'ttls' ? { innerAuth: new TtlsPapInnerAuthServer(lookup) } : {}),
     };
+  }
+
+  private sqlStartFailure(configs: SqlModuleConfig[]): string | undefined {
+    for (const config of configs) {
+      const probe = new SqlModuleInstance(config, () => this.sqlConnector, () => undefined, () => this.wallClock.nowMs());
+      probe.start();
+      const failure = probe.startFailure();
+      probe.close();
+      if (failure !== undefined) return `rlm_sql (${config.name}): Failed to connect to the database: ${failure}; Instantiation failed for module "${config.name}"`;
+    }
+    return undefined;
   }
 
   private clientsFromSql(): RadiusClientEntry[] {

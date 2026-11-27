@@ -152,6 +152,7 @@ interface PooledSession {
 export class SqlModuleInstance {
   private pool: PooledSession[] = [];
   private retryNotBefore = 0;
+  private openFailure: string | undefined;
 
   constructor(readonly config: SqlModuleConfig, private readonly connector: () => SqlConnector | null, private readonly log: (message: string) => void, private readonly now: () => number = () => 0) {}
 
@@ -159,6 +160,10 @@ export class SqlModuleInstance {
 
   start(): void {
     for (let index = 0; index < this.config.pool.start; index++) if (this.connectOne() === null) break;
+  }
+
+  startFailure(): string | undefined {
+    return this.config.pool.start > 0 && this.pool.length === 0 ? this.openFailure : undefined;
   }
 
   openConnections(): number { return this.pool.length; }
@@ -174,6 +179,7 @@ export class SqlModuleInstance {
     const opened = connect({ connectString: this.config.connectString, login: this.config.login, password: this.config.password });
     if ('error' in opened) {
       this.log(`rlm_sql (${this.config.name}): Opening connection failed: ${opened.error}`);
+      this.openFailure = opened.error;
       this.retryNotBefore = t + this.config.pool.retryDelaySeconds * 1000;
       return null;
     }

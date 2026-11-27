@@ -8,6 +8,7 @@
  * known good password, Fall-Through, reply), so one grammar answers both; they cross a real Oracle Net session to another host, counted on its port. Still refused where
  * used: sql in post-auth and session, map sql, read_clients.
  *
+ * Startup failure added later: a database unreachable at start stops the service (1 of 15 falls on git stash of src/network; its witness passes either way).
  * Lazy group read added later: the last case (a broken group_membership_query is not sent for a user with its own entry and no Fall-Through) is the 1 case of 13 that falls on git stash of src/network.
  *
  * Discriminated with git stash on src/network: 7 of 12 fall before the fix (every case that needs a row of the database to be read, applied or refused for its operator). The five
@@ -175,5 +176,17 @@ describe('rlm_sql: authorize', () => {
     const { client } = await lab(true, broken);
     expect(accepted(await ask(client, 'alice'))).toBe(true);
     expect(accepted(await ask(client, 'carl'))).toBe(false);
+  });
+
+  it('a database that cannot be reached at start refuses to instantiate the module: the service does not start, as FreeRADIUS refuses', async () => {
+    const { radius, client } = await lab(true, '  radius_db = "//10.0.0.9/ORCL"');
+    expect(await radius.executeCommand('systemctl is-active freeradius')).not.toMatch(/^active/);
+    expect(accepted(await ask(client, 'zed'))).toBe(false);
+  });
+
+  it('witness for the case above: the same lab with the reachable database starts and answers', async () => {
+    const { client, started } = await lab(true);
+    expect(started).not.toContain('Failed');
+    expect(accepted(await ask(client, 'zed'))).toBe(true);
   });
 });
