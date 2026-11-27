@@ -85,7 +85,7 @@ export function backupSetLines(sets: ReadonlyArray<BackupSet>, ctx?: { hostZoneN
       lines.push(`          Piece Name: ${piece.path}`);
     }
     if (set.type === 'CONTROLFILE') {
-      lines.push('  Control File Included: Ckp SCN: 1892354    Ckp time: '
+      lines.push(`  Control File Included: Ckp SCN: ${set.pieces[0]?.checkpointScn.value ?? 0}    Ckp time: `
         + formatOracleDate(wall(set.completionTime)));
     }
     if (set.datafiles.length > 0) {

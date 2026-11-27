@@ -116,13 +116,11 @@ export class NfsMountedFileSystem implements RemoteMountPort {
       const { parent, name } = splitTail(path);
       const parentHandle = this.handleOf(parent);
       if (!parentHandle) return false;
-      const created = this.client.create(binding.server, parentHandle.handle, name, 0o644 & ~0o022);
+      const created = this.client.actAs(uid, gid).create(binding.server, parentHandle.handle, name, 0o644 & ~0o022);
       if (!(created instanceof Uint8Array)) return false;
       target = { binding, handle: created };
     }
-    void uid;
-    void gid;
-    return this.client.write(binding.server, target.handle, fromLatin1(content))
+    return this.client.actAs(uid, gid).write(binding.server, target.handle, fromLatin1(content))
       === NfsStatus.NFS3_OK;
   }
 
@@ -145,9 +143,7 @@ export class NfsMountedFileSystem implements RemoteMountPort {
     const { parent, name } = splitTail(path);
     const parentHandle = this.handleOf(parent);
     if (!parentHandle) return false;
-    void uid;
-    void gid;
-    return this.client.mkdir(binding.server, parentHandle.handle, name, permissions)
+    return this.client.actAs(uid, gid).mkdir(binding.server, parentHandle.handle, name, permissions)
       instanceof Uint8Array;
   }
 

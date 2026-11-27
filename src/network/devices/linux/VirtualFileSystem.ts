@@ -879,6 +879,8 @@ export class VirtualFileSystem {
   }
 
   touch(path: string, uid: number, gid: number, umask: number): boolean {
+    const remote = this.remoteFor(path);
+    if (remote) return remote.stat(this.canonicalKey(path)) !== null || remote.write(this.canonicalKey(path), '', uid, gid);
     const existing = this.resolveInode(path);
     if (existing) {
       existing.mtime = this.nowMs();

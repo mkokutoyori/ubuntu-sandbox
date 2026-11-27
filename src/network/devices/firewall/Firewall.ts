@@ -3752,8 +3752,15 @@ export class Firewall extends Equipment {
 
   private forwardThroughTunnel(tunnelName: string, packet: IPv4Packet): void {
     const vdom = this.vdoms.contextOfInterface(tunnelName);
-    for (const leg of sealedLegs(
-      this.ipsec, vdom.tunnels, vdom.routes, tunnelName, packet)) {
+    const legs = sealedLegs(this.ipsec, vdom.tunnels, vdom.routes, tunnelName, packet);
+    const tooBig = this.ipsec.lastEncapICMP;
+    if (legs.length === 0 && tooBig !== null) {
+      this.ipsec.lastEncapICMP = null;
+      const back = vdom.routes.resolveNextHop(packet.sourceIP.toString())?.iface;
+      if (back !== undefined) this.sendFragmentationNeeded(back, tooBig.originalPkt, tooBig.mtu);
+      return;
+    }
+    for (const leg of legs) {
       this.forward(leg.iface, leg.packet, leg.gateway);
     }
   }

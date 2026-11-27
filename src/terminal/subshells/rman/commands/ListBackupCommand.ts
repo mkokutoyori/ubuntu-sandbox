@@ -50,7 +50,11 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
 
   execute(args: string[], { catalog, policy, ctx }: RmanCommandContext): Result<string[], RmanError> {
     if (this.variant === 'INCARNATION') {
-      const rows = [
+      const known = ctx.getIncarnations?.() ?? [];
+      const rows = known.length > 0 ? known.map(inc => ({
+        incKey: inc.key, status: inc.status, resetScn: inc.resetScn,
+        resetTime: rmanWallDay(rmanWall(ctx, inc.resetTime.getTime())),
+      })) : [
         {
           incKey: 1, status: 'PARENT', resetScn: 1,
           resetTime: rmanWallDay(rmanWall(ctx, rmanNowMs(ctx) - 86_400_000)),

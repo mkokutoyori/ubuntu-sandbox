@@ -110,6 +110,8 @@ export interface IRmanOracleContext {
   receiveDatafile?(datafile: ShippedDatafile): Result<void, RmanError>;
   checkpointDatafiles?(): void;
   getCurrentScn?(): number;
+  markIncompleteRecovery?(): void;
+  getIncarnations?(): ReadonlyArray<{ key: number; resetScn: number; resetTime: Date; status: 'CURRENT' | 'PARENT' }>;
   runSqlStatement?(statement: string): SqlStatementOutcome;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
   recordBackupPieceDeleted?(handle: string): void;

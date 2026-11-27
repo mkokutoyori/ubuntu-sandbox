@@ -1,59 +1,59 @@
 ============================================================
 RMAN debug transcript — rman-wan-disaster-recovery-pre
-Generated: 2026-10-12T09:42:13.688Z
+Generated: 2026-11-27T13:17:38.715Z
 Topology:  WAN — A-prim/A-rcat (10.40.0.0/24) ↔ B-dr/B-witness (10.50.0.0/24) — pre-disaster
 Total commands: 85
 ============================================================
 
 @prim banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 12-OCT-2026 09:42:13
+  Recovery Manager: Release 19.0.0.0.0 - Production on 27-NOV-2026 13:17:38
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=1250812647)
+  connected to target database: ORCL (DBID=2352830490)
   
 
 @rcat banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 12-OCT-2026 09:42:13
+  Recovery Manager: Release 19.0.0.0.0 - Production on 27-NOV-2026 13:17:38
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=1489317896)
+  connected to target database: ORCL (DBID=1417343140)
   
 
 @dr banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 12-OCT-2026 09:42:13
+  Recovery Manager: Release 19.0.0.0.0 - Production on 27-NOV-2026 13:17:38
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=2486010860)
+  connected to target database: ORCL (DBID=3011510069)
   
 
 @witness banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 12-OCT-2026 09:42:13
+  Recovery Manager: Release 19.0.0.0.0 - Production on 27-NOV-2026 13:17:38
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=3860726512)
+  connected to target database: ORCL (DBID=3621245131)
   
 
 
 --- [1] § P1 — handshake ---
 @prim [1/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=1250812647)
+  connected to target database: ORCL (DBID=2352830490)
 
 @rcat [2/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=1489317896)
+  connected to target database: ORCL (DBID=1417343140)
 
 @dr [3/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=2486010860)
+  connected to target database: ORCL (DBID=3011510069)
 
 @witness [4/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=3860726512)
+  connected to target database: ORCL (DBID=3621245131)
 
 @prim [5/85]> CONNECT CATALOG rman/rman@RCAT
   RMAN-00571: ===========================================================
@@ -131,6 +131,7 @@ Total commands: 85
   CONFIGURE COMPRESSION ALGORITHM 'BASIC' AS OF RELEASE 'DEFAULT' OPTIMIZE FOR LOAD TRUE;
   CONFIGURE EXCLUDE FOR TABLESPACE TEMP; # default, cleared if explicit
   CONFIGURE ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY;
+  CONFIGURE SNAPSHOT CONTROLFILE NAME TO '/u01/app/oracle/product/19c/dbhome_1/dbs/snapcf_ORCL.f'; # default
   
 
 @dr [21/85]> CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 30 DAYS
@@ -168,6 +169,7 @@ Total commands: 85
   CONFIGURE COMPRESSION ALGORITHM 'BASIC' AS OF RELEASE 'DEFAULT' OPTIMIZE FOR LOAD TRUE;
   CONFIGURE EXCLUDE FOR TABLESPACE TEMP; # default, cleared if explicit
   CONFIGURE ARCHIVELOG DELETION POLICY TO NONE;
+  CONFIGURE SNAPSHOT CONTROLFILE NAME TO '/u01/app/oracle/product/19c/dbhome_1/dbs/snapcf_ORCL.f'; # default
   
 
 @witness [28/85]> CONFIGURE RETENTION POLICY TO REDUNDANCY 1
@@ -190,100 +192,126 @@ Total commands: 85
   CONFIGURE COMPRESSION ALGORITHM 'BASIC' AS OF RELEASE 'DEFAULT' OPTIMIZE FOR LOAD TRUE;
   CONFIGURE EXCLUDE FOR TABLESPACE TEMP; # default, cleared if explicit
   CONFIGURE ARCHIVELOG DELETION POLICY TO NONE;
+  CONFIGURE SNAPSHOT CONTROLFILE NAME TO '/u01/app/oracle/product/19c/dbhome_1/dbs/snapcf_ORCL.f'; # default
   
 
 
 --- [30] § P2 — primary daily cadence ---
 @prim [30/85]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'DC1_BASE'
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_nnnd0_DC1_BASE_cb2psm4u_.bkp tag=DC1_BASE
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_01tp5wxe_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_kben2nwi_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-01.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [31/85]> BACKUP DATABASE TAG 'DC1_FULL_MON' PLUS ARCHIVELOG DELETE INPUT
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_01tp5wxe_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_annnn_TAG20261012T094213_b52x8jdp_.bkp tag=TAG20261012T094213
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_01tp5wxe_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_k2p01gkr_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-01.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [32/85]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=105 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_ncsnf_TAG20261012T094213_j8kgu9bb_.bkp tag=TAG20261012T094213
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_27/o1_mf_ncsnf_TAG20261127T131738_qyd2b2ze_.bkp tag=TAG20261127T131738
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
+  Finished backup at 27-NOV-2026 13:17:39
   
 
 @prim [33/85]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'DC1_L1_TUE'
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=106 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=107 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_3i7qfzxm_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [34/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=108 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -292,44 +320,55 @@ Total commands: 85
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of backup command at 12-OCT-2026 09:42:13
-  RMAN-19811: ORA-19809: limit exceeded for recovery files
-  ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=109 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_3ger5e17_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [35/85]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE TAG 'DC1_L1_CUM_WED'
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=110 device type=DISK
   channel ORA_DISK_1: starting cumulative incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=111 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_x9qstf9t_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [36/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=112 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -338,44 +377,55 @@ Total commands: 85
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of backup command at 12-OCT-2026 09:42:13
-  RMAN-19811: ORA-19809: limit exceeded for recovery files
-  ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=113 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_jdc969ro_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [37/85]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'DC1_L1_THU'
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=114 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=115 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_wc8br1yz_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [38/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=116 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -384,44 +434,55 @@ Total commands: 85
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of backup command at 12-OCT-2026 09:42:13
-  RMAN-19811: ORA-19809: limit exceeded for recovery files
-  ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=117 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_9ovrwjeg_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [39/85]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE TAG 'DC1_L1_CUM_FRI'
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=118 device type=DISK
   channel ORA_DISK_1: starting cumulative incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=119 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_x9cfezn9_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [40/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=120 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -430,19 +491,22 @@ Total commands: 85
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of backup command at 12-OCT-2026 09:42:13
-  RMAN-19811: ORA-19809: limit exceeded for recovery files
-  ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_02tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=121 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_ibkctchk_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [41/85]> LIST BACKUP SUMMARY
   
@@ -450,19 +514,7 @@ Total commands: 85
   ===============
   Key     TY LV S Device Type Completion Time      #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- -------------------- ------- ------- ---------- ------------------
-  1       B  0  A DISK        12-OCT-2026 09:42:13 1       1       NO         DC1_BASE
-  2       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  3       B  A  A DISK        12-OCT-2026 09:42:13 1       1       NO         TAG20261012T094213
-  4       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  5       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         TAG20261012T094213
-  6       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  7       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  8       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  9       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  10      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  11      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  12      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  13      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
+  1       B  F  A DISK        27-NOV-2026 13:17:39 1       1       NO         TAG20261127T131738
   
 
 @prim [42/85]> REPORT NEED BACKUP
@@ -472,10 +524,10 @@ Total commands: 85
   Report of files that must be backed up to satisfy 30 days recovery window
   File Days  Name
   ---- ----- -----------------------------------------------------
-  1    0     /u01/app/oracle/oradata/ORCL/system01.dbf
-  2    0     /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-  3    0     /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-  4    0     /u01/app/oracle/oradata/ORCL/users01.dbf
+  1    30    /u01/app/oracle/oradata/ORCL/system01.dbf
+  2    30    /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+  3    30    /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+  4    30    /u01/app/oracle/oradata/ORCL/users01.dbf
   
 
 @prim [43/85]> RESYNC CATALOG
@@ -488,7 +540,7 @@ Total commands: 85
 --- [44] § P2 — VALIDATE sweep ---
 @prim [44/85]> VALIDATE DATABASE
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=122 device type=DISK
   channel ORA_DISK_1: starting validation of database
@@ -497,21 +549,21 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  1    OK     0              102399       102400          1000322
+  1    OK     0              102399       102400          1000327
   File Name: /u01/app/oracle/oradata/ORCL/system01.dbf
-  2    OK     0              70399        70400           1000322
+  2    OK     0              70399        70400           1000327
   File Name: /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-  3    OK     0              25599        25600           1000322
+  3    OK     0              25599        25600           1000327
   File Name: /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-  4    OK     0              12771        12800           1000322
+  4    OK     0              12771        12800           1000327
   File Name: /u01/app/oracle/oradata/ORCL/users01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [45/85]> VALIDATE TABLESPACE SYSTEM
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=123 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace SYSTEM
@@ -520,15 +572,15 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  1    OK     0              102399       102400          1000322
+  1    OK     0              102399       102400          1000327
   File Name: /u01/app/oracle/oradata/ORCL/system01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [46/85]> VALIDATE TABLESPACE USERS
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=124 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace USERS
@@ -537,15 +589,15 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  4    OK     0              12771        12800           1000322
+  4    OK     0              12771        12800           1000327
   File Name: /u01/app/oracle/oradata/ORCL/users01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [47/85]> VALIDATE TABLESPACE SYSAUX
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=125 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace SYSAUX
@@ -554,15 +606,15 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  2    OK     0              70399        70400           1000322
+  2    OK     0              70399        70400           1000327
   File Name: /u01/app/oracle/oradata/ORCL/sysaux01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [48/85]> VALIDATE TABLESPACE UNDOTBS1
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=126 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace UNDOTBS1
@@ -571,15 +623,15 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  3    OK     0              25599        25600           1000322
+  3    OK     0              25599        25600           1000327
   File Name: /u01/app/oracle/oradata/ORCL/undotbs01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [49/85]> VALIDATE DATAFILE 1
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=127 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 1
@@ -588,15 +640,15 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  1    OK     0              102399       102400          1000322
+  1    OK     0              102399       102400          1000327
   File Name: /u01/app/oracle/oradata/ORCL/system01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [50/85]> VALIDATE DATAFILE 2
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=128 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 2
@@ -605,15 +657,15 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  2    OK     0              70399        70400           1000322
+  2    OK     0              70399        70400           1000327
   File Name: /u01/app/oracle/oradata/ORCL/sysaux01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [51/85]> VALIDATE DATAFILE 3
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=129 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 3
@@ -622,15 +674,15 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  3    OK     0              25599        25600           1000322
+  3    OK     0              25599        25600           1000327
   File Name: /u01/app/oracle/oradata/ORCL/undotbs01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [52/85]> VALIDATE DATAFILE 4
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=130 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 4
@@ -639,71 +691,47 @@ Total commands: 85
   =================
   File Status Marked Corrupt Empty Blocks Blocks Examined High SCN
   ---- ------ -------------- ------------ --------------- ----------
-  4    OK     0              12771        12800           1000322
+  4    OK     0              12771        12800           1000327
   File Name: /u01/app/oracle/oradata/ORCL/users01.dbf
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [53/85]> VALIDATE BACKUPSET 1
   
-  Starting validate at 12-OCT-2026 09:42:13
+  Starting validate at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=131 device type=DISK
   channel ORA_DISK_1: starting validation of backupset 1
   channel ORA_DISK_1: validating backupset 1
-  channel ORA_DISK_1: backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_nnnd0_DC1_BASE_cb2psm4u_.bkp
+  channel ORA_DISK_1: backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_27/o1_mf_ncsnf_TAG20261127T131738_qyd2b2ze_.bkp
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
+  Finished validate at 27-NOV-2026 13:17:39
   
 
 @prim [54/85]> VALIDATE BACKUPSET 2
-  
-  Starting validate at 12-OCT-2026 09:42:13
-  allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=132 device type=DISK
-  channel ORA_DISK_1: starting validation of backupset 2
-  channel ORA_DISK_1: validating backupset 2
-  channel ORA_DISK_1: backup piece /u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_kben2nwi_.bkp
-  channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
-  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-06004: backupset 2 not found in catalog
 
 @prim [55/85]> VALIDATE BACKUPSET 3
-  
-  Starting validate at 12-OCT-2026 09:42:13
-  allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=133 device type=DISK
-  channel ORA_DISK_1: starting validation of backupset 3
-  channel ORA_DISK_1: validating backupset 3
-  channel ORA_DISK_1: backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_annnn_TAG20261012T094213_b52x8jdp_.bkp
-  channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
-  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-06004: backupset 3 not found in catalog
 
 @prim [56/85]> VALIDATE BACKUPSET 4
-  
-  Starting validate at 12-OCT-2026 09:42:13
-  allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=134 device type=DISK
-  channel ORA_DISK_1: starting validation of backupset 4
-  channel ORA_DISK_1: validating backupset 4
-  channel ORA_DISK_1: backup piece /u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_k2p01gkr_.bkp
-  channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
-  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-06004: backupset 4 not found in catalog
 
 @prim [57/85]> VALIDATE BACKUPSET 5
-  
-  Starting validate at 12-OCT-2026 09:42:13
-  allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=135 device type=DISK
-  channel ORA_DISK_1: starting validation of backupset 5
-  channel ORA_DISK_1: validating backupset 5
-  channel ORA_DISK_1: backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_ncsnf_TAG20261012T094213_j8kgu9bb_.bkp
-  channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished validate at 12-OCT-2026 09:42:13
-  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-06004: backupset 5 not found in catalog
 
 
 --- [58] § P2 — catalog reports ---
@@ -859,59 +887,71 @@ Total commands: 85
 --- [78] § P3 — DR own baseline ---
 @dr [78/85]> BACKUP DATABASE TAG 'DC2_BASE'
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_nnndf_DC2_BASE_1r5h9r72_.bkp tag=DC2_BASE
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc2/ORCL_20261127_02tp5wxe_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_wzy4s5wm_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc2/cf_c-3011510069-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @dr [79/85]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_annnn_TAG20261012T094213_0qt802kn_.bkp tag=TAG20261012T094213
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc2/ORCL_20261127_02tp5wxe_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_ckxhrdzy_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:38
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc2/cf_c-3011510069-20261127-02.bkp"
+  ORA-27040: file create error, unable to create file
 
 @dr [80/85]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:38
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_ncsnf_TAG20261012T094213_ig0he0rf_.bkp tag=TAG20261012T094213
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_27/o1_mf_ncsnf_TAG20261127T131738_cyetrsge_.bkp tag=TAG20261127T131738
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
+  Finished backup at 27-NOV-2026 13:17:39
   
 
 @dr [81/85]> LIST BACKUP SUMMARY
@@ -920,71 +960,78 @@ Total commands: 85
   ===============
   Key     TY LV S Device Type Completion Time      #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- -------------------- ------- ------- ---------- ------------------
-  14      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         DC2_BASE
-  15      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  16      B  A  A DISK        12-OCT-2026 09:42:13 1       1       NO         TAG20261012T094213
-  17      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  18      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         TAG20261012T094213
+  2       B  F  A DISK        27-NOV-2026 13:17:39 1       1       NO         TAG20261127T131738
   
 
 
 --- [82] § P4 — disaster! ---
 @prim [82/85]> BACKUP DATABASE TAG 'DC1_FINAL_FAREWELL'
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=136 device type=DISK
+  channel ORA_DISK_1: SID=132 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_03tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=137 device type=DISK
+  channel ORA_DISK_1: SID=133 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_e0nm71sk_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-03.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [83/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=138 device type=DISK
+  channel ORA_DISK_1: SID=134 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
   
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of backup command at 12-OCT-2026 09:42:13
-  RMAN-19811: ORA-19809: limit exceeded for recovery files
-  ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/ORCL_20261127_03tp5wxf_1_1.bkp"
+  ORA-27040: file create error, unable to create file
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=139 device type=DISK
+  channel ORA_DISK_1: SID=135 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/autobackup/2026_10_12/o1_mf_s_AUTOBACKUP_l6wzktfp_.bkp tag=AUTOBACKUP
-  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
   
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: failure of backup command at 27-NOV-2026 13:17:39
+  RMAN-19625: ORA-19504: failed to create file "/u01/dc1/cf_c-2352830490-20261127-03.bkp"
+  ORA-27040: file create error, unable to create file
 
 @prim [84/85]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 12-OCT-2026 09:42:13
+  Starting backup at 27-NOV-2026 13:17:39
   allocated channel: ORA_DISK_1
-  channel ORA_DISK_1: SID=140 device type=DISK
+  channel ORA_DISK_1: SID=136 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_10_12/o1_mf_ncsnf_TAG20261012T094213_g1upr15d_.bkp tag=TAG20261012T094213
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_27/o1_mf_ncsnf_TAG20261127T131739_q6gwe80p_.bkp tag=TAG20261127T131739
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 12-OCT-2026 09:42:13
+  Finished backup at 27-NOV-2026 13:17:40
   
 
 @prim [85/85]> LIST BACKUP SUMMARY
@@ -993,20 +1040,6 @@ Total commands: 85
   ===============
   Key     TY LV S Device Type Completion Time      #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- -------------------- ------- ------- ---------- ------------------
-  1       B  0  A DISK        12-OCT-2026 09:42:13 1       1       NO         DC1_BASE
-  2       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  3       B  A  A DISK        12-OCT-2026 09:42:13 1       1       NO         TAG20261012T094213
-  4       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  5       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         TAG20261012T094213
-  6       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  7       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  8       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  9       B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  10      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  11      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  12      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  13      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  19      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  20      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         AUTOBACKUP
-  21      B  F  A DISK        12-OCT-2026 09:42:13 1       1       NO         TAG20261012T094213
+  1       B  F  A DISK        27-NOV-2026 13:17:39 1       1       NO         TAG20261127T131738
+  3       B  F  A DISK        27-NOV-2026 13:17:40 1       1       NO         TAG20261127T131739
   

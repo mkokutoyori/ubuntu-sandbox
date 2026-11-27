@@ -115,7 +115,8 @@ export class InstanceAdminExecutor {
       return emptyResult(this.instance.setArchiveLogMode(false));
     }
     if (stmt.action === 'OPEN') {
-      this.instance.openDatabase(stmt.details === 'READ ONLY');
+      const resetlogs = stmt.details === 'RESETLOGS' || stmt.details === 'NORESETLOGS' ? stmt.details : undefined;
+      this.instance.openDatabase(stmt.details === 'READ ONLY', resetlogs);
       return emptyResult('Database altered.');
     }
     if (stmt.action === 'MOUNT') {

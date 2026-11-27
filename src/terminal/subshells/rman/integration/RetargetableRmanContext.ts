@@ -40,6 +40,8 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   getRecoveryAreaUsedBytes(): number { return this._current.getRecoveryAreaUsedBytes(); }
   checkpointDatafiles(): void { this._current.checkpointDatafiles(); }
   getCurrentScn(): number { return this._current.getCurrentScn(); }
+  markIncompleteRecovery(): void { this._current.markIncompleteRecovery(); }
+  getIncarnations() { return this._current.getIncarnations(); }
   runSqlStatement(statement: string): SqlStatementOutcome {
     return this._current.runSqlStatement(statement);
   }

@@ -53,6 +53,13 @@ export function rmanNowMs(ctx: { hostNowMs?(): number } | undefined): number {
   return ctx?.hostNowMs?.() ?? simulationNowMs();
 }
 
+export const RMAN_FALLBACK_SCN = 1_892_354;
+
+export function rmanCurrentScn(ctx: { getCurrentScn?(): number } | undefined): number {
+  const scn = ctx?.getCurrentScn?.() ?? 0;
+  return scn > 0 ? scn : RMAN_FALLBACK_SCN;
+}
+
 export function rmanWall(
   ctx: { hostZoneName?(): string; hostNowMs?(): number } | undefined,
   atMs: number = rmanNowMs(ctx),

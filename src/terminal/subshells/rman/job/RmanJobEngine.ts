@@ -36,7 +36,7 @@ import type { DatafileEntry, BackupSet } from '../catalog/types';
 import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
-import { generatePieceName, oracleStamp, rmanNowMs, rmanWall, simulateBackupElapsedMs } from '../core/pureUtils';
+import { generatePieceName, oracleStamp, rmanCurrentScn, rmanNowMs, rmanWall, simulateBackupElapsedMs } from '../core/pureUtils';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { snapshotControlfilePath } from '../core/snapshotControlfile';
@@ -249,8 +249,9 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
 
+    const jobScn = rmanCurrentScn(this._ctx);
     const dfEntries: DatafileEntry[] = (isControlfile || isSpfile) ? [] : datafiles.map(df => {
-      const ckp = Scn.of(1_892_354);
+      const ckp = Scn.of(jobScn);
       return Object.freeze({
         fileNo: df.fileNo, level: incLevel ?? (0 as 0 | 1),
         ckpScn: ckp.ok ? ckp.value : Scn.ZERO,
@@ -278,7 +279,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     // Chaque copie va dans son propre BackupSet de type DATAFILECOPY.
     if ((params.asCopy === 'true' || posePremiereCopie)
       && !isControlfile && !isSpfile && !isArchivelog) {
-      const ckpR = Scn.of(1_892_354);
+      const ckpR = Scn.of(jobScn);
       const ckp = ckpR.ok ? ckpR.value : Scn.ZERO;
       this._ctx.checkpointDatafiles?.();
       const imagesCopiees = this._readDatafileImages(datafiles);
@@ -297,6 +298,7 @@ export class RmanJobEngine implements IRmanJobEngine {
         const elapsedMs = simulateBackupElapsedMs(df.sizeBytes);
         this._ctx.spendHostTime?.(elapsedMs);
         const set = BackupSetFactory.createBackupSet({
+          scn: jobScn,
           type: 'DATAFILECOPY', level: 0, path: copyPath,
           sizeBytes: df.sizeBytes, tag, nowMs: rmanNowMs(this._ctx), elapsedMs,
           datafiles: [Object.freeze({
@@ -373,6 +375,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       const elapsedMs = simulateBackupElapsedMs(size);
       this._ctx.spendHostTime?.(elapsedMs);
       const set = BackupSetFactory.createBackupSet({
+        scn: jobScn,
         type, level, path, sizeBytes: size, tag, nowMs: rmanNowMs(this._ctx), elapsedMs,
         datafiles: i === 1 ? dfEntries : [],
         compressed, encrypted, keepNote,
@@ -913,8 +916,8 @@ export class RmanJobEngine implements IRmanJobEngine {
       return err({ code: 'RMAN_06403', message: 'database must be mounted or open' });
     }
     const params = job.params ?? {};
-    let fromValue = 1_892_354;
-    let toValue = 1_892_500;
+    let fromValue = rmanCurrentScn(this._ctx);
+    let toValue = fromValue;
     if (params.untilScn !== undefined) {
       const r = Scn.of(params.untilScn);
       if (r.ok === false) return r;
@@ -944,6 +947,9 @@ export class RmanJobEngine implements IRmanJobEngine {
         type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'recover_datafile',
         pct: 40, message: `recovering datafile ${params.fileNo}`,
       });
+    }
+    if (params.untilScn !== undefined || params.untilTime !== undefined || params.untilCancel === 'true') {
+      this._ctx.markIncompleteRecovery?.();
     }
     const from = Scn.of(fromValue);
     const to   = Scn.of(toValue);

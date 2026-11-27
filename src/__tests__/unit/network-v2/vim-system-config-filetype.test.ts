@@ -91,6 +91,7 @@ describe('Scénario 9 — /etc/fstab : création, filetype, validation mount --f
     expect(written).toContain('/mnt/ramtest');
     expect(written).toContain('tmpfs');
 
+    await pc.executeCommandInSession('mkdir -p /mnt/ramtest', rootSession);
     const mountFake = await pc.executeCommandInSession('mount --fake -a; echo EXIT=$?', rootSession);
     expect(mountFake.trim()).toBe('EXIT=0');
 

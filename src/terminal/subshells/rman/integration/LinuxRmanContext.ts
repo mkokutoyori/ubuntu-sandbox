@@ -212,6 +212,14 @@ export class LinuxRmanContext implements IRmanOracleContext {
     if (state) state.entry.needsRecovery = needsRecovery;
   }
 
+  markIncompleteRecovery(): void {
+    this._oracle?.instance.markIncompleteRecovery();
+  }
+
+  getIncarnations() {
+    return this._oracle?.instance.getIncarnations() ?? [];
+  }
+
   getCurrentScn(): number {
     const distant = this.askRemoteScalar('SELECT current_scn FROM V$DATABASE', 'CURRENT_SCN');
     if (distant !== null) return Number(distant);
