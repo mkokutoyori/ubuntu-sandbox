@@ -5,7 +5,11 @@ import { LabWorkbench } from '../LabWorkbench';
 import { configureCiscoSwitch, configureDrRouter, configureFortiGateAgency, configureFortiGateDr, configureFortiGateHq, configureHqRouter, configureHuaweiSwitch, configureIsp } from './network';
 import { configureLinux, configureWindows } from './hosts';
 import { configureDomainControllers, configureLogServer, configurePublicDns, publishWebSite } from './services';
+import { configureBackupServer, createOracleOsUser, declareBackupShare, loadShopSchema, shipScripts } from './oracle';
 import { AGENCIES, DR, HQ, INTERNET } from './plan';
+
+export const BACKUP_EXPORT = '/srv/backup/rman';
+export const BACKUP_MOUNT = '/backup';
 
 export interface LumiereLab {
   readonly bench: LabWorkbench;
@@ -142,5 +146,14 @@ export async function buildLumiere(): Promise<LumiereLab> {
   await publishWebSite(bench, payment, 'Passerelle de paiement (simulee)');
   await bench.writeFile(pcHq, '/etc/netplan/01-lab.yaml', ['network:', '  version: 2', '  ethernets:', '    eth0:', '      dhcp4: true'].join('\n'), '600');
   await bench.shell(pcHq, 'sudo netplan apply', 'sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf');
+  await createOracleOsUser(bench, bkpHq);
+  await createOracleOsUser(bench, bkpDr);
+  await configureBackupServer(bench, bkpHq, BACKUP_EXPORT, [`${HQ.db.network}/24(rw,sync,no_root_squash)`, `${DR.db.network}/24(ro,sync,no_root_squash)`]);
+  await configureBackupServer(bench, bkpDr, BACKUP_EXPORT, [`${DR.db.network}/24(rw,sync,no_root_squash)`]);
+  await shipScripts(bench, oraPrd);
+  await shipScripts(bench, oraStb);
+  await loadShopSchema(bench, oraPrd);
+  await declareBackupShare(bench, oraPrd, HQ.db.backup, BACKUP_EXPORT, BACKUP_MOUNT);
+  await declareBackupShare(bench, oraStb, DR.db.backup, BACKUP_EXPORT, BACKUP_MOUNT);
   return { bench, devices };
 }

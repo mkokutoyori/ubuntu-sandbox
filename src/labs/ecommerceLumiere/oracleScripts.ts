@@ -1,11 +1,12 @@
 import { ORACLE } from './plan';
 
 export const SCRIPT_DIR = '/home/oracle/scripts';
+export const DATAFILE_DIR = '/u01/app/oracle/oradata/ORCL';
 
 export const SCHEMA_SCRIPT = [
   'SET ECHO OFF',
-  'CREATE TABLESPACE shop_data DATAFILE SIZE 200M;',
-  'CREATE TABLESPACE shop_idx DATAFILE SIZE 100M;',
+  `CREATE TABLESPACE shop_data DATAFILE '${DATAFILE_DIR}/shop_data01.dbf' SIZE 200M;`,
+  `CREATE TABLESPACE shop_idx DATAFILE '${DATAFILE_DIR}/shop_idx01.dbf' SIZE 100M;`,
   `CREATE USER ${ORACLE.appUser} IDENTIFIED BY "${ORACLE.appPassword}" DEFAULT TABLESPACE shop_data QUOTA UNLIMITED ON shop_data QUOTA UNLIMITED ON shop_idx;`,
   `GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE VIEW TO ${ORACLE.appUser};`,
   `CREATE TABLE ${ORACLE.appUser}.customers (customer_id NUMBER PRIMARY KEY, email VARCHAR2(80) NOT NULL, full_name VARCHAR2(80) NOT NULL, city VARCHAR2(40), created_at DATE) TABLESPACE shop_data;`,
