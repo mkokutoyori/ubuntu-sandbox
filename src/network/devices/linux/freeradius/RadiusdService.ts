@@ -1313,17 +1313,24 @@ export class RadiusdService {
     return undefined;
   }
 
-  private clientsFromSql(): RadiusClientEntry[] {
+  private clientsFromSql(serverNames: ReadonlySet<string>): RadiusClientEntry[] {
     const found: ParsedClients = { clients: [], errors: [], warnings: [] };
     for (const instance of this.sqlInstances) {
       const sections = instance.clientSections();
-      if (sections !== 'fail') readClientSections(sections, found);
+      if (sections === 'fail') continue;
+      const known = sections.filter((section) => {
+        const server = section.pairs.find((pair) => pair.name === 'virtual_server')?.value;
+        if (server === undefined || serverNames.has(server)) return true;
+        found.errors.push(`Cannot add client - virtual server ${server} does not exist`);
+        return false;
+      });
+      readClientSections(known, found);
     }
     for (const message of found.errors) this.writeLogLine('Error', message);
     return found.clients;
   }
 
-  private applyConfig(loaded: { clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; sqlModules: SqlModuleConfig[]; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
+  private applyConfig(loaded: { site: SiteConfig; clients: RadiusClientEntry[]; users: UsersEntry[]; log: RadiusdLogConfig; security: RadiusdSecurityConfig; threadPool: RadiusdThreadPool; sqlModules: SqlModuleConfig[]; preprocess: PreprocessFiles; pipelines: Map<string, Pipeline>; proxy: ProxyConfig; eapTls: EapTlsConfig | null }): void {
     this.logConfig = loaded.log;
     this.threadPool = loaded.threadPool;
     for (const instance of this.sqlInstances) instance.close();
@@ -1368,7 +1375,7 @@ export class RadiusdService {
     const secret = loaded.clients[0].secret;
     this.radiusServer.setSharedSecret(secret);
     this.radiusServer.clientTable.clear();
-    for (const client of [...loaded.clients, ...this.clientsFromSql()]) this.radiusServer.clientTable.add(client);
+    for (const client of [...loaded.clients, ...this.clientsFromSql(loaded.site.serverNames)]) this.radiusServer.clientTable.add(client);
     this.radiusServer.setUserResolver((username, context) => this.resolveUser(loaded.users, username, context?.attributes ?? [], context?.nasIp ?? '', context?.listenPort, context?.packet));
   }
 }

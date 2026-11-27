@@ -337,6 +337,7 @@ export class SqlModuleInstance {
     return rows.map((row) => {
       const pairs: ConfPair[] = [
         ['ipaddr', row[1]], ['shortname', row[2]], ['nas_type', row[3] === '' ? 'other' : row[3]], ['secret', row[4]],
+        ...((row[5] ?? '') === '' ? [] : [['virtual_server', row[5]]]),
       ].map(([name, value]) => ({ name, op: '=', value: value ?? '', quoted: true, file: `rlm_sql (${this.config.name})`, line: 0 }));
       return { name1: 'client', name2: row[2] ?? row[1] ?? '', pairs, sections: [], items: pairs, file: `rlm_sql (${this.config.name})`, line: 0 };
     });

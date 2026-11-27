@@ -7,6 +7,8 @@
  * a client", not two. They are read over a real Oracle Net session to another host. A hostname in nasname is refused as clients.conf refuses it (the grammar takes addresses);
  * the virtual server column is read and not used (TODO.md).
  *
+ * The server column (rlm_sql.c generate_sql_clients row[5], main/client.c client_add): a virtual server that does not exist refuses the client with the message above; an existing one adds it to the global list (the listener `clients =` list is not modelled, see TODO). Of the 9 cases, the one with the unknown server falls on git stash of src/network; the existing-server case is a witness that passes either way.
+ *
  * Discriminated with git stash on src/network: 4 of 7 fall before the fix; the witness (a client of clients.conf still works) and the two refusals (a wrong secret, and the run without
  * read_clients) pass either way: the requests are not served for the wrong reason, and they only mean something next to their positive twins.
  */
@@ -93,5 +95,16 @@ describe('rlm_sql: read_clients', () => {
   it('read_clients without a client_query is a configuration error', async () => {
     const { started } = await lab([], ['  read_clients = yes']);
     expect(started).toContain('read_clients is set but no client_query is configured');
+  });
+
+  it('a row naming an existing virtual server is a client', async () => {
+    const { client } = await lab(["'10.0.0.1', 'lab', 'other', 'sqlsecret', 'default'"]);
+    expect(accepted(await ask(client, 'sqlsecret'))).toBe(true);
+  });
+
+  it('a row naming a virtual server that does not exist is logged and the client is not added', async () => {
+    const { client, radius } = await lab(["'10.0.0.1', 'lab', 'other', 'sqlsecret', 'ghost'"]);
+    expect(accepted(await ask(client, 'sqlsecret'))).toBe(false);
+    expect(await radius.executeCommand('cat /var/log/freeradius/radius.log')).toContain('Cannot add client - virtual server ghost does not exist');
   });
 });

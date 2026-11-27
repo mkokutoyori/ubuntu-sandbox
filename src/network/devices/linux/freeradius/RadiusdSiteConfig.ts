@@ -31,6 +31,7 @@ export interface SiteConfig {
   readonly listeners: ListenerSpec[];
   readonly serverClients: ReadonlyMap<string, RadiusClientEntry[]>;
   readonly controlSockets: readonly ControlSocket[];
+  readonly serverNames: ReadonlySet<string>;
 }
 
 const SUPPORTED_TYPES = new Set<string>(['auth', 'acct', 'auth+acct', 'status']);
@@ -79,7 +80,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
     if ('error' in path) return path;
     controlSockets.push(path);
   }
-  if (servers.length === 0) return { listeners: defaultListeners(), serverClients: new Map(), controlSockets };
+  if (servers.length === 0) return { listeners: defaultListeners(), serverClients: new Map(), controlSockets, serverNames: new Set(['default']) };
   const listeners: ListenerSpec[] = [];
   const serverClients = new Map<string, RadiusClientEntry[]>();
   for (const server of servers) {
@@ -133,7 +134,7 @@ export function readSiteConfig(root: ConfSection): SiteConfig | { error: string 
     if (own.errors.length > 0) return { error: own.errors[0] };
     if (own.clients.length > 0) serverClients.set(serverName, own.clients);
   }
-  return { listeners: listeners.length === 0 ? defaultListeners() : listeners, serverClients, controlSockets };
+  return { listeners: listeners.length === 0 ? defaultListeners() : listeners, serverClients, controlSockets, serverNames: new Set(servers.map((server) => server.name2 ?? '')) };
 }
 
 export function listenerAddressText(spec: ListenerSpec): string {
