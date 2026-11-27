@@ -1290,7 +1290,8 @@ export class RadiusdService {
     this.logConfig = loaded.log;
     this.threadPool = loaded.threadPool;
     for (const instance of this.sqlInstances) instance.close();
-    this.sqlInstances = loaded.sqlModules.map((config) => new SqlModuleInstance(config, () => this.sqlConnector, (message) => this.writeLogLine('Error', message)));
+    this.sqlInstances = loaded.sqlModules.map((config) => new SqlModuleInstance(config, () => this.sqlConnector, (message) => this.writeLogLine('Error', message), () => this.wallClock.nowMs()));
+    for (const instance of this.sqlInstances) instance.start();
     this.sqlExpansions = new Map(this.sqlInstances.map((instance) => [instance.config.name, instance.expansion()]));
     this.threadPoolStartedMs = this.wallClock.nowMs();
     this.radiusServer.setEapTlsConfig(loaded.eapTls);
