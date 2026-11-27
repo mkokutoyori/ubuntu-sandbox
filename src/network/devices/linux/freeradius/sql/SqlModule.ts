@@ -317,7 +317,7 @@ export class SqlModuleInstance {
     return this.runQueries(this.config.accountingQueries.get(statusType.toLowerCase()) ?? [], expand);
   }
 
-  simultaneousCount(expand: (template: string) => string, maximum = Number.POSITIVE_INFINITY, nasTypeOf: (address: string) => string | undefined = () => undefined): number | 'noop' | 'fail' {
+  simultaneousCount(expand: (template: string) => string, maximum = Number.POSITIVE_INFINITY, nasTypeOf: (address: string) => string | undefined = () => undefined, request: { framedIp?: string; callingStation?: string } = {}): { count: number; mpp: boolean } | 'noop' | 'fail' {
     const query = this.config.queries.get('simul_count_query');
     if (query === undefined) return 'noop';
     const session = this.open();
@@ -327,10 +327,11 @@ export class SqlModuleInstance {
     const count = Number(rows[0]?.[0] ?? '');
     if (!Number.isInteger(count) || count < 0) return 'fail';
     const verify = this.config.queries.get('simul_verify_query');
-    if (count < maximum || verify === undefined) return count;
+    if (count < maximum || verify === undefined) return { count, mpp: false };
     const sessions = this.rows(verify, expand, session);
     if (sessions === 'fail') return 'fail';
     let logged = 0;
+    let mpp = false;
     for (const row of sessions) {
       if (row.length < 8) {
         this.log(`rlm_sql (${this.config.name}): SELECT returned too few fields.  Please do not edit 'simul_verify_query'`);
@@ -342,12 +343,15 @@ export class SqlModuleInstance {
       const type = nasTypeOf(address);
       if (type === undefined || type === '' || type === 'other') {
         logged++;
+        const sameAddress = (row[5] ?? '') !== '' && request.framedIp !== undefined && row[5] === request.framedIp;
+        const sameCaller = (row[6] ?? '') !== '' && request.callingStation !== undefined && row[6].slice(0, 16) === request.callingStation.slice(0, 16);
+        if (sameAddress || sameCaller) mpp = true;
         continue;
       }
       this.log(`rlm_sql (${this.config.name}): Failed to check the terminal server for user '${row[2]}'.`);
       return 'fail';
     }
-    return logged;
+    return { count: logged, mpp };
   }
 
   clientSections(): ConfSection[] | 'fail' {

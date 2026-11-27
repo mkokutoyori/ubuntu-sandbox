@@ -6,8 +6,9 @@
  * FROM radacct WHERE UserName = '%{SQL-User-Name}' AND AcctStopTime IS NULL"). The count is read over a real Oracle Net session to another host, counted on its port. Limit
  * Verify brick: when the count reaches Simultaneous-Use and simul_verify_query is set, each row it returns (8 columns minimum, a username and a session id, a parsable NAS address) is
  * a login if the NAS is unknown or of type other (session.c rad_check_ts returns 1 without running checkrad); any other NAS type runs the checkrad script, which fails here, so the
- * module fails; a session section that does not answer ok never refuses the login (process_checksimul returns 0). delete_stale_sessions only acts on rad_check_ts = 0, which no supported NAS type returns: stored, with nothing to delete.
+ * module fails; a row whose Framed-IP-Address or Calling-Station-Id (16 characters) equals the request's marks a multilink attempt, allowed when the reply Port-Limit exceeds Simultaneous-Use (auth.c); a session section that does not answer ok never refuses the login (process_checksimul returns 0). delete_stale_sessions only acts on rad_check_ts = 0, which no supported NAS type returns: stored, with nothing to delete.
  *
+ * Multilink cases: the Port-Limit exemption is the 1 case of 2 that falls on git stash; the other-address case is its negative twin and passes either way.
  * Verify cases: the filtered verify and the too-few-columns log fall on git stash; the witness passes either way.
  *
  * Discriminated with git stash on src/network: 4 of 6 fall before the fix, the witness included (with `sql` in the session section the old loader refused the site, so every
@@ -127,5 +128,20 @@ describe('rlm_sql: session (simultaneous use)', () => {
     const { client, radius } = await lab(['alice'], 1, true, VERIFY('', 'acctsessionid, username'));
     expect(accepted(await ask(client))).toBe(true);
     expect(await radius.executeCommand('cat /var/log/freeradius/radius.log')).toContain("SELECT returned too few fields.  Please do not edit 'simul_verify_query'");
+  });
+
+  const withPortLimit = async (framedIp: string) => {
+    const { radius, client } = await lab(['alice'], 1, true, VERIFY('', "1, acctsessionid, username, '10.0.0.1', '1', '192.0.2.7', '', 'PPP'"));
+    write(radius, USERS_FILE_PATH, 'alice Cleartext-Password := "pw", Simultaneous-Use := 1\n\tPort-Limit = 2\n');
+    await radius.executeCommand('systemctl restart freeradius');
+    return client.executeCommand(`printf 'User-Name = "alice"\\nUser-Password = "pw"\\nFramed-IP-Address = ${framedIp}\\n' | radclient -x 10.0.0.3 auth shared`);
+  };
+
+  it('a second login from the same Framed-IP-Address is a multilink attempt: Port-Limit above Simultaneous-Use lets it in', async () => {
+    expect(accepted(await withPortLimit('192.0.2.7'))).toBe(true);
+  });
+
+  it('the same user from another address is not multilink: the limit refuses it', async () => {
+    expect(accepted(await withPortLimit('192.0.2.99'))).toBe(false);
   });
 });

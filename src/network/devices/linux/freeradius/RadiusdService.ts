@@ -563,11 +563,12 @@ export class RadiusdService {
     return { verdict, reply: context.reply };
   }
 
-  private runSession(info: { port: number; username: string; active: number; maximum: number }): number | null {
+  private runSession(info: { port: number; username: string; active: number; maximum: number; request: readonly RadiusAttribute[] }): number | { count: number; mpp: boolean } | null {
     const pipeline = this.pipelines.get(this.portServers.get(info.port) ?? 'default');
     const program = pipeline?.session;
     if (program === undefined || program === null) return pipeline !== undefined && pipeline.sections.has('session') && !pipeline.sections.get('session')!.has('radutmp') ? null : info.active;
     let counted = 0;
+    let mpp = false;
     const context = this.newRequestContext(info.username, [], null, this.wallClock.nowMs());
     const lines: string[] = [];
     const host: UnlangHost = {
@@ -582,16 +583,17 @@ export class RadiusdService {
         const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
         if (sqlInstance !== undefined) {
           context.overlay.set('sql-user-name', expandForContext(sqlInstance.config.userName, context, (value) => value));
-          const found = sqlInstance.simultaneousCount((template) => expandForContext(template, context, (value) => sqlInstance.escape(value)), info.maximum, (address) => { const ip = IPAddress.tryParse(address); return ip === null ? undefined : this.radiusServer.clientTable.find(ip)?.nasType; });
-          if (typeof found !== 'number') return { result: found, messages: [] };
-          counted = found;
+          const found = sqlInstance.simultaneousCount((template) => expandForContext(template, context, (value) => sqlInstance.escape(value)), info.maximum, (address) => { const ip = IPAddress.tryParse(address); return ip === null ? undefined : this.radiusServer.clientTable.find(ip)?.nasType; }, { framedIp: info.request.find((attribute) => attribute.type === 'framed-ip-address')?.value?.toString(), callingStation: info.request.find((attribute) => attribute.type === 'calling-station-id')?.value?.toString() });
+          if (typeof found === 'string') return { result: found, messages: [] };
+          counted = found.count;
+          mpp = found.mpp;
           return { result: 'ok', messages: [] };
         }
         return { result: 'noop', messages: [] };
       },
     };
     const outcome = run(program, context, host, lines, 3);
-    return outcome.result === 'ok' ? counted : null;
+    return outcome.result === 'ok' ? { count: counted, mpp } : null;
   }
 
   private runAuthenticate(info: { port: number; accepted: boolean; user: RadiusUser | undefined; request: readonly RadiusAttribute[]; messages?: readonly string[] }): AuthenticateOutcome | null {
