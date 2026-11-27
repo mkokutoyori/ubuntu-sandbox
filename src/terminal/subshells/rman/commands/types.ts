@@ -34,6 +34,7 @@ export interface RmanCommandContext {
   readonly setUntil?:    { untilTime?: string; untilScn?: number };
   /** Session binding populated by SET DBID n; RESTORE ... FROM AUTOBACKUP looks for this database's autobackups. */
   readonly setDbid?:     { value?: number };
+  readonly setAutobackupFormat?: { value?: string };
   readonly scripts?: StoredScripts;
   readonly runBlock?: (lines: string[]) => Result<string[], RmanError>;
   readonly recoveryCatalog?: RemoteRecoveryCatalog | null;

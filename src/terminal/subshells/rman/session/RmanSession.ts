@@ -87,6 +87,7 @@ export class RmanSession implements IRmanSession {
   private readonly _setNewname = new Map<number, string>();
   private readonly _setMaxCorrupt = new Map<number, number>();
   private readonly _setDbid: { value?: number } = {};
+  private readonly _setAutobackupFormat: { value?: string } = {};
   /** UNTIL TIME / UNTIL SCN binding set inside a RUN block — cleared on block close. */
   private readonly _setUntil: { untilTime?: string; untilScn?: number } = {};
   private _state: RmanSessionState = 'IDLE';
@@ -333,6 +334,7 @@ export class RmanSession implements IRmanSession {
       setNewname:   this._setNewname,
       setMaxCorrupt: this._setMaxCorrupt,
       setDbid:      this._setDbid,
+      setAutobackupFormat: this._setAutobackupFormat,
       setUntil:     this._setUntil,
       scripts:      this._catalog.scripts,
       runBlock:     (lines: string[]) => this._runBlock(lines),

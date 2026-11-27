@@ -62,6 +62,10 @@ export class NfsClient {
     private readonly identity: NfsClientIdentity,
   ) {}
 
+  actAs(uid: number, gid: number): NfsClient {
+    return new NfsClient(this.transport, { ...this.identity, uid, gid, gids: [gid] });
+  }
+
   private credential(): RpcOpaqueAuth {
     return encodeAuthSys({
       stamp: 0,

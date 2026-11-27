@@ -25,8 +25,28 @@ function searchedDbid(cmdCtx: RmanCommandContext): number {
   return cmdCtx.setDbid?.value ?? cmdCtx.ctx.dbId.value;
 }
 
+function autobackupPieceNamePattern(format: string, dbid: number): RegExp {
+  const escaped = format.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%F/g, `c-${dbid}-\\d{8}-[0-9A-F]{2}`);
+  return new RegExp(`^${escaped}$`);
+}
+
+function findAutobackupByFormat(cmdCtx: RmanCommandContext): string {
+  const { ctx } = cmdCtx;
+  const formats = [cmdCtx.setAutobackupFormat?.value, cmdCtx.config?.snapshot().controlfileAutobackupFormat]
+    .filter((format): format is string => format !== undefined && format.includes('%F') && format.includes('/'));
+  for (const format of formats) {
+    const directory = format.slice(0, format.lastIndexOf('/'));
+    const pattern = autobackupPieceNamePattern(format, searchedDbid(cmdCtx));
+    const found = (ctx.vfs.listFilesRecursively?.(directory) ?? []).filter(path => pattern.test(path)).sort();
+    if (found.length > 0) return found[found.length - 1];
+  }
+  return '';
+}
+
 function findAutobackupOnDisk(cmdCtx: RmanCommandContext): string {
   const { ctx } = cmdCtx;
+  const byFormat = findAutobackupByFormat(cmdCtx);
+  if (byFormat) return byFormat;
   if (searchedDbid(cmdCtx) !== ctx.dbId.value) return '';
   const dest = ctx.getSpfileParam('db_recovery_file_dest');
   if (!dest || !ctx.vfs.listFilesRecursively) return '';
@@ -62,6 +82,7 @@ function writeControlFilesFrom(
     restoreControlFilesFromImage?(img: typeof image): number;
   };
   restorer.restoreControlFilesFromImage?.(image);
+  cmdCtx.ctx.markIncompleteRecovery?.();
   return ok(undefined);
 }
 
@@ -101,8 +122,8 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
         'channel ORA_DISK_1: SID=100 device type=DISK',
         '',
         'channel ORA_DISK_1: looking for AUTOBACKUP on day: ' + rmanWallDay(rmanWall(ctx)).replace(/-/g, ''),
-        `channel ORA_DISK_1: AUTOBACKUP found: c-${searchedDbid(cmdCtx)}-${rmanWallDay(rmanWall(ctx))}-00`,
-        `channel ORA_DISK_1: restoring control file from AUTOBACKUP c-${searchedDbid(cmdCtx)}-...`,
+        `channel ORA_DISK_1: AUTOBACKUP found: ${autobackupPath}`,
+        `channel ORA_DISK_1: restoring control file from AUTOBACKUP ${autobackupPath}`,
         'channel ORA_DISK_1: control file restore from AUTOBACKUP complete',
         `output file name=${ctx.getControlFilePath?.() ?? '/u01/oradata/' + ctx.dbName + '/control01.ctl'}`,
         `Finished restore at ${formatOracleDate(rmanWall(ctx))}`,

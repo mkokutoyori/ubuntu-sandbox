@@ -9,6 +9,7 @@ Ce répertoire est le **hub des laboratoires** du simulateur. Chaque sous-réper
 |-----|-------|-------------|---------|
 | DNS — Agence bancaire (Banque Horizon) | DNS multi-éditeurs (Windows Server + BIND9) : arbre racine → `com` → domaine de la banque, récursion, redirection, transfert de zone, DHCP + mise à jour dynamique, site web nginx en HTTPS | 15 | [`dns-agence-bancaire/`](dns-agence-bancaire/README.md) |
 | Entreprise Meridian | FortiGate au siège et dans trois agences, IPsec IKEv2 en étoile (agence ↔ agence via le siège), VIP et SNAT, DMZ (nginx, Exchange), AD/DNS, listener Oracle, Internet simulé | 16 | [`entreprise-meridian/`](entreprise-meridian/README.md) |
+| Lumière Boutique (e-commerce) | Siège et site de reprise, agences, FortiGate / Cisco / Huawei, AD + DNS + DHCP, journaux et RADIUS, base Oracle sauvegardée sur NFS : le terrain d'un tutoriel Oracle/RMAN complet (sauvegarde par niveaux, perte de fichiers, retour dans le temps, standby à travers IPsec) | 35 : 4 FortiGate, 2 routeurs Cisco et 1 Huawei, 11 commutateurs, 2 contrôleurs de domaine, 11 serveurs Linux, 4 postes | [`ecommerce-lumiere/`](ecommerce-lumiere/README.md) — tutoriel : [`tutoriel-oracle-rman/`](ecommerce-lumiere/tutoriel-oracle-rman/README.md) |
 
 ## Importer un lab
 

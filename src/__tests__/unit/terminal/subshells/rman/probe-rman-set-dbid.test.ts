@@ -1,13 +1,13 @@
 /**
  * `SET DBID n` de RMAN etait refuse (« unknown command »). Il fixe, pour la session, le DBID de la base dont
  * `RESTORE CONTROLFILE | SPFILE FROM AUTOBACKUP` cherche les autosauvegardes (c-<DBID>-...) : avec le DBID de la base on
- * retrouve l'autosauvegarde, avec un autre DBID on ne trouve rien (RMAN-06172), et le nom annonce porte le DBID cherche.
+ * retrouve l'autosauvegarde, avec un autre DBID on ne trouve rien (RMAN-06172), et la reponse donne le handle reellement trouve (elle annoncait un nom c-<DBID>-<jour>-00 fabrique, que le test figeait).
  * Le critere est donc evalue, pas seulement stocke : avant le changement les sets du catalogue n'etaient pas filtres par
  * DBID. La reponse `executing command: SET DBID` suit les autres SET de la session.
  * Non source (TODO.md [rman]) : le contrôle de RMAN quand SET DBID est donne avec une cible deja connectee.
  *
  * Discrimine par `git stash` sur src/terminal : 2 des 4 cas tombent avant (la reponse de SET DBID et le refus avec un autre
- * DBID). TEMOINS : la restauration sans SET DBID, et celle avec le DBID de la base (le nom portait deja ce DBID).
+ * DBID). TEMOINS : la restauration sans SET DBID, et celle avec le DBID de la base (le handle trouve est rendu).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
@@ -70,7 +70,7 @@ describe('SET DBID', () => {
     s.processLine(`SET DBID ${DbId.DEFAULT.value}`);
     const r = s.processLine('RESTORE CONTROLFILE FROM AUTOBACKUP');
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.join('\n')).toContain(`c-${DbId.DEFAULT.value}-`);
+    if (r.ok) expect(r.value.join('\n')).toMatch(/AUTOBACKUP found: \/\S+\.bkp/);
   });
 
   it('with another DBID no autobackup is found (RMAN-06172)', () => {

@@ -55,6 +55,13 @@ import { LockActor } from './lock/LockActor';
 import type { OracleStorage } from './OracleStorage';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
+export interface DatabaseIncarnation {
+  key: number;
+  resetScn: number;
+  resetTime: Date;
+  status: 'CURRENT' | 'PARENT';
+}
+
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
 export interface BackgroundProcess {
@@ -134,6 +141,8 @@ export class OracleInstance {
    *  commit advances it; checkpoints stamp the current value into the
    *  datafile headers (V$DATAFILE / V$DATAFILE_HEADER agree by design). */
   private _currentScn = 1_000_000;
+  private _resetlogsRequired = false;
+  private _incarnations: DatabaseIncarnation[] = [{ key: 1, resetScn: 1, resetTime: hostNowDate(), status: 'CURRENT' }];
   private _checkpointScn = 1_000_000;
   private _checkpointTime = hostNowDate();
 
@@ -942,13 +951,15 @@ export class OracleInstance {
       this.logAlert('Database mounted');
       if (asStandby) {
         this.setDatabaseRole('PHYSICAL STANDBY');
+        this._archiveLogMode = true;
+        this._parameters.set('archive_log_mode', 'ENABLED');
         this.logAlert('Physical standby database mounted');
       }
     });
   }
 
   /** ALTER DATABASE OPEN — legal only from MOUNT (ORA-01507 / ORA-01531). */
-  openDatabase(readOnly = false): void {
+  openDatabase(readOnly = false, resetlogs?: 'RESETLOGS' | 'NORESETLOGS'): void {
     this.atHostTime(() => {
       if (this._state === 'OPEN') {
         throw new OracleError(1531, 'a database already open by the instance');
@@ -964,8 +975,34 @@ export class OracleInstance {
           `cannot identify/lock data file ${m.fileNo} - see DBWR trace file\n` +
           `ORA-01110: data file ${m.fileNo}: '${m.path}'`);
       }
+      if (resetlogs === 'RESETLOGS' && !this._resetlogsRequired) {
+        throw new OracleError(1139, 'RESETLOGS option only valid after an incomplete database recovery');
+      }
+      if (resetlogs === undefined && this._resetlogsRequired) {
+        throw new OracleError(1589, 'must use RESETLOGS or NORESETLOGS option for database open');
+      }
+      if (resetlogs === 'NORESETLOGS' && this._resetlogsRequired) {
+        throw new OracleError(1588, 'must use RESETLOGS option for database open');
+      }
+      if (resetlogs === 'RESETLOGS') this.registerIncarnation();
       this.markOpen(readOnly);
     });
+  }
+
+  markIncompleteRecovery(): void { this._resetlogsRequired = true; }
+
+  get resetlogsRequired(): boolean { return this._resetlogsRequired; }
+
+  getIncarnations(): ReadonlyArray<DatabaseIncarnation> { return this._incarnations; }
+
+  private registerIncarnation(): void {
+    const previous = this._incarnations[this._incarnations.length - 1];
+    previous.status = 'PARENT';
+    const resetScn = this.advanceScn(1);
+    this._incarnations.push({ key: previous.key + 1, resetScn, resetTime: hostNowDate(), status: 'CURRENT' });
+    this._resetlogsRequired = false;
+    this.logAlert(`RESETLOGS after incomplete recovery UNTIL CHANGE ${resetScn - 1}`);
+    this.logAlert(`Resetting resetlogs activation ID ${this.getActivationId()}`);
   }
 
   shutdown(mode?: 'NORMAL' | 'IMMEDIATE' | 'TRANSACTIONAL' | 'ABORT'): string[] {

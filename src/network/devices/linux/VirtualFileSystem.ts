@@ -752,6 +752,13 @@ export class VirtualFileSystem {
   }
 
   createFileAt(path: string, content: string, permissions: number, uid: number, gid: number, gids: readonly number[] = []): INode | null {
+    const remote = this.remoteFor(path);
+    if (remote) {
+      const key = this.canonicalKey(path);
+      if (!remote.write(key, content, uid, gid)) return null;
+      const stat = remote.stat(key);
+      return stat ? this.remoteInodeOf(stat) : null;
+    }
     const parent = this.resolveParent(path);
     if (!parent) return null;
     const [parentInode, basename] = parent;
@@ -879,6 +886,8 @@ export class VirtualFileSystem {
   }
 
   touch(path: string, uid: number, gid: number, umask: number): boolean {
+    const remote = this.remoteFor(path);
+    if (remote) return remote.stat(this.canonicalKey(path)) !== null || remote.write(this.canonicalKey(path), '', uid, gid);
     const existing = this.resolveInode(path);
     if (existing) {
       existing.mtime = this.nowMs();
@@ -1759,6 +1768,11 @@ export class VirtualFileSystem {
     state: { stopped: boolean; ancestors: Map<number, string> },
   ): void {
     if (state.stopped) return;
+    const remote = this.remoteFor(path);
+    if (remote) {
+      this.walkRemoteFindNode(remote, path, depth, options, visit, state);
+      return;
+    }
     const link = this.resolveInode(path, false);
     if (!link) return;
     let inode = link;
@@ -1794,6 +1808,41 @@ export class VirtualFileSystem {
       state.ancestors.delete(inode.id);
     }
     if (options.postOrder === true && !state.stopped && visit(path, inode, depth, link) === 'stop') state.stopped = true;
+  }
+
+  private remoteInodeOf(stat: RemoteMountStat, entries: readonly string[] = []): INode {
+    return {
+      id: stat.fileid, type: stat.type, permissions: stat.permissions, uid: stat.uid, gid: stat.gid,
+      content: '', target: '', children: new Map(entries.map((name, index) => [name, index])),
+      linkCount: stat.nlink, size: stat.size, mtime: stat.mtime, atime: stat.atime, ctime: stat.ctime,
+    };
+  }
+
+  private walkRemoteFindNode(
+    remote: RemoteMountPort,
+    path: string,
+    depth: number,
+    options: FindWalkOptions,
+    visit: (path: string, inode: INode, depth: number, link: INode) => FindVisit,
+    state: { stopped: boolean; ancestors: Map<number, string> },
+  ): void {
+    const key = this.canonicalKey(path);
+    const stat = remote.stat(key);
+    if (!stat) return;
+    if (options.maxdepth !== undefined && depth > options.maxdepth) return;
+    const entries = stat.type === 'directory' ? remote.list(key) ?? [] : [];
+    const inode = this.remoteInodeOf(stat, entries);
+    let outcome: FindVisit;
+    if (options.postOrder !== true) {
+      outcome = visit(path, inode, depth, inode);
+      if (outcome === 'stop') { state.stopped = true; return; }
+    }
+    const descend = stat.type === 'directory' && outcome !== 'prune'
+      && !(options.maxdepth !== undefined && depth + 1 > options.maxdepth);
+    if (descend) {
+      for (const name of entries) this.walkFindNode(path.replace(/\/$/, '') + '/' + name, depth + 1, options, visit, state);
+    }
+    if (options.postOrder === true && !state.stopped && visit(path, inode, depth, inode) === 'stop') state.stopped = true;
   }
 
   matchesFindCriteria(path: string, inode: INode, options: any): boolean {
@@ -1864,6 +1913,8 @@ export class VirtualFileSystem {
     const resolve = (path: string): string => this.normalizePath(path === '' ? '.' : path, cwd);
     return globPaths({
       listNames: (directory) => {
+        const remote = this.remoteFor(resolve(directory));
+        if (remote) return remote.list(this.canonicalKey(resolve(directory)));
         const node = this.resolveInode(resolve(directory));
         return node?.type === 'directory' ? [...node.children.keys()].filter((name) => name !== '.' && name !== '..') : null;
       },

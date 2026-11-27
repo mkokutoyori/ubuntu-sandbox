@@ -1529,8 +1529,13 @@ export class OracleExecutor extends BaseExecutor {
     const row: CellValue[] = [];
 
     for (const item of stmt.columns) {
+      if (item.expr.type === 'Star') {
+        columns.push({ name: 'DUMMY', dataType: parseOracleType('VARCHAR2', 1) });
+        row.push('X');
+        continue;
+      }
       const colName = item.alias || this.exprToString(item.expr);
-      const value = this.evaluateExpression(item.expr, [], []);
+      const value = item.expr.type === 'Identifier' && item.expr.name.toUpperCase() === 'DUMMY' ? 'X' : this.evaluateExpression(item.expr, [], []);
       // SYSDATE/CURRENT_DATE bare (no TO_CHAR) must render via
       // NLS_DATE_FORMAT, not the internal storage string — same pseudo-
       // column type tagging as expandSelectItems() for table-based SELECTs.
@@ -5236,8 +5241,9 @@ export class OracleExecutor extends BaseExecutor {
   private exprToString(expr: Expression): string {
     switch (expr.type) {
       case 'Literal': return String(expr.value ?? 'NULL');
-      case 'Identifier': return expr.name;
-      case 'FunctionCall': return `${expr.name}(...)`;
+      case 'Identifier': return [expr.schema, expr.table, expr.name].filter((part): part is string => part !== undefined).join('.');
+      case 'Star': return expr.table === undefined ? '*' : `${expr.table}.*`;
+      case 'FunctionCall': return `${expr.name}(${expr.distinct ? 'DISTINCT ' : ''}${expr.args.map((argument) => this.exprToString(argument)).join(',')})`;
       case 'BinaryExpr': return `${this.exprToString(expr.left)} ${expr.operator} ${this.exprToString(expr.right)}`;
       default: return 'EXPR';
     }

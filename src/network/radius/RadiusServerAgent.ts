@@ -903,7 +903,7 @@ export class RadiusServerAgent {
     }
 
     this.loadSessionState(getAttr(payload, 'state'));
-    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: payload.attributes, listenPort: this.servedPort ?? this.config.port, packet: { sourceIp: senderIp, sourcePort: udp.sourcePort, destinationIp: srcIpOfPort(this.host.getPort(inPort)), destinationPort: udp.destinationPort, type: RADIUS_PACKET_NAME[payload.code], authenticator: payload.authenticator } });
+    const resolved = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp, attributes: this.displayAttributes(payload, srcIp, true), listenPort: this.servedPort ?? this.config.port, packet: { sourceIp: senderIp, sourcePort: udp.sourcePort, destinationIp: srcIpOfPort(this.host.getPort(inPort)), destinationPort: udp.destinationPort, type: RADIUS_PACKET_NAME[payload.code], authenticator: payload.authenticator } });
     if (resolved?.proxy !== undefined) {
       const { realm: proxiedRealm, forwardName, fallbacks, ...route } = resolved.proxy;
       this.forwardToRealm(inPort, srcIp, udp.sourcePort, payload, forwardName, proxiedRealm, route, dedupKey, fallbacks);

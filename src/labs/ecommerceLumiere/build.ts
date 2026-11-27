@@ -3,10 +3,10 @@ import type { Equipment } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
 import { LabWorkbench } from '../LabWorkbench';
 import { configureCiscoSwitch, configureDrRouter, configureFortiGateAgency, configureFortiGateDr, configureFortiGateHq, configureHqRouter, configureHuaweiSwitch, configureIsp } from './network';
-import { configureLinux, configureWindows } from './hosts';
+import { configureLinux, configureWindows, forwardSyslog } from './hosts';
 import { configureDomainControllers, configureLogServer, configurePublicDns, publishWebSite } from './services';
-import { configureBackupServer, createOracleOsUser, declareBackupShare, loadShopSchema, shipScripts } from './oracle';
-import { AGENCIES, DR, HQ, INTERNET } from './plan';
+import { configureBackupServer, createOracleOsUser, declareBackupShare, giveHomeToOracle, loadShopSchema, shipScripts } from './oracle';
+import { AGENCIES, DR, HQ, INTERNET, SYSLOG_PORT } from './plan';
 
 export const BACKUP_EXPORT = '/srv/backup/rman';
 export const BACKUP_MOUNT = '/backup';
@@ -140,6 +140,7 @@ export async function buildLumiere(): Promise<LumiereLab> {
   await configureDomainControllers(bench, dc1, dc2);
   await configurePublicDns(bench, dnsPub);
   await configureLogServer(bench, log);
+  for (const host of [oraPrd, oraStb, bkpHq, bkpDr, web1, web2, app1, webDr]) await forwardSyslog(bench, host, HQ.servers.log, SYSLOG_PORT);
   await publishWebSite(bench, web1, 'Lumiere Boutique - frontal web 1');
   await publishWebSite(bench, web2, 'Lumiere Boutique - frontal web 2');
   await publishWebSite(bench, webDr, 'Lumiere Boutique - site de reprise');
@@ -153,6 +154,8 @@ export async function buildLumiere(): Promise<LumiereLab> {
   await shipScripts(bench, oraPrd);
   await shipScripts(bench, oraStb);
   await loadShopSchema(bench, oraPrd);
+  await giveHomeToOracle(bench, oraPrd);
+  await giveHomeToOracle(bench, oraStb);
   await declareBackupShare(bench, oraPrd, HQ.db.backup, BACKUP_EXPORT, BACKUP_MOUNT);
   await declareBackupShare(bench, oraStb, DR.db.backup, BACKUP_EXPORT, BACKUP_MOUNT);
   return { bench, devices };

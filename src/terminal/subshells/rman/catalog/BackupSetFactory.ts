@@ -26,6 +26,7 @@ export interface BackupSetSpec {
   readonly deviceType?: DeviceType;
   readonly keepNote?:   string;
   readonly nowMs?:      number;
+  readonly scn?:        number;
   readonly elapsedMs?:  number;
 }
 
@@ -34,7 +35,7 @@ export const BackupSetFactory = {
     const now  = spec.nowMs ?? simulationNowMs();
     const key  = BackupKey.next();
     const tag  = spec.tag ?? RmanTag.generate();
-    const scnR = Scn.of(Math.floor(1_800_000 + Math.random() * 100_000));
+    const scnR = Scn.of(spec.scn ?? 1_892_354);
     const scn  = scnR.ok ? scnR.value : Scn.ZERO;
     const dbId = spec.dbId ?? DbId.DEFAULT;
 

@@ -6,6 +6,24 @@ import type { NfsClient } from './NfsClient';
 import type { Fattr3, NfsFileHandle } from './wire/NfsTypes';
 import { binaryStringToBytes as fromLatin1, bytesToBinaryString as toLatin1 } from '@/crypto/encoding';
 
+const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true });
+const UTF8 = new TextEncoder();
+
+function textToWire(text: string): Uint8Array {
+  for (let index = 0; index < text.length; index++) {
+    if (text.charCodeAt(index) > 0xff) return UTF8.encode(text);
+  }
+  return fromLatin1(text);
+}
+
+function wireToText(bytes: Uint8Array): string {
+  try {
+    return UTF8_STRICT.decode(bytes);
+  } catch {
+    return toLatin1(bytes);
+  }
+}
+
 const FILE_TYPE_OF: Readonly<Partial<Record<Ftype3, FileType>>> = {
   [Ftype3.NF3REG]: 'file',
   [Ftype3.NF3DIR]: 'directory',
@@ -105,7 +123,7 @@ export class NfsMountedFileSystem implements RemoteMountPort {
     const attributes = this.client.getAttr(found.binding.server, found.handle);
     if (!attributes) return null;
     const data = this.client.read(found.binding.server, found.handle, Number(attributes.size));
-    return data instanceof Uint8Array ? toLatin1(data) : null;
+    return data instanceof Uint8Array ? wireToText(data) : null;
   }
 
   write(path: string, content: string, uid: number, gid: number): boolean {
@@ -116,13 +134,11 @@ export class NfsMountedFileSystem implements RemoteMountPort {
       const { parent, name } = splitTail(path);
       const parentHandle = this.handleOf(parent);
       if (!parentHandle) return false;
-      const created = this.client.create(binding.server, parentHandle.handle, name, 0o644 & ~0o022);
+      const created = this.client.actAs(uid, gid).create(binding.server, parentHandle.handle, name, 0o644 & ~0o022);
       if (!(created instanceof Uint8Array)) return false;
       target = { binding, handle: created };
     }
-    void uid;
-    void gid;
-    return this.client.write(binding.server, target.handle, fromLatin1(content))
+    return this.client.actAs(uid, gid).write(binding.server, target.handle, textToWire(content))
       === NfsStatus.NFS3_OK;
   }
 
@@ -145,9 +161,7 @@ export class NfsMountedFileSystem implements RemoteMountPort {
     const { parent, name } = splitTail(path);
     const parentHandle = this.handleOf(parent);
     if (!parentHandle) return false;
-    void uid;
-    void gid;
-    return this.client.mkdir(binding.server, parentHandle.handle, name, permissions)
+    return this.client.actAs(uid, gid).mkdir(binding.server, parentHandle.handle, name, permissions)
       instanceof Uint8Array;
   }
 

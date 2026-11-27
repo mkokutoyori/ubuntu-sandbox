@@ -39,8 +39,8 @@ import type { ExternalExpansion } from './Xlat';
 import { readRadiusdThreadPool, settledThreadCount, type RadiusdThreadPool } from './RadiusdThreadPool';
 import { requestDebugLines, knownGoodDisplayName, credentialMessages, type ResolutionTrace } from './RequestDebug';
 import type { RadiusUserResolverContext, AccountingRun, AuthenticateOutcome } from '@/network/radius/RadiusServerAgent';
-import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
-import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
+import { expandForContext, lookup, newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
+import { MICROSOFT_VENDOR_ID, canonicalValueName } from '@/network/radius/dictionary';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer, type RadSecHomeTls } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
@@ -664,6 +664,12 @@ export class RadiusdService {
           info.recordUtmp(ctx.request);
           return { result: 'ok', messages: [] };
         }
+        const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+        if (sqlInstance !== undefined) {
+          const rawStatus = lookup(ctx, 'request', 'Acct-Status-Type');
+          const statusType = typeof rawStatus === 'number' ? canonicalValueName('acct-status-type', rawStatus) ?? '' : String(rawStatus ?? '');
+          return { result: sqlInstance.accounting(statusType, (template) => expandForContext(template, ctx, (value) => sqlInstance.escape(value))), messages: [] };
+        }
         return { result: 'noop', messages: [] };
       },
     };
@@ -918,7 +924,15 @@ export class RadiusdService {
     context.reply = accepted ? [...userReply] : [];
     const place = pipeline?.locations.get('post-auth');
     const lines: string[] = [];
-    const host: UnlangHost = { runModule: () => ({ result: 'noop', messages: [] }) };
+    const packetType = accepted ? 'Access-Accept' : 'Access-Reject';
+    const host: UnlangHost = {
+      runModule: (name, ctx) => {
+        const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+        if (sqlInstance === undefined) return { result: 'noop', messages: [] };
+        const expand = (template: string) => expandForContext(template, ctx, (value) => sqlInstance.escape(value), (key) => (key.toLowerCase() === 'reply:packet-type' ? packetType : undefined));
+        return { result: sqlInstance.postAuth(expand), messages: [] };
+      },
+    };
     const at = (text: string, depth: number): void => { lines.push(`${'  '.repeat(depth)}${text}`); };
     if (accepted) {
       at(`# Executing section post-auth from file ${place?.file ?? ''} line ${place?.line ?? 0}`, 1);
@@ -976,6 +990,18 @@ export class RadiusdService {
     };
   }
 
+  private applyUsersMatch(context: UnlangContext, match: NonNullable<ReturnType<typeof matchUsersEntries>>): void {
+    for (const item of match.knownGood) {
+      context.control.set(item.name, item.value);
+      context.knownGood = [...context.knownGood.filter((known) => known.name !== item.name), item];
+    }
+    if (match.acceptAny) context.control.set('auth-type', 'accept');
+    if (match.rejected) context.control.set('auth-type', 'reject');
+    if (match.loginTime !== null) context.control.set('login-time', match.loginTime);
+    if (match.simultaneousUse !== null) context.control.set('simultaneous-use', String(match.simultaneousUse));
+    context.reply.push(...match.reply);
+  }
+
   private runAuthorizeModule(name: string, context: UnlangContext, entries: UsersEntry[], nasIp: string, groupsOf: (username: string) => readonly string[]): ModuleOutcome {
     const has = (type: string) => context.request.some((attribute) => attribute.type === type);
     const messages: string[] = [];
@@ -1016,15 +1042,23 @@ export class RadiusdService {
       const match = matchUsersEntries(entries, context.strippedName ?? context.username, requestViewOf(context, groupsOf));
       if (match === null) return { result: 'noop', messages };
       for (const entry of match.matchedEntries) messages.push(`files: ${this.usersFilePath}: Matched entry ${entry.name} at line ${entry.line}`);
-      for (const item of match.knownGood) {
-        context.control.set(item.name, item.value);
-        context.knownGood = [...context.knownGood.filter((known) => known.name !== item.name), item];
-      }
-      if (match.acceptAny) context.control.set('auth-type', 'accept');
-      if (match.rejected) context.control.set('auth-type', 'reject');
-      if (match.loginTime !== null) context.control.set('login-time', match.loginTime);
-      if (match.simultaneousUse !== null) context.control.set('simultaneous-use', String(match.simultaneousUse));
-      context.reply.push(...match.reply);
+      this.applyUsersMatch(context, match);
+      return { result: 'ok', messages };
+    }
+    const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+    if (sqlInstance !== undefined) {
+      const unescaped = (value: string) => value;
+      context.overlay.set('sql-user-name', expandForContext(sqlInstance.config.userName, context, unescaped));
+      const expand = (template: string) => expandForContext(template, context, (value) => sqlInstance.escape(value));
+      const userName = context.overlay.get('sql-user-name') ?? context.username;
+      const sqlEntries = sqlInstance.authorize(userName, expand, (template, group) => {
+        context.overlay.set('sql-group', group);
+        return expand(template);
+      });
+      if (sqlEntries === 'fail') return { result: 'fail', messages };
+      const match = matchUsersEntries(sqlEntries, userName, requestViewOf(context, groupsOf));
+      if (match === null) return { result: 'notfound', messages };
+      this.applyUsersMatch(context, match);
       return { result: 'ok', messages };
     }
     if (this.isRealmInstance(name)) return this.runRealmModule(name, context);

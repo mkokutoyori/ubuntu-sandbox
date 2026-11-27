@@ -107,7 +107,7 @@ function backedUpWithOneRow(): void {
 
 function restoreUntil(scn: number): string {
   return rman(
-    `SHUTDOWN IMMEDIATE;\\nSTARTUP MOUNT;\\nRESTORE DATABASE;\\nRECOVER DATABASE UNTIL SCN ${scn};\\nALTER DATABASE OPEN;`);
+    `SHUTDOWN IMMEDIATE;\\nSTARTUP MOUNT;\\nRESTORE DATABASE;\\nRECOVER DATABASE UNTIL SCN ${scn};\\nALTER DATABASE OPEN RESETLOGS;`);
 }
 
 describe('le journal archive porte des vecteurs de changement', () => {

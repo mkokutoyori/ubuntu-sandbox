@@ -48,7 +48,7 @@ import type { WindowsUser, WindowsGroup } from '@/network/devices/windows/Window
 import { parseRegistryAddress, type PSRegistryProvider, type RegistryAddress, type RegistryValueType } from '@/network/devices/windows/PSRegistryProvider';
 import type { WindowsService } from '@/network/devices/windows/WindowsServiceManager';
 import {
-  captureOracleState, restoreOracleState, type OracleTopologyState,
+  captureOracleState, getOracleDatabase, getRegisteredOracleDatabase, restoreOracleState, type OracleTopologyState,
 } from '@/terminal/commands/database';
 import { VirtualFileSystem, type INode } from '@/network/devices/linux/VirtualFileSystem';
 import { isContentDeferred } from '@/network/core/DeferredContent';
@@ -293,6 +293,7 @@ interface TopologyDeviceExport {
    * database, which would install Oracle on every host in the topology.
    */
   oracle?: OracleTopologyState;
+  oracleInstalled?: true;
   /**
    * A Windows host's local SAM.
    *
@@ -852,6 +853,7 @@ function serviceMgrOf(device: LinuxMachine): {
   enable(n: string): unknown; disable(n: string): unknown;
   mask(n: string): unknown; unmask(n: string): unknown;
   start(n: string): unknown; stop(n: string): unknown;
+  restart(n: string): unknown;
 } {
   return (device as unknown as {
     executor: { serviceMgr: ReturnType<typeof serviceMgrOf> };
@@ -918,6 +920,16 @@ function captureLinuxServices(device: LinuxMachine, twin: LinuxMachine): Topolog
       enabled: u.enabled as TopologyLinuxServiceExport['enabled'],
       active: u.state === 'active',
     }));
+}
+
+function restartServicesReadingRestoredFiles(device: LinuxMachine, restoredPaths: readonly string[]): void {
+  const mgr = serviceMgrOf(device);
+  for (const unit of mgr.list()) {
+    if (unit.state !== 'active' || ORACLE_INSTANCE_UNIT.test(unit.name)) continue;
+    const ownsRestoredFile = restoredPaths.some((path) =>
+      path.startsWith(`/etc/${unit.name}/`) || path.startsWith(`/etc/${unit.name}.`));
+    if (ownsRestoredFile) mgr.restart(unit.name);
+  }
 }
 
 function restoreLinuxServices(
@@ -1255,6 +1267,7 @@ function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Eq
   }
   const oracle = captureOracleState(device.getId());
   if (oracle) entry.oracle = oracle;
+  else if (getRegisteredOracleDatabase(device.getId())) entry.oracleInstalled = true;
   if (device instanceof WindowsPC && twin instanceof WindowsPC) {
     if (device instanceof WindowsServer && twin instanceof WindowsServer) {
       const features = captureWindowsFeatures(device, twin);
@@ -1674,11 +1687,13 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       // After the files, because a unit file the lab wrote has to exist
       // before the manager can be asked to enable or start it.
       if (devData.linuxServices) restoreLinuxServices(device, devData.linuxServices);
+      restartServicesReadingRestoredFiles(device, (devData.files ?? []).map((file) => file.path));
       if (devData.linuxBonds) restoreLinuxBonds(device, devData.linuxBonds);
       device.restartTimeDaemonFromFiles();
       device.restartSyslogDaemonFromFiles();
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
+    else if (devData.oracleInstalled) getOracleDatabase(device.getId());
     if (device instanceof WindowsPC) {
       if (devData.windowsFeatures && device instanceof WindowsServer) restoreWindowsFeatures(device, devData.windowsFeatures);
       if (devData.activeDirectory && device instanceof WindowsServer) restoreActiveDirectory(device, devData.activeDirectory, idMap);

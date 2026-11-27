@@ -226,6 +226,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SWITCH TABLESPACE (\S+) TO COPY$/i,                       command: new SwitchCommand('TABLESPACE') },
       { pattern: /^SWITCH DATAFILE (\d+) TO COPY$/i,                         command: new SwitchCommand('DATAFILE') },
       { pattern: /^SET DBID\s+(\d+)$/i,                                   command: new SetCommand('DBID') },
+      { pattern: /^SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE (?:DISK|SBT) TO '([^']+)'$/i, command: new SetCommand('AUTOBACKUP_FORMAT') },
       { pattern: /^SET MAXCORRUPT FOR DATAFILE (\d+) TO (\d+)$/i,    command: new SetCommand('MAXCORRUPT') },
       { pattern: /^SET UNTIL TIME '([^']+)'$/i,                     command: new SetCommand('UNTIL_TIME') },
       { pattern: /^SET UNTIL SCN (\d+)$/i,                          command: new SetCommand('UNTIL_SCN')  },

@@ -1,5 +1,6 @@
-import type { ConfSection } from '../FreeradiusConf';
+import { confBoolean, type ConfSection } from '../FreeradiusConf';
 import type { ExternalExpansion } from '../Xlat';
+import type { UsersEntry, UsersOperator, UsersPair } from '../UsersFileParser';
 import type { SqlConnector, SqlSession } from './SqlPort';
 
 export interface SqlModuleConfig {
@@ -10,7 +11,15 @@ export interface SqlModuleConfig {
   readonly login: string;
   readonly password: string;
   readonly safeCharacters: string;
+  readonly accountingQueries: ReadonlyMap<string, readonly string[]>;
+  readonly postAuthQueries: readonly string[];
+  readonly userName: string;
+  readonly readGroups: boolean;
+  readonly queries: ReadonlyMap<string, string>;
 }
+
+const AUTHORIZE_QUERIES = ['authorize_check_query', 'authorize_reply_query', 'authorize_group_check_query', 'authorize_group_reply_query', 'group_membership_query'];
+const OPERATORS = new Set<string>(['=', ':=', '+=', '-=', '==', '!=', '<', '>', '<=', '>=', '=~', '!~']);
 
 const SAFE_CHARACTERS = '@abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_: /';
 const SUPPORTED_DRIVER = 'rlm_sql_oracle';
@@ -21,9 +30,16 @@ const STORED_KEYS = new Set([
 ]);
 const QUERY_SUFFIX = /_query$/;
 
+function accountingQueriesOf(section: ConfSection): ReadonlyMap<string, readonly string[]> {
+  const types = section.sections.find((candidate) => candidate.name1 === 'accounting')?.sections.find((candidate) => candidate.name1 === 'type');
+  const queries = new Map<string, readonly string[]>();
+  for (const kind of types?.sections ?? []) queries.set(kind.name1.toLowerCase(), kind.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value));
+  return queries;
+}
+
 export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { error: string } {
   const name = section.name2 ?? section.name1;
-  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS };
+  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section), postAuthQueries: section.sections.find((candidate) => candidate.name1 === 'post-auth')?.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value) ?? [], userName: '%{User-Name}', readGroups: true, queries: new Map<string, string>() };
   for (const pair of section.pairs) {
     const where = `${pair.file}[${pair.line}]`;
     if (pair.name === 'driver') config.driver = pair.value;
@@ -32,6 +48,12 @@ export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { e
     else if (pair.name === 'login') config.login = pair.value;
     else if (pair.name === 'password') config.password = pair.value;
     else if (pair.name === 'safe_characters' || pair.name === 'safe-characters') config.safeCharacters = pair.value;
+    else if (pair.name === 'sql_user_name') config.userName = pair.value;
+    else if (pair.name === 'read_groups') {
+      const flag = confBoolean(pair);
+      if (typeof flag !== 'boolean') return flag;
+      config.readGroups = flag;
+    } else if (AUTHORIZE_QUERIES.includes(pair.name)) (config.queries as Map<string, string>).set(pair.name, pair.value);
     else if (STORED_KEYS.has(pair.name) || QUERY_SUFFIX.test(pair.name)) continue;
     else return { error: `${where}: Unknown sql setting "${pair.name}"` };
   }
@@ -76,6 +98,12 @@ export class SqlModuleInstance {
     return opened;
   }
 
+  private execute(session: SqlSession, query: string): ReturnType<SqlSession['execute']> {
+    const answer = session.execute(query);
+    if (!('error' in answer) && MODIFYING.test(query)) session.execute('COMMIT');
+    return answer;
+  }
+
   expansion(): ExternalExpansion {
     return { escape: (value) => this.escape(value), call: (query) => this.call(query) };
   }
@@ -83,7 +111,7 @@ export class SqlModuleInstance {
   call(query: string): string | undefined {
     const session = this.open();
     if (session === null) return undefined;
-    const answer = session.execute(query);
+    const answer = this.execute(session, query);
     if ('error' in answer) {
       this.log(`rlm_sql (${this.config.name}): SQL query failed: ${answer.error}`);
       return undefined;
@@ -91,6 +119,78 @@ export class SqlModuleInstance {
     if (MODIFYING.test(query)) return answer.affected < 1 ? undefined : String(answer.affected);
     const first = answer.rows[0]?.[0];
     return first === null || first === undefined ? undefined : first;
+  }
+
+  private rows(query: string | undefined, expand: (template: string) => string, session: SqlSession): string[][] | 'fail' {
+    if (query === undefined) return [];
+    const answer = this.execute(session, expand(query));
+    if ('error' in answer) {
+      this.log(`rlm_sql (${this.config.name}): SQL query failed: ${answer.error}`);
+      return 'fail';
+    }
+    return answer.rows.map((row) => row.map((cell) => cell ?? ''));
+  }
+
+  private pairsOf(rows: readonly string[][]): UsersPair[] | 'fail' {
+    const pairs: UsersPair[] = [];
+    for (const row of rows) {
+      const op = row[4] ?? '=';
+      if (!OPERATORS.has(op)) {
+        this.log(`rlm_sql (${this.config.name}): Invalid operator "${op}" for attribute ${row[2]}`);
+        return 'fail';
+      }
+      pairs.push({ name: row[2] ?? '', op: op as UsersOperator, value: row[3] ?? '', tag: null });
+    }
+    return pairs;
+  }
+
+  authorize(userName: string, expand: (template: string) => string, expandGroup: (template: string, group: string) => string): UsersEntry[] | 'fail' {
+    const session = this.open();
+    if (session === null) return 'fail';
+    const entries: UsersEntry[] = [];
+    const check = this.rows(this.config.queries.get('authorize_check_query'), expand, session);
+    const reply = this.rows(this.config.queries.get('authorize_reply_query'), expand, session);
+    if (check === 'fail' || reply === 'fail') return 'fail';
+    const userCheck = this.pairsOf(check);
+    const userReply = this.pairsOf(reply);
+    if (userCheck === 'fail' || userReply === 'fail') return 'fail';
+    if (userCheck.length > 0 || userReply.length > 0) entries.push({ name: userName, check: userCheck, reply: userReply, line: 0 });
+    if (!this.config.readGroups) return entries;
+    const groups = this.rows(this.config.queries.get('group_membership_query'), expand, session);
+    if (groups === 'fail') return 'fail';
+    for (const [group] of groups) {
+      const groupCheck = this.rows(this.config.queries.get('authorize_group_check_query'), (template) => expandGroup(template, group), session);
+      const groupReply = this.rows(this.config.queries.get('authorize_group_reply_query'), (template) => expandGroup(template, group), session);
+      if (groupCheck === 'fail' || groupReply === 'fail') return 'fail';
+      const checkPairs = this.pairsOf(groupCheck);
+      const replyPairs = this.pairsOf(groupReply);
+      if (checkPairs === 'fail' || replyPairs === 'fail') return 'fail';
+      if (checkPairs.length > 0 || replyPairs.length > 0) entries.push({ name: userName, check: checkPairs, reply: replyPairs, line: 0 });
+    }
+    return entries;
+  }
+
+  private runQueries(queries: readonly string[], expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
+    if (queries.length === 0) return 'noop';
+    const session = this.open();
+    if (session === null) return 'fail';
+    for (const template of queries) {
+      const answer = this.execute(session, expand(template));
+      if ('error' in answer) {
+        this.log(`rlm_sql (${this.config.name}): SQL query failed: ${answer.error}`);
+        return 'fail';
+      }
+      if (answer.affected > 0) return 'ok';
+    }
+    return 'noop';
+  }
+
+  accounting(statusType: string, expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
+    return this.runQueries(this.config.accountingQueries.get(statusType.toLowerCase()) ?? [], expand);
+  }
+
+  postAuth(expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
+    return this.runQueries(this.config.postAuthQueries, expand);
   }
 
   close(): void {

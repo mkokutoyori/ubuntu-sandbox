@@ -996,7 +996,8 @@ export class OracleParser extends BaseParser {
   private parseAlterDatabase(pos: SourcePosition): AlterDatabaseStatement {
     if (this.matchKeyword('OPEN')) {
       const readOnly = this.matchKeyword('READ') ? (this.expectKeyword('ONLY'), true) : false;
-      return { type: 'AlterDatabaseStatement', position: pos, action: 'OPEN', details: readOnly ? 'READ ONLY' : undefined };
+      const resetlogs = this.matchKeyword('RESETLOGS') ? 'RESETLOGS' : this.matchKeyword('NORESETLOGS') ? 'NORESETLOGS' : undefined;
+      return { type: 'AlterDatabaseStatement', position: pos, action: 'OPEN', details: readOnly ? 'READ ONLY' : resetlogs };
     }
     if (this.matchKeyword('MOUNT')) {
       const standby = this.matchKeyword('STANDBY') ? (this.matchKeyword('DATABASE'), true) : false;

@@ -115,11 +115,17 @@ export class InstanceAdminExecutor {
       return emptyResult(this.instance.setArchiveLogMode(false));
     }
     if (stmt.action === 'OPEN') {
-      this.instance.openDatabase(stmt.details === 'READ ONLY');
+      const resetlogs = stmt.details === 'RESETLOGS' || stmt.details === 'NORESETLOGS' ? stmt.details : undefined;
+      this.instance.openDatabase(stmt.details === 'READ ONLY', resetlogs);
       return emptyResult('Database altered.');
     }
     if (stmt.action === 'MOUNT') {
       this.instance.mountDatabase(stmt.details === 'STANDBY');
+      return emptyResult('Database altered.');
+    }
+    const forcedLogging = /^\s*(NO\s+)?FORCE\s+LOGGING\s*$/i.exec(stmt.action);
+    if (forcedLogging) {
+      this.instance.setForceLogging(forcedLogging[1] === undefined);
       return emptyResult('Database altered.');
     }
     if (/^\s*(?:FAILOVER\s+TO\s+\S+|ACTIVATE\s+(?:PHYSICAL\s+)?STANDBY\s+DATABASE)\s*$/i

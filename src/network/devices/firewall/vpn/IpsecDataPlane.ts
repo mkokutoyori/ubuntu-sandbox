@@ -52,7 +52,7 @@ export function encryptForTunnel(
 
   const encapsulated = engine.processOutbound(packet, tunnel.boundInterface, entry);
   if (!encapsulated || encapsulated.length === 0) {
-    tunnels.markDown(tunnelName, 'negotiation failed');
+    if (engine.lastEncapICMP === null) tunnels.markDown(tunnelName, 'negotiation failed');
     return null;
   }
 

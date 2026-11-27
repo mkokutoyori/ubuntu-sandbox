@@ -287,8 +287,8 @@ export function parseSqlPlusInvocation(args: readonly string[], stdin?: string):
   return { connArgs, sqlSource, isSysdba, startScript };
 }
 
-export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource: string, startScript: string | null = null): string {
-  const { session, loginOutput } = createSQLPlusSession(deviceId, connArgs);
+export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource: string, startScript: string | null = null, osCtx?: OsSecurityContext): string {
+  const { session, loginOutput } = createSQLPlusSession(deviceId, connArgs, osCtx);
   if (loginOutput.some(l => /^ERROR|ORA-\d/.test(l))) return loginOutput.join('\n');
   const device = EquipmentRegistry.getInstance().getById(deviceId);
   if (device) wireSqlPlusSession(device, session);
@@ -303,7 +303,7 @@ export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource
   let exited = startScript !== null && feed(`@${startScript}`);
   const lines = sqlSource.includes('\n')
     ? sqlSource.split('\n')
-    : sqlSource.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => `${statement};`);
+    : sqlSource.split(';').map(statement => statement.trim()).filter(Boolean).map(statement => (statement.startsWith('@') ? statement : `${statement};`));
   for (const line of lines) {
     if (exited) break;
     exited = feed(line);

@@ -82,7 +82,16 @@ export function parseFreeradiusConf(source: string, fileName: string, readFile: 
   }
 }
 
+function relativeVariable(stack: readonly ConfSection[], name: string): string | null {
+  const dots = /^\.+/.exec(name)![0].length;
+  const path = name.slice(dots).split('.');
+  let section: ConfSection | undefined = stack[stack.length - dots];
+  for (const part of path.slice(0, -1)) section = section?.sections.find((candidate) => candidate.name1 === part || candidate.name2 === part);
+  return section?.pairs.find((pair) => pair.name === path[path.length - 1])?.value ?? null;
+}
+
 function lookupVariable(stack: readonly ConfSection[], name: string): string | null {
+  if (name.startsWith('.')) return relativeVariable(stack, name);
   for (let index = stack.length - 1; index >= 0; index--) {
     const found = stack[index].pairs.find((pair) => pair.name === name);
     if (found !== undefined) return found.value;

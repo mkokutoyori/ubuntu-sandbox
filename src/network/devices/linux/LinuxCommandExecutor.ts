@@ -296,6 +296,7 @@ import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshT
 import { sshOptionValues, sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
 import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
+import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
@@ -1001,6 +1002,19 @@ export class LinuxCommandExecutor {
   /** Optional Oracle utility hook — backs `expdp` / `impdp` / `adrci`. */
   _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
   /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
+  oracleCaller(program: string): OsSecurityContext {
+    const users = this.userMgr;
+    const host = kernelHostname(this.vfs);
+    return {
+      osUser: users.currentUser,
+      osGroup: users.gidToName(users.currentGid),
+      isDbaGroup: users.currentUid === 0 || users.getUserGroups(users.currentUser).some((group) => group.name === 'dba'),
+      hostname: host,
+      terminal: 'pts/0',
+      program: `${program}@${host}`,
+    };
+  }
+
   _oracleRman: ((args: string[], stdin?: string) => RmanRun | null) | null = null;
   _oracleRmanAsync: ((args: string[], stdin?: string) => Promise<RmanRun>) | null = null;
   /**
