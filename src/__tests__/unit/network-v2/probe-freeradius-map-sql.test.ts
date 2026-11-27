@@ -1,6 +1,6 @@
 /*
- * Probe: unlang `map sql`. The construct was refused at load ("The unlang construct map is not implemented in this simulator"). Source of truth: FreeRADIUS v3.2.x unlang(5) map and
- * src/modules/rlm_sql/rlm_sql.c (mod_map_proc: the query is expanded with the module escape, only the FIRST row is used, each line of the block `&list:Attribute op 'column'` assigns
+ * Probe: unlang `map sql`. The construct was refused at load ("The unlang construct map is not implemented in this simulator"). Source of truth: FreeRADIUS 4.0 (master) unlang map and
+ * src/modules/rlm_sql/rlm_sql.c (mod_map_proc, absent from v3.2.x, whose modcall.c has no `map`: this is a 4.0 extension, see TODO.md: the query is expanded with the module escape, only the FIRST row is used, each line of the block `&list:Attribute op 'column'` assigns
  * the value of the named column of that row to the attribute, a NULL or missing column is skipped, no row is noop, a query error is fail, at least one attribute written is
  * updated). The assignments go through the same code as `update` (operators, lists reply and control, attribute parsing), so one grammar answers both; the query crosses a real
  * Oracle Net session to another host. map sql is accepted in every processing section, with the name of a loaded sql module.
