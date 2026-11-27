@@ -57,7 +57,8 @@ export function expandTemplate(template: string, lookup: Lookup, atMs: number, e
     }
     if (next === 't') { out += formatCtime(new Date(atMs)); index += 1; continue; }
     if (next === '%') { out += '%'; index += 1; continue; }
-    if (next !== undefined && /[YmdHMSyejabBAZ]/.test(next)) { out += formatLocalTime(`%${next}`, atMs); index += 1; continue; }
+    if (next === 'S') { out += formatLocalTime('%Y-%m-%d %H:%M:%S', atMs); index += 1; continue; }
+    if (next !== undefined && /[YmdHMyejabBAZ]/.test(next)) { out += formatLocalTime(`%${next}`, atMs); index += 1; continue; }
     out += char;
   }
   return out;

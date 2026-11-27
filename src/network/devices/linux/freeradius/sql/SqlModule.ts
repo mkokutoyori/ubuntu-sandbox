@@ -10,6 +10,7 @@ export interface SqlModuleConfig {
   readonly login: string;
   readonly password: string;
   readonly safeCharacters: string;
+  readonly accountingQueries: ReadonlyMap<string, readonly string[]>;
 }
 
 const SAFE_CHARACTERS = '@abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_: /';
@@ -21,9 +22,16 @@ const STORED_KEYS = new Set([
 ]);
 const QUERY_SUFFIX = /_query$/;
 
+function accountingQueriesOf(section: ConfSection): ReadonlyMap<string, readonly string[]> {
+  const types = section.sections.find((candidate) => candidate.name1 === 'accounting')?.sections.find((candidate) => candidate.name1 === 'type');
+  const queries = new Map<string, readonly string[]>();
+  for (const kind of types?.sections ?? []) queries.set(kind.name1.toLowerCase(), kind.pairs.filter((pair) => pair.name === 'query').map((pair) => pair.value));
+  return queries;
+}
+
 export function readSqlModuleConfig(section: ConfSection): SqlModuleConfig | { error: string } {
   const name = section.name2 ?? section.name1;
-  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS };
+  const config = { name, driver: '', dialect: '', connectString: 'radius', login: '', password: '', safeCharacters: SAFE_CHARACTERS, accountingQueries: accountingQueriesOf(section) };
   for (const pair of section.pairs) {
     const where = `${pair.file}[${pair.line}]`;
     if (pair.name === 'driver') config.driver = pair.value;
@@ -76,6 +84,12 @@ export class SqlModuleInstance {
     return opened;
   }
 
+  private execute(session: SqlSession, query: string): ReturnType<SqlSession['execute']> {
+    const answer = session.execute(query);
+    if (!('error' in answer) && MODIFYING.test(query)) session.execute('COMMIT');
+    return answer;
+  }
+
   expansion(): ExternalExpansion {
     return { escape: (value) => this.escape(value), call: (query) => this.call(query) };
   }
@@ -83,7 +97,7 @@ export class SqlModuleInstance {
   call(query: string): string | undefined {
     const session = this.open();
     if (session === null) return undefined;
-    const answer = session.execute(query);
+    const answer = this.execute(session, query);
     if ('error' in answer) {
       this.log(`rlm_sql (${this.config.name}): SQL query failed: ${answer.error}`);
       return undefined;
@@ -91,6 +105,22 @@ export class SqlModuleInstance {
     if (MODIFYING.test(query)) return answer.affected < 1 ? undefined : String(answer.affected);
     const first = answer.rows[0]?.[0];
     return first === null || first === undefined ? undefined : first;
+  }
+
+  accounting(statusType: string, expand: (template: string) => string): 'ok' | 'noop' | 'fail' {
+    const queries = this.config.accountingQueries.get(statusType.toLowerCase());
+    if (queries === undefined || queries.length === 0) return 'noop';
+    const session = this.open();
+    if (session === null) return 'fail';
+    for (const template of queries) {
+      const answer = this.execute(session, expand(template));
+      if ('error' in answer) {
+        this.log(`rlm_sql (${this.config.name}): SQL query failed: ${answer.error}`);
+        return 'fail';
+      }
+      if (answer.affected > 0) return 'ok';
+    }
+    return 'noop';
   }
 
   close(): void {

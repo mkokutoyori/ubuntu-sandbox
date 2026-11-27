@@ -39,8 +39,8 @@ import type { ExternalExpansion } from './Xlat';
 import { readRadiusdThreadPool, settledThreadCount, type RadiusdThreadPool } from './RadiusdThreadPool';
 import { requestDebugLines, knownGoodDisplayName, credentialMessages, type ResolutionTrace } from './RequestDebug';
 import type { RadiusUserResolverContext, AccountingRun, AuthenticateOutcome } from '@/network/radius/RadiusServerAgent';
-import { newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
-import { MICROSOFT_VENDOR_ID } from '@/network/radius/dictionary';
+import { expandForContext, lookup, newContext, run, type Statement, type UnlangContext, type UnlangHost, type ModuleOutcome } from './Unlang';
+import { MICROSOFT_VENDOR_ID, canonicalValueName } from '@/network/radius/dictionary';
 import { formatRadiusAttribute } from '@/network/radius/attributeText';
 import { readProxyConfig, findRealm, NO_PROXY, type ProxyConfig, type RadiusFormat, type HomePool, type HomeServer, type RadSecHomeTls } from './ProxyConfig';
 import { readPipelines, pipelineAllows, type Pipeline, type ProcessingSection } from './PipelineConfig';
@@ -663,6 +663,12 @@ export class RadiusdService {
         if (name === 'radutmp') {
           info.recordUtmp(ctx.request);
           return { result: 'ok', messages: [] };
+        }
+        const sqlInstance = this.sqlInstances.find((instance) => instance.config.name === name);
+        if (sqlInstance !== undefined) {
+          const rawStatus = lookup(ctx, 'request', 'Acct-Status-Type');
+          const statusType = typeof rawStatus === 'number' ? canonicalValueName('acct-status-type', rawStatus) ?? '' : String(rawStatus ?? '');
+          return { result: sqlInstance.accounting(statusType, (template) => expandForContext(template, ctx, (value) => sqlInstance.escape(value))), messages: [] };
         }
         return { result: 'noop', messages: [] };
       },

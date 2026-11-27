@@ -185,3 +185,8 @@ export const RADIUS_VALUE_NAMES: Readonly<Partial<Record<RadiusAttrType, Readonl
     'x.121': 10, 'ipx': 11, 'appletalk': 12, 'decnet-iv': 13, 'banyan-vines': 14, 'e.164-nsap': 15,
   },
 };
+
+export function canonicalValueName(type: RadiusAttrType, value: number): string | undefined {
+  const names = Object.entries(RADIUS_VALUE_NAMES[type] ?? {}).filter(([, number]) => number === value);
+  return names[names.length - 1]?.[0];
+}
