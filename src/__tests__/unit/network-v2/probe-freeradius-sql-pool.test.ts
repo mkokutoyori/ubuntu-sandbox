@@ -4,8 +4,9 @@
  * max spare uses retry_delay lifetime idle_timeout }, defaults 5 3 32 10 0 30 0 60) and src/lib/server/connection.c (start connections are opened when the module is
  * instantiated; a connection is closed once it has served `uses` requests or lived `lifetime` seconds; after a failed attempt no new one is made for `retry_delay` seconds;
  * idle connections above `min` are closed after `idle_timeout` seconds; never more than `max`), raddb/mods-available/sql of 3.0 (num_sql_socks a fixed size, max_queries,
- * lifetime, connect_failure_retry_delay). `spare` is accepted and not evaluated: it only matters under concurrent requests, and a request here is served to completion
- * before the next, so the pool never has fewer idle connections than the one in use. The clock and the connector are injected: the cases are exact, without waiting.
+ * lifetime, connect_failure_retry_delay). `spare` is evaluated by the pool manager of connection.c fr_connection_pool_check, run when a connection is released, at most once a second: below `spare` one connection is opened, above it (and above min) one is closed, not before cleanup_interval seconds after the last opening, the delay growing after each closing. The clock and the connector are injected: the cases are exact, without waiting.
+ *
+ * Spare manager added later: 3 cases (the spare growth, the spare closing with its growing delay, cleanup_interval) fall on git stash; the lifetime and idle_timeout cases now set spare = 0 to isolate their own setting.
  *
  * Discriminated with git stash on src/network: 8 of 9 fall before the fix; the witness (a query answers through the module) passes either way.
  */
@@ -79,7 +80,7 @@ describe('rlm_sql: the connection pool', () => {
   });
 
   it('closes a connection older than `lifetime` seconds', () => {
-    const { state, instance } = rig(ok(configOf([], ['start = 1', 'min = 1', 'lifetime = 10'])));
+    const { state, instance } = rig(ok(configOf([], ['start = 1', 'min = 1', 'spare = 0', 'lifetime = 10'])));
     instance.start();
     instance.call('SELECT 1 FROM dual');
     state.now = 11_000;
@@ -89,7 +90,7 @@ describe('rlm_sql: the connection pool', () => {
   });
 
   it('closes idle connections above `min` after `idle_timeout` seconds', () => {
-    const { state, instance } = rig(ok(configOf([], ['start = 3', 'min = 1', 'idle_timeout = 30'])));
+    const { state, instance } = rig(ok(configOf([], ['start = 3', 'min = 1', 'spare = 0', 'idle_timeout = 30'])));
     instance.start();
     state.now = 31_000;
     instance.call('SELECT 1 FROM dual');
@@ -105,5 +106,40 @@ describe('rlm_sql: the connection pool', () => {
     expect(state.logs.some((line) => line.includes('waiting 10 seconds before retrying'))).toBe(true);
     state.now = 10_001;
     expect(instance.call('SELECT 1 FROM dual')).toBe('1');
+  });
+
+  it('keeps `spare` connections: below it, one more is opened per second of use, up to max', () => {
+    const { state, instance } = rig(ok(configOf([], ['start = 1', 'min = 1', 'max = 8', 'spare = 4'])));
+    instance.start();
+    for (const at of [0, 0, 1_000, 2_000, 3_000, 4_000]) {
+      state.now = at;
+      instance.call('SELECT 1 FROM dual');
+    }
+    expect(instance.openConnections()).toBe(4);
+  });
+
+  it('above `spare`, closes one connection at a time, not before cleanup_interval after the last opening and with a growing delay, never under min', () => {
+    const { state, instance } = rig(ok(configOf([], ['start = 5', 'min = 3', 'max = 8', 'spare = 3', 'idle_timeout = 0'])));
+    instance.start();
+    state.now = 29_000;
+    instance.call('SELECT 1 FROM dual');
+    expect(instance.openConnections()).toBe(5);
+    state.now = 31_000;
+    instance.call('SELECT 1 FROM dual');
+    expect(instance.openConnections()).toBe(4);
+    state.now = 40_000;
+    instance.call('SELECT 1 FROM dual');
+    expect(instance.openConnections()).toBe(4);
+    state.now = 46_000;
+    instance.call('SELECT 1 FROM dual');
+    expect(instance.openConnections()).toBe(3);
+    state.now = 200_000;
+    instance.call('SELECT 1 FROM dual');
+    expect(instance.openConnections()).toBe(3);
+  });
+
+  it('cleanup_interval is a pool setting, bounded by idle_timeout', () => {
+    expect(ok(configOf([], ['cleanup_interval = 10'])).pool.cleanupIntervalSeconds).toBe(10);
+    expect(ok(configOf([], ['cleanup_interval = 500', 'idle_timeout = 40'])).pool.cleanupIntervalSeconds).toBe(40);
   });
 });

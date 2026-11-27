@@ -32,11 +32,12 @@ export interface PoolSettings {
   readonly retryDelaySeconds: number;
   readonly lifetimeSeconds: number;
   readonly idleTimeoutSeconds: number;
+  readonly cleanupIntervalSeconds: number;
 }
 
-const DEFAULT_POOL: PoolSettings = { start: 5, min: 3, max: 32, spare: 10, uses: 0, retryDelaySeconds: 30, lifetimeSeconds: 0, idleTimeoutSeconds: 60 };
+const DEFAULT_POOL: PoolSettings = { start: 5, min: 3, max: 32, spare: 10, uses: 0, retryDelaySeconds: 30, lifetimeSeconds: 0, idleTimeoutSeconds: 60, cleanupIntervalSeconds: 30 };
 const POOL_KEYS: Readonly<Record<string, keyof PoolSettings>> = {
-  start: 'start', min: 'min', max: 'max', spare: 'spare', uses: 'uses', retry_delay: 'retryDelaySeconds', lifetime: 'lifetimeSeconds', idle_timeout: 'idleTimeoutSeconds',
+  start: 'start', min: 'min', max: 'max', spare: 'spare', uses: 'uses', retry_delay: 'retryDelaySeconds', lifetime: 'lifetimeSeconds', idle_timeout: 'idleTimeoutSeconds', cleanup_interval: 'cleanupIntervalSeconds', cleanup_delay: 'cleanupIntervalSeconds',
 };
 const LEGACY_POOL_KEYS: Readonly<Record<string, keyof PoolSettings>> = { connect_failure_retry_delay: 'retryDelaySeconds', lifetime: 'lifetimeSeconds', max_queries: 'uses' };
 
@@ -66,6 +67,8 @@ function readPool(section: ConfSection): PoolSettings | { error: string } {
   if (values.max < 1) return { error: `${pool?.file ?? section.file}[${pool?.line ?? section.line}]: pool: max must be at least 1` };
   if (values.min > values.max) return { error: `${pool?.file ?? section.file}[${pool?.line ?? section.line}]: pool: min (${values.min}) must not exceed max (${values.max})` };
   values.start = Math.min(values.start, values.max);
+  values.spare = Math.min(values.spare, values.max - values.min);
+  if (values.idleTimeoutSeconds > 0) values.cleanupIntervalSeconds = Math.min(values.cleanupIntervalSeconds, values.idleTimeoutSeconds);
   return values as unknown as PoolSettings;
 }
 
@@ -154,6 +157,10 @@ export class SqlModuleInstance {
   private pool: PooledSession[] = [];
   private retryNotBefore = 0;
   private openFailure: string | undefined;
+  private lastChecked = -1;
+  private lastOpened = 0;
+  private delayInterval = 0;
+  private nextDelay = 0;
 
   constructor(readonly config: SqlModuleConfig, private readonly connector: () => SqlConnector | null, private readonly log: (message: string) => void, private readonly now: () => number = () => 0) {}
 
@@ -186,7 +193,31 @@ export class SqlModuleInstance {
     }
     const entry: PooledSession = { session: opened, openedAt: t, lastUsed: t, uses: 0 };
     this.pool.push(entry);
+    this.lastOpened = Math.floor(t / 1000);
+    this.delayInterval = this.config.pool.cleanupIntervalSeconds;
+    this.nextDelay = this.config.pool.cleanupIntervalSeconds;
     return entry;
+  }
+
+  private manageSpares(t: number): void {
+    const second = Math.floor(t / 1000);
+    if (second === this.lastChecked) return;
+    this.lastChecked = second;
+    const { min, max, spare } = this.config.pool;
+    const count = this.pool.length;
+    const closeOne = (): void => {
+      if (second < this.lastOpened + this.delayInterval) return;
+      const victim = [...this.pool].sort((first, other) => first.lastUsed - other.lastUsed)[0];
+      if (victim === undefined) return;
+      this.discard(victim);
+      this.nextDelay = Math.max(this.nextDelay >> 1, 1);
+      this.delayInterval += this.nextDelay;
+    };
+    if (count < min) this.connectOne();
+    else if (count > max) closeOne();
+    else if (count > spare) {
+      if (count > min) closeOne();
+    } else if (count < spare && count < max) this.connectOne();
   }
 
   private discard(entry: PooledSession): void {
@@ -220,6 +251,7 @@ export class SqlModuleInstance {
     if (entry !== undefined) entry.uses += 1;
     const answer = session.execute(query);
     if (!('error' in answer) && MODIFYING.test(query)) session.execute('COMMIT');
+    this.manageSpares(this.now());
     return answer;
   }
 
