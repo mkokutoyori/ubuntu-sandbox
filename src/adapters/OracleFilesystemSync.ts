@@ -33,7 +33,7 @@ import { renderDatafileImage, parseDatafileImage } from '@/database/oracle/stora
 import { renderBackupPieceImage } from '@/terminal/subshells/rman/core/BackupPieceImage';
 import { renderRedoStream, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 import {
-  controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf,
+  controlFileBanner, controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf,
   type ControlFileStructure,
 } from '@/database/oracle/storage/ControlFileImage';
 
@@ -640,12 +640,20 @@ export class OracleFilesystemSync {
     const db = this.ctx.resolveDatabase(deviceId);
     if (!dev || !db) return;
     const structure = this.controlFileStructure(deviceId);
+    let corrupt = false;
     db.instance.getControlFilePaths().forEach((path, index) => {
       const current = this.readAsOracle(dev, path);
       if (current === null) return;
+      if (!current.startsWith(controlFileBanner(index))) {
+        corrupt = true;
+        db.instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00227, '1', '1'));
+        db.instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00202, path));
+        return;
+      }
       const merged = mergeControlFileImage(parseControlFileImage(current), structure);
       writeAsOracle(dev, path, controlFileBody(index, merged));
     });
+    db.instance.setCorruption(corrupt, db.instance.dictionaryCorrupt);
   }
 
   private recordFlashbackLog(deviceId: string): void {
@@ -696,13 +704,21 @@ export class OracleFilesystemSync {
     const instance = this.ctx.resolveDatabase(deviceId)?.instance;
     const numbers = new Map(((this.ctx.resolveDatabase(deviceId)?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined)?.listDatafiles() ?? []).map((file) => [file.path, file.fileNo]));
     let failed = false;
+    const system = ((this.ctx.resolveDatabase(deviceId)?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined)?.listDatafiles() ?? []).find((file) => file.tablespace === 'SYSTEM');
+    let dictionaryCorrupt = false;
     for (const [path, body] of Object.entries(this.segmentImages(deviceId))) {
       if (!this.fileExists(dev, path)) continue;
+      if (path === system?.path && !(this.readAsOracle(dev, path) ?? '').startsWith('[ORACLE ')) {
+        dictionaryCorrupt = true;
+        instance?.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01578, String(system.fileNo), '1'));
+        continue;
+      }
       if (writeAsOracle(dev, path, body)) continue;
       failed = true;
       instance?.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01114, String(numbers.get(path) ?? 0), '1'));
     }
     instance?.setDatafileWriteError(failed);
+    instance?.setCorruption(instance.controlfileCorrupt, dictionaryCorrupt);
   }
 
   private loadSegmentImages(deviceId: string): void {

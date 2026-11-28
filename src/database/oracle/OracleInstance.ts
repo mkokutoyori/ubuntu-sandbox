@@ -534,6 +534,17 @@ export class OracleInstance {
     return this._transportState.get(destId);
   }
 
+  private _controlfileCorrupt = false;
+  private _dictionaryCorrupt = false;
+
+  get controlfileCorrupt(): boolean { return this._controlfileCorrupt; }
+  get dictionaryCorrupt(): boolean { return this._dictionaryCorrupt; }
+
+  setCorruption(controlfile: boolean, dictionary: boolean): void {
+    this._controlfileCorrupt = controlfile;
+    this._dictionaryCorrupt = dictionary;
+  }
+
   private _logfileInaccessible = false;
 
   get logfileInaccessible(): boolean { return this._logfileInaccessible; }
