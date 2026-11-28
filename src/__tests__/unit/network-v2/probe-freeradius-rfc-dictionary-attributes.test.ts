@@ -5,7 +5,7 @@
  * Configuration-Token 78, Acct-Interim-Interval 85), rfc4372 (Chargeable-User-Identity 89), rfc4818 (Delegated-IPv6-Prefix 123). The users file and radclient refused them with `Unknown attribute`
  * where the real server knows them. Tunnel-Password (69) is not added: its salted encryption is not modelled.
  *
- * Discriminated with git stash on src/network: 4 of 6 fall before the fix. Two pass either way and are named: the witness (a known attribute is still accepted) and the unknown name, whose
+ * Discriminated with git stash on src/network: 5 of 7 fall before the fix. Two pass either way and are named: the witness (a known attribute is still accepted) and the unknown name, whose
  * assertion (the name is not echoed) is vacuously true before and still true after; it guards that the dictionary did not become permissive.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -86,6 +86,14 @@ describe('attributes of the RFC dictionaries', () => {
     expect(out).toContain('DNS-Server-IPv6-Address = 2001:db8::53');
     expect(out).toContain('Egress-VLANID = 30');
     expect(out).toContain('Digest-CNonce = "abc"');
+  });
+
+  it('the third pass: Management-Privilege-Level, Service-Selection and PMIP6-Home-LMA-IPv6-Address print under the dictionary spelling', async () => {
+    const { client } = await lab('\tManagement-Privilege-Level = 15,\n\tService-Selection = "internet",\n\tPMIP6-Home-LMA-IPv6-Address = 2001:db8::1\n');
+    const out = await ask(client);
+    expect(out).toContain('Management-Privilege-Level = 15');
+    expect(out).toContain('Service-Selection = "internet"');
+    expect(out).toContain('PMIP6-Home-LMA-IPv6-Address = 2001:db8::1');
   });
 
   it('a name the real dictionary does not have is still refused', async () => {

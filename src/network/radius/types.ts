@@ -55,6 +55,37 @@ export const RADIUS_PACKET_NAME: Record<RadiusCode, string> = {
 };
 
 export type RadiusAttrType =
+  | 'eap-key-name'
+  | 'mip6-home-link-prefix'
+  | 'framed-management'
+  | 'management-transport-protection'
+  | 'management-policy-id'
+  | 'management-privilege-level'
+  | 'pkm-ss-cert'
+  | 'pkm-ca-cert'
+  | 'pkm-config-settings'
+  | 'pkm-cryptosuite-list'
+  | 'pkm-sa-descriptor'
+  | 'pkm-auth-key'
+  | 'ds-lite-tunnel-name'
+  | 'mobile-node-identifier'
+  | 'service-selection'
+  | 'pmip6-home-lma-ipv6-address'
+  | 'pmip6-visited-lma-ipv6-address'
+  | 'pmip6-home-lma-ipv4-address'
+  | 'pmip6-visited-lma-ipv4-address'
+  | 'pmip6-home-hn-prefix'
+  | 'pmip6-visited-hn-prefix'
+  | 'pmip6-home-interface-id'
+  | 'pmip6-visited-interface-id'
+  | 'pmip6-home-dhcp4-server-address'
+  | 'pmip6-visited-dhcp4-server-address'
+  | 'pmip6-home-dhcp6-server-address'
+  | 'pmip6-visited-dhcp6-server-address'
+  | 'pmip6-home-ipv4-gateway'
+  | 'pmip6-visited-ipv4-gateway'
+  | 'eap-lower-layer'
+  | 'originating-line-info'
   | 'egress-vlanid'
   | 'ingress-filters'
   | 'egress-vlan-name'
@@ -267,6 +298,37 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'callback-id': 20,
   'framed-route': 22,
   'port-limit': 62,
+  'eap-key-name': 102,
+  'mip6-home-link-prefix': 125,
+  'framed-management': 133,
+  'management-transport-protection': 134,
+  'management-policy-id': 135,
+  'management-privilege-level': 136,
+  'pkm-ss-cert': 137,
+  'pkm-ca-cert': 138,
+  'pkm-config-settings': 139,
+  'pkm-cryptosuite-list': 140,
+  'pkm-sa-descriptor': 142,
+  'pkm-auth-key': 143,
+  'ds-lite-tunnel-name': 144,
+  'mobile-node-identifier': 145,
+  'service-selection': 146,
+  'pmip6-home-lma-ipv6-address': 147,
+  'pmip6-visited-lma-ipv6-address': 148,
+  'pmip6-home-lma-ipv4-address': 149,
+  'pmip6-visited-lma-ipv4-address': 150,
+  'pmip6-home-hn-prefix': 151,
+  'pmip6-visited-hn-prefix': 152,
+  'pmip6-home-interface-id': 153,
+  'pmip6-visited-interface-id': 154,
+  'pmip6-home-dhcp4-server-address': 157,
+  'pmip6-visited-dhcp4-server-address': 158,
+  'pmip6-home-dhcp6-server-address': 159,
+  'pmip6-visited-dhcp6-server-address': 160,
+  'pmip6-home-ipv4-gateway': 161,
+  'pmip6-visited-ipv4-gateway': 162,
+  'eap-lower-layer': 163,
+  'originating-line-info': 94,
   'egress-vlanid': 56,
   'ingress-filters': 57,
   'egress-vlan-name': 58,
