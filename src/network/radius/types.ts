@@ -55,6 +55,64 @@ export const RADIUS_PACKET_NAME: Record<RadiusCode, string> = {
 };
 
 export type RadiusAttrType =
+  | 'egress-vlanid'
+  | 'ingress-filters'
+  | 'egress-vlan-name'
+  | 'user-priority-table'
+  | 'nas-filter-rule'
+  | 'digest-response'
+  | 'digest-realm'
+  | 'digest-nonce'
+  | 'digest-response-auth'
+  | 'digest-nextnonce'
+  | 'digest-method'
+  | 'digest-uri'
+  | 'digest-qop'
+  | 'digest-algorithm'
+  | 'digest-entity-body-hash'
+  | 'digest-cnonce'
+  | 'digest-nonce-count'
+  | 'digest-username'
+  | 'digest-opaque'
+  | 'digest-auth-param'
+  | 'digest-aka-auts'
+  | 'digest-domain'
+  | 'digest-stale'
+  | 'digest-ha1'
+  | 'sip-aor'
+  | 'operator-name'
+  | 'location-information'
+  | 'location-data'
+  | 'basic-location-policy-rules'
+  | 'extended-location-policy-rules'
+  | 'location-capable'
+  | 'requested-location-info'
+  | 'framed-ipv6-address'
+  | 'dns-server-ipv6-address'
+  | 'route-ipv6-information'
+  | 'delegated-ipv6-prefix-pool'
+  | 'stateful-ipv6-address-pool'
+  | 'gss-acceptor-service-name'
+  | 'gss-acceptor-host-name'
+  | 'gss-acceptor-service-specifics'
+  | 'gss-acceptor-realm-name'
+  | 'allowed-called-station-id'
+  | 'eap-peer-id'
+  | 'eap-server-id'
+  | 'mobility-domain-id'
+  | 'preauth-timeout'
+  | 'network-id-name'
+  | 'eapol-announcement'
+  | 'wlan-hessid'
+  | 'wlan-venue-info'
+  | 'wlan-venue-language'
+  | 'wlan-venue-name'
+  | 'wlan-reason-code'
+  | 'wlan-pairwise-cipher'
+  | 'wlan-group-cipher'
+  | 'wlan-akm-suite'
+  | 'wlan-group-mgmt-cipher'
+  | 'wlan-rf-band'
   | 'framed-ipx-network'
   | 'login-lat-service'
   | 'login-lat-node'
@@ -209,6 +267,64 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'callback-id': 20,
   'framed-route': 22,
   'port-limit': 62,
+  'egress-vlanid': 56,
+  'ingress-filters': 57,
+  'egress-vlan-name': 58,
+  'user-priority-table': 59,
+  'nas-filter-rule': 92,
+  'digest-response': 103,
+  'digest-realm': 104,
+  'digest-nonce': 105,
+  'digest-response-auth': 106,
+  'digest-nextnonce': 107,
+  'digest-method': 108,
+  'digest-uri': 109,
+  'digest-qop': 110,
+  'digest-algorithm': 111,
+  'digest-entity-body-hash': 112,
+  'digest-cnonce': 113,
+  'digest-nonce-count': 114,
+  'digest-username': 115,
+  'digest-opaque': 116,
+  'digest-auth-param': 117,
+  'digest-aka-auts': 118,
+  'digest-domain': 119,
+  'digest-stale': 120,
+  'digest-ha1': 121,
+  'sip-aor': 122,
+  'operator-name': 126,
+  'location-information': 127,
+  'location-data': 128,
+  'basic-location-policy-rules': 129,
+  'extended-location-policy-rules': 130,
+  'location-capable': 131,
+  'requested-location-info': 132,
+  'framed-ipv6-address': 168,
+  'dns-server-ipv6-address': 169,
+  'route-ipv6-information': 170,
+  'delegated-ipv6-prefix-pool': 171,
+  'stateful-ipv6-address-pool': 172,
+  'gss-acceptor-service-name': 164,
+  'gss-acceptor-host-name': 165,
+  'gss-acceptor-service-specifics': 166,
+  'gss-acceptor-realm-name': 167,
+  'allowed-called-station-id': 174,
+  'eap-peer-id': 175,
+  'eap-server-id': 176,
+  'mobility-domain-id': 177,
+  'preauth-timeout': 178,
+  'network-id-name': 179,
+  'eapol-announcement': 180,
+  'wlan-hessid': 181,
+  'wlan-venue-info': 182,
+  'wlan-venue-language': 183,
+  'wlan-venue-name': 184,
+  'wlan-reason-code': 185,
+  'wlan-pairwise-cipher': 186,
+  'wlan-group-cipher': 187,
+  'wlan-akm-suite': 188,
+  'wlan-group-mgmt-cipher': 189,
+  'wlan-rf-band': 190,
   'framed-ipx-network': 23,
   'login-lat-service': 34,
   'login-lat-node': 35,

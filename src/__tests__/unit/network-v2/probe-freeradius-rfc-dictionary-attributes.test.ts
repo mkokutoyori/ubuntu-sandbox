@@ -5,7 +5,7 @@
  * Configuration-Token 78, Acct-Interim-Interval 85), rfc4372 (Chargeable-User-Identity 89), rfc4818 (Delegated-IPv6-Prefix 123). The users file and radclient refused them with `Unknown attribute`
  * where the real server knows them. Tunnel-Password (69) is not added: its salted encryption is not modelled.
  *
- * Discriminated with git stash on src/network: 3 of 5 fall before the fix. Two pass either way and are named: the witness (a known attribute is still accepted) and the unknown name, whose
+ * Discriminated with git stash on src/network: 4 of 6 fall before the fix. Two pass either way and are named: the witness (a known attribute is still accepted) and the unknown name, whose
  * assertion (the name is not echoed) is vacuously true before and still true after; it guards that the dictionary did not become permissive.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -76,6 +76,16 @@ describe('attributes of the RFC dictionaries', () => {
     ] } as RadiusPacket);
     const decoded = decodeRadiusPacket(wire) as RadiusPacket;
     expect(decoded.attributes.map((attribute) => `${attribute.type}=${attribute.value}`)).toEqual(['chargeable-user-identity=abcd01', 'delegated-ipv6-prefix=2001:db8::/48']);
+  });
+
+  it('the second pass: Operator-Name, Framed-IPv6-Address, DNS-Server-IPv6-Address, Egress-VLANID and Digest-CNonce print under the dictionary spelling', async () => {
+    const { client } = await lab('\tOperator-Name = "1example.org",\n\tFramed-IPv6-Address = 2001:db8::5,\n\tDNS-Server-IPv6-Address = 2001:db8::53,\n\tEgress-VLANID = 30,\n\tDigest-CNonce = "abc"\n');
+    const out = await ask(client);
+    expect(out).toContain('Operator-Name = "1example.org"');
+    expect(out).toContain('Framed-IPv6-Address = 2001:db8::5');
+    expect(out).toContain('DNS-Server-IPv6-Address = 2001:db8::53');
+    expect(out).toContain('Egress-VLANID = 30');
+    expect(out).toContain('Digest-CNonce = "abc"');
   });
 
   it('a name the real dictionary does not have is still refused', async () => {
