@@ -103,6 +103,11 @@ export interface StandbyLogGroup {
   thread: number;
   members: string[];
   bytes: number;
+  dbid: string | null;
+  sequence: number;
+  used: number;
+  archived: 'YES' | 'NO';
+  status: 'UNASSIGNED' | 'ACTIVE';
 }
 
 export class OracleInstance {
@@ -741,9 +746,37 @@ export class OracleInstance {
       topic: 'oracle.standby.redo-received',
       payload: { ...this.ref(), name, thread, sequence, scn, body },
     });
-    if (name.endsWith('.srl')) return;
+    if (name.endsWith('.srl')) {
+      this.fillStandbyLog(thread, body.length);
+      return;
+    }
+    this.releaseStandbyLog(thread, sequence);
     this.logAlert(`RFS: Archived log thread ${thread} sequence ${sequence}`);
     this.catalogArchivedLog(name, sequence, scn, 'RFS');
+  }
+
+  private _lastArchivedSequence = 0;
+
+  private fillStandbyLog(thread: number, bytes: number): void {
+    const group = this._standbyLogs.find((g) => g.thread === thread && g.status === 'ACTIVE')
+      ?? this._standbyLogs.find((g) => g.thread === thread && g.status === 'UNASSIGNED');
+    if (group === undefined) return;
+    group.status = 'ACTIVE';
+    group.dbid = String(this.getDbId());
+    group.sequence = this._lastArchivedSequence + 1;
+    group.archived = 'NO';
+    group.used = Math.min(group.bytes, group.used + bytes);
+  }
+
+  private releaseStandbyLog(thread: number, sequence: number): void {
+    this._lastArchivedSequence = Math.max(this._lastArchivedSequence, sequence);
+    for (const group of this._standbyLogs) {
+      if (group.thread !== thread || group.status !== 'ACTIVE') continue;
+      group.status = 'UNASSIGNED';
+      group.dbid = null;
+      group.used = 0;
+      group.archived = 'NO';
+    }
   }
 
   noteDatafileShipped(fileNo: number, path: string, body: string): void {
@@ -1336,7 +1369,7 @@ export class OracleInstance {
     if (this._standbyLogs.some((g) => g.group === number) || this._redoLogGroups.some((g) => g.group === number)) {
       return `ORA-01184: logfile group ${number} already exists`;
     }
-    this._standbyLogs.push({ group: number, thread, members: [...members], bytes: sizeBytes });
+    this._standbyLogs.push({ group: number, thread, members: [...members], bytes: sizeBytes, dbid: null, sequence: 0, used: 0, archived: 'YES', status: 'UNASSIGNED' });
     this.getBus().publish({
       topic: 'oracle.redo.standby-log-changed',
       payload: { ...this.ref(), group: number, members: [...members], sizeBytes, dropped: false },

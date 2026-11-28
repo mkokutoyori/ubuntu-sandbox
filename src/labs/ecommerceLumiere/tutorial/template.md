@@ -1117,7 +1117,7 @@ Et sur la standby :
 
 {{step:dr-journaux-standby-stb}}
 
-👀 **Lire la sortie.** `Database altered.` : le groupe 11 existe, avec son fichier (`srl11.log`) sur le disque. `V$STANDBY_LOG` le montre `UNASSIGNED` : il n'est pas encore affecté à une primaire (dans le simulateur il le restera, car la réception du redo n'écrit pas encore dedans ; la liste des limites, chapitre 19, le dit).
+👀 **Lire la sortie.** `Database altered.` : le groupe 11 existe, avec son fichier (`srl11.log`) sur le disque. `V$STANDBY_LOG` le montre `UNASSIGNED` : il n'est affecté à aucune primaire tant qu'aucun redo n'arrive. Dès qu'un `COMMIT` synchrone envoie le sien, le groupe passe `ACTIVE` (avec le DBID de la primaire et les octets utilisés) ; quand l'archive de ce journal arrive, il se libère.
 
 ### 14.5 Le broker : la même chose, gérée pour toi
 

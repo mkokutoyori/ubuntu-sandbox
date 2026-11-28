@@ -6,10 +6,10 @@
  * Releve AVANT : `ALTER DATABASE ADD STANDBY LOGFILE` n'existait pas (CLAUDE.md : « standby redo logs as files » non construit), V$STANDBY_LOG etait un faux (il listait les bases standby declarees comme des groupes de journaux, sans fichier) que `oracle-scheduler-multitenant-dg` figeait, et le broker declarait SUCCESS une standby sans
  * aucun standby redo log.
  *
- * Les fichiers naissent sur la machine par l'evenement `oracle.redo.standby-log-changed`. LIMITE : la reception du redo n'ecrit pas ENCORE dans ces fichiers (les journaux archives et les `.srl` de commit
- * existent toujours), donc V$STANDBY_LOG les montre UNASSIGNED.
+ * Les fichiers naissent sur la machine par l'evenement `oracle.redo.standby-log-changed`. La RECEPTION du redo les remplit : le redo d'un COMMIT synchrone affecte un groupe (STATUS ACTIVE, DBID de la
+ * primaire, SEQUENCE#, USED), l'arrivee de l'archive de ce journal le libere (UNASSIGNED, ARCHIVED NO : « the standby redo log has been archived and is again available », page V$STANDBY_LOG).
  *
- * Discrimine par `git stash push -- src/terminal src/database src/adapters` : 5 des 7 cas tombent. Deux passent des deux cotes et sont nommes : le TEMOIN (avec des standby redo logs, SUCCESS) et l'effacement
+ * Discrimine par `git stash push -- src/terminal src/database src/adapters` : 5 des 7 premiers cas tombent (et 2 des 3 derniers contre la version sans reception). Deux passent des deux cotes et sont nommes : le TEMOIN (avec des standby redo logs, SUCCESS) et l'effacement
  * de l'erreur par l'ajout sur la standby (vrai avant, parce que le broker disait SUCCESS sans rien verifier).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -96,5 +96,33 @@ describe('standby redo logs', () => {
     expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;')).toContain('ORA-16693');
     lab.sql(lab.dr, SRL);
     expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;')).toContain('Enabled in Zero Data Loss Mode.');
+  });
+
+  const synchronous = (): void => {
+    addStandbyRedoLogs(lab);
+    configured();
+    dgmgrl(lab.prod, "EDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='SYNC';", 'EDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;');
+  };
+  const standbyView = (): string => lab.sql(lab.dr, 'SELECT group#, dbid, sequence#, used, archived, status FROM v$standby_log;');
+
+  it('TEMOIN — before any commit the group is unassigned and unused', () => {
+    synchronous();
+    expect(standbyView()).toMatch(/11\s+UNASSIGNED\s+0\s+0\s+YES\s+UNASSIGNED/);
+  });
+
+  it('the redo of a synchronous commit fills a group: ACTIVE, the primary DBID, bytes used', () => {
+    synchronous();
+    lab.sql(lab.prod, 'CREATE TABLE t (id NUMBER);');
+    lab.sql(lab.prod, "INSERT INTO t VALUES (1);\nCOMMIT;");
+    const view = standbyView();
+    expect(view).toMatch(/11\s+\d{6,}\s+\d+\s+[1-9]\d*\s+NO\s+ACTIVE/);
+  });
+
+  it('the archive of that log releases the group: UNASSIGNED, ARCHIVED NO, nothing used', () => {
+    synchronous();
+    lab.sql(lab.prod, 'CREATE TABLE t (id NUMBER);');
+    lab.sql(lab.prod, "INSERT INTO t VALUES (1);\nCOMMIT;");
+    lab.sql(lab.prod, 'ALTER SYSTEM SWITCH LOGFILE;');
+    expect(standbyView()).toMatch(/11\s+UNASSIGNED\s+\d+\s+0\s+NO\s+UNASSIGNED/);
   });
 });

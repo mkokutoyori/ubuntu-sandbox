@@ -18,7 +18,7 @@ registerView({
         { name: 'ARCHIVED', dataType: oracleVarchar2(3) },
         { name: 'STATUS', dataType: oracleVarchar2(10) },
       ],
-      instance.getStandbyLogs().map((g) => [g.group, 'UNASSIGNED', g.thread, 0, g.bytes, 512, 0, 'YES', 'UNASSIGNED']),
+      instance.getStandbyLogs().map((g) => [g.group, g.dbid ?? 'UNASSIGNED', g.thread, g.sequence, g.bytes, 512, g.used, g.archived, g.status]),
     );
   },
 });
