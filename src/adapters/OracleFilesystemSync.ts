@@ -27,6 +27,7 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { hostNowMs } from '@/database/oracle/time/OracleHostClock';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { renderDatafileImage, parseDatafileImage } from '@/database/oracle/storage/DatafileImage';
 import { renderBackupPieceImage } from '@/terminal/subshells/rman/core/BackupPieceImage';
@@ -276,6 +277,32 @@ export class OracleFilesystemSync {
           if (e.payload.dropped) dev.deleteFileFromEditor?.(member);
           else writeAsOracle(dev, member, `[ORACLE STANDBY REDO LOG - Group ${e.payload.group} - ${Math.round(e.payload.sizeBytes / 1048576)}M]`);
         }
+      }),
+
+      this.bus.subscribe('oracle.transaction.committed', (e) => this.recordFlashbackLog(e.payload.deviceId)),
+      this.bus.subscribe('oracle.ddl.executed', (e) => this.recordFlashbackLog(e.payload.deviceId)),
+
+      this.bus.subscribe('oracle.flashback.mode-changed', (e) => {
+        if (e.payload.on) {
+          this.recordFlashbackLog(e.payload.deviceId);
+          return;
+        }
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        const dev = this.dev(e.payload.deviceId);
+        for (const log of db?.instance.getFlashbackLogs() ?? []) dev?.deleteFileFromEditor?.(log.file);
+        db?.instance.dropFlashbackLogs();
+      }),
+
+      this.bus.subscribe('oracle.flashback.restore-requested', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        const body = dev === undefined ? null : this.readAsOracle(dev, e.payload.file);
+        if (dev === undefined || body === null) {
+          e.payload.accept(false);
+          return;
+        }
+        const images = (JSON.parse(body) as { images: Record<string, string> }).images;
+        for (const [path, image] of Object.entries(images)) writeAsOracle(dev, path, image);
+        e.payload.accept(true);
       }),
 
       this.bus.subscribe('oracle.asm.disk-added', (e) => {
@@ -609,6 +636,20 @@ export class OracleFilesystemSync {
       const merged = mergeControlFileImage(parseControlFileImage(current), structure);
       writeAsOracle(dev, path, controlFileBody(index, merged));
     });
+  }
+
+  private recordFlashbackLog(deviceId: string): void {
+    const db = this.ctx.resolveDatabase(deviceId);
+    const dev = this.dev(deviceId);
+    if (!db || !dev || !db.instance.flashbackOn) return;
+    const instance = db.instance;
+    const seq = instance.nextFlashbackSeq();
+    const file = `${ORACLE_CONFIG.FRA}/${instance.config.sid.toUpperCase()}/flashback/o1_mf_${seq}_.flb`;
+    const body = JSON.stringify({ scn: instance.getCurrentScn(), images: this.segmentImages(deviceId) });
+    writeAsOracle(dev, file, body);
+    for (const stale of instance.noteFlashbackLog({ seq, scn: instance.getCurrentScn(), timeMs: hostNowMs(), bytes: body.length, file })) {
+      dev.deleteFileFromEditor?.(stale.file);
+    }
   }
 
   private segmentImages(deviceId: string): Record<string, string> {

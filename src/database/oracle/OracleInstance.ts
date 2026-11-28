@@ -13,7 +13,7 @@ import type { RedoRecord } from './storage/RedoStream';
 import type { UndoRecord } from './transaction/TransactionManager';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
-import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, oracleError, TNS_ERRORS } from './OracleConfig';
 import { parseSize } from './views/_fileSize';
 import { OracleError } from '../engine/types/DatabaseError';
 import { ListenerControl, BOOT_LISTENER_PID } from './listener/ListenerControl';
@@ -97,6 +97,16 @@ export interface SGAInfo {
   javaPool: string;
   largePool: string;
 }
+
+export interface FlashbackLogEntry {
+  seq: number;
+  scn: number;
+  timeMs: number;
+  bytes: number;
+  file: string;
+}
+
+export type FlashbackTarget = { kind: 'SCN' | 'TIMESTAMP'; value: number; before: boolean };
 
 export interface StandbyLogGroup {
   group: number;
@@ -1367,7 +1377,7 @@ export class OracleInstance {
   addStandbyLog(thread: number, group: number | null, members: readonly string[], sizeBytes: number): string {
     const number = group ?? Math.max(0, ...this._standbyLogs.map((g) => g.group), ...this._redoLogGroups.map((g) => g.group)) + 1;
     if (this._standbyLogs.some((g) => g.group === number) || this._redoLogGroups.some((g) => g.group === number)) {
-      return `ORA-01184: logfile group ${number} already exists`;
+      return `${oracleError(ORACLE_ERRORS.ORA_01184, number)}`;
     }
     this._standbyLogs.push({ group: number, thread, members: [...members], bytes: sizeBytes, dbid: null, sequence: 0, used: 0, archived: 'YES', status: 'UNASSIGNED' });
     this.getBus().publish({
@@ -1380,7 +1390,7 @@ export class OracleInstance {
 
   dropStandbyLog(group: number): string {
     const found = this._standbyLogs.find((g) => g.group === group);
-    if (found === undefined) return `ORA-01185: logfile group number ${group} is invalid`;
+    if (found === undefined) return `${oracleError(ORACLE_ERRORS.ORA_01185, group)}`;
     this._standbyLogs = this._standbyLogs.filter((g) => g.group !== group);
     this.getBus().publish({
       topic: 'oracle.redo.standby-log-changed',
@@ -1618,6 +1628,53 @@ export class OracleInstance {
   }
   setForceLogging(on: boolean): void { this._forceLogging = on; }
   setFlashbackOn(on: boolean): void { this._flashbackOn = on; }
+
+  private _flashbackLogs: FlashbackLogEntry[] = [];
+  private _flashbackSeq = 0;
+
+  getFlashbackLogs(): readonly FlashbackLogEntry[] { return this._flashbackLogs; }
+
+  nextFlashbackSeq(): number { return ++this._flashbackSeq; }
+
+  dropFlashbackLogs(): void { this._flashbackLogs = []; }
+
+  noteFlashbackLog(entry: FlashbackLogEntry): FlashbackLogEntry[] {
+    this._flashbackLogs.push(entry);
+    const retentionMs = Number(this.getParameter('db_flashback_retention_target') ?? '1440') * 60_000;
+    const kept = this._flashbackLogs.filter((log, index) => index === this._flashbackLogs.length - 1 || entry.timeMs - log.timeMs <= retentionMs);
+    const dropped = this._flashbackLogs.filter((log) => !kept.includes(log));
+    this._flashbackLogs = kept;
+    return dropped;
+  }
+
+  setFlashbackMode(on: boolean): string {
+    if (on && !this._archiveLogMode) return `${ORACLE_ERRORS.ORA_38707}`;
+    if (this._flashbackOn === on) return 'Database altered.';
+    this._flashbackOn = on;
+    this.logAlert(on ? 'Flashback Database Enabled at SCN ' + this._currentScn : 'Flashback Database Disabled');
+    this.getBus().publish({ topic: 'oracle.flashback.mode-changed', payload: { ...this.ref(), on } });
+    return 'Database altered.';
+  }
+
+  flashbackDatabase(target: FlashbackTarget): string {
+    if (this._state !== 'MOUNT') return `${ORACLE_ERRORS.ORA_38757}`;
+    if (!this._archiveLogMode) return `${ORACLE_ERRORS.ORA_38707}`;
+    const field = target.kind === 'SCN' ? 'scn' : 'timeMs';
+    const candidates = this._flashbackLogs.filter((log) => (target.before ? log[field] < target.value : log[field] <= target.value));
+    const entry = candidates[candidates.length - 1];
+    if (!this._flashbackOn || entry === undefined) return `${ORACLE_ERRORS.ORA_38729}`;
+    let restored = false;
+    this.getBus().publish({
+      topic: 'oracle.flashback.restore-requested',
+      payload: { ...this.ref(), file: entry.file, accept: (ok: boolean) => { restored = ok; } },
+    });
+    if (!restored) return `${ORACLE_ERRORS.ORA_38754}`;
+    this._flashbackLogs = this._flashbackLogs.filter((log) => log.seq <= entry.seq);
+    this._currentScn = entry.scn;
+    this._resetlogsRequired = true;
+    this.logAlert(`FLASHBACK DATABASE TO SCN ${entry.scn}`);
+    return 'Flashback complete.';
+  }
 
   setArchiveLogMode(enabled: boolean): string {
     return this.atHostTime(() => {

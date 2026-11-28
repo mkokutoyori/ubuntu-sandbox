@@ -18,7 +18,7 @@ import type { ProtectionMode } from '../dataguard/DataGuardConfiguration';
 import { parseOracleTimeZone } from '../time/OracleTimeZone';
 import { type ResultSet, emptyResult } from '../../engine/executor/ResultSet';
 import type {
-  StartupStatement, ShutdownStatement, AlterSystemStatement,
+  StartupStatement, ShutdownStatement, FlashbackStatement, AlterSystemStatement,
   AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
   AlterTablespaceStatement, AlterTablespaceAction, CreatePfileSpfileStatement,
   CreateDiskgroupStatement, DropDiskgroupStatement, AlterDiskgroupStatement,
@@ -28,7 +28,7 @@ import type { OracleStorage } from '../OracleStorage';
 import type { OracleCatalog } from '../OracleCatalog';
 import type { OracleInstance } from '../OracleInstance';
 import type { PrivilegeEnforcer } from '../security/PrivilegeEnforcer';
-import { ORACLE_CONFIG } from '../OracleConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, oracleErrorCode } from '../OracleConfig';
 import { isStaticParameter } from '../staticParameters';
 
 export interface InstanceAdminDeps {
@@ -37,6 +37,7 @@ export interface InstanceAdminDeps {
   instance: OracleInstance;
   privileges: PrivilegeEnforcer;
   killSession?(sid: number, serial: number, immediate: boolean): boolean | null;
+  evaluate?(expression: import('../../engine/parser/ASTNode').Expression): unknown;
 }
 
 import { decodeBrokerCommand } from '../dataguard/BrokerCommandCodec';
@@ -58,6 +59,19 @@ export class InstanceAdminExecutor {
   executeStartup(stmt: StartupStatement): ResultSet {
     const output = this.instance.startup(stmt.mode);
     return emptyResult(output.join('\n'));
+  }
+
+  executeFlashbackDatabase(stmt: FlashbackStatement): ResultSet {
+    this.deps.privileges.requireSystemPrivilege('ALTER DATABASE');
+    if ((stmt.toKind !== 'SCN' && stmt.toKind !== 'TIMESTAMP') || stmt.toExpr === undefined) {
+      throw new OracleError(oracleErrorCode(ORACLE_ERRORS.ORA_38724), ORACLE_ERRORS.ORA_38724);
+    }
+    const raw = this.deps.evaluate?.(stmt.toExpr);
+    const answer = stmt.toKind === 'SCN'
+      ? this.instance.flashbackDatabase({ kind: 'SCN', value: Number(raw), before: stmt.before === true })
+      : this.instance.flashbackDatabase({ kind: 'TIMESTAMP', value: raw instanceof Date ? raw.getTime() : Date.parse(String(raw)), before: stmt.before === true });
+    if (answer !== 'Flashback complete.') throw new OracleError(oracleErrorCode(answer), answer.replace(/^ORA-\d+:\s*/, ''));
+    return emptyResult(answer);
   }
 
   executeShutdown(stmt: ShutdownStatement): ResultSet {
@@ -136,13 +150,19 @@ export class InstanceAdminExecutor {
       const members = [...addStandbyLog[3].matchAll(/'([^']*)'/g)].map((match) => match[1]);
       const unit = { K: 1024, M: 1048576, G: 1073741824 }[(addStandbyLog[5] ?? '').toUpperCase() as 'K' | 'M' | 'G'] ?? 1;
       const answer = this.instance.addStandbyLog(addStandbyLog[1] === undefined ? 1 : Number(addStandbyLog[1]), addStandbyLog[2] === undefined ? null : Number(addStandbyLog[2]), members, Number(addStandbyLog[4]) * unit);
-      if (answer !== 'Database altered.') throw new OracleError(Number(/ORA-(\d+)/.exec(answer)?.[1] ?? 0), answer.replace(/^ORA-\d+:\s*/, ''));
+      if (answer !== 'Database altered.') throw new OracleError(oracleErrorCode(answer), answer.replace(/^ORA-\d+:\s*/, ''));
       return emptyResult(answer);
     }
     const dropStandbyLog = /^\s*DROP\s+STANDBY\s+LOGFILE\s+GROUP\s+(\d+)\s*$/i.exec(stmt.action);
     if (dropStandbyLog) {
       const answer = this.instance.dropStandbyLog(Number(dropStandbyLog[1]));
-      if (answer !== 'Database altered.') throw new OracleError(Number(/ORA-(\d+)/.exec(answer)?.[1] ?? 0), answer.replace(/^ORA-\d+:\s*/, ''));
+      if (answer !== 'Database altered.') throw new OracleError(oracleErrorCode(answer), answer.replace(/^ORA-\d+:\s*/, ''));
+      return emptyResult(answer);
+    }
+    const flashbackMode = /^\s*FLASHBACK\s+(ON|OFF)\s*$/i.exec(stmt.action);
+    if (flashbackMode) {
+      const answer = this.instance.setFlashbackMode(flashbackMode[1].toUpperCase() === 'ON');
+      if (answer !== 'Database altered.') throw new OracleError(oracleErrorCode(answer), answer.replace(/^ORA-\d+:\s*/, ''));
       return emptyResult(answer);
     }
     const forcedLogging = /^\s*(NO\s+)?FORCE\s+LOGGING\s*$/i.exec(stmt.action);

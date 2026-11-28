@@ -362,6 +362,15 @@ export interface OracleDatafileAddedPayload extends OracleDeviceRef {
   autoextend: boolean;
 }
 
+export interface OracleFlashbackModeChangedPayload extends OracleDeviceRef {
+  on: boolean;
+}
+
+export interface OracleFlashbackRestoreRequestedPayload extends OracleDeviceRef {
+  file: string;
+  accept(ok: boolean): void;
+}
+
 export interface OracleStandbyLogChangedPayload extends OracleDeviceRef {
   group: number;
   members: readonly string[];
@@ -669,6 +678,8 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
   | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
   | { topic: 'oracle.redo.standby-log-changed';          payload: OracleStandbyLogChangedPayload }
+  | { topic: 'oracle.flashback.mode-changed';            payload: OracleFlashbackModeChangedPayload }
+  | { topic: 'oracle.flashback.restore-requested';       payload: OracleFlashbackRestoreRequestedPayload }
   | { topic: 'oracle.storage.checkpoint-completed';      payload: OracleCheckpointCompletedPayload }
   | { topic: 'oracle.storage.tablespace-encrypted';      payload: OracleTablespaceEncryptedPayload }
   | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }

@@ -8,6 +8,7 @@ import { executeOverOracleNet, logonOverOracleNet } from '@/network/oracle-net/O
 import { primaryIpv4, resolveOracleConnectTarget } from './oracleNet';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import { startObserver } from './DgmgrlObserver';
+import { ORACLE_ERRORS, oracleError } from '@/database/oracle/OracleConfig';
 import { registerBrokerCommandRunner } from '@/adapters/OracleBrokerDmon';
 import { BROKER_COMMAND_PARAMETER } from '@/database/oracle/executor/InstanceAdminExecutor';
 import { encodeBrokerCommand } from '@/database/oracle/dataguard/BrokerCommandCodec';
@@ -80,7 +81,7 @@ function remoteExecute(localDevice: HostCapableDevice, identifier: string, state
   const resolved = resolveOracleConnectTarget(localDevice, identifier, getOracleDatabase);
   if (resolved.ok === false) return { ok: false, error: resolved.error };
   if (resolved.remote === false) {
-    if (resolved.db.instance.state === 'SHUTDOWN') return { ok: false, error: 'ORA-01034: ORACLE not available' };
+    if (resolved.db.instance.state === 'SHUTDOWN') return { ok: false, error: ORACLE_ERRORS.ORA_01034 };
     const own = createSQLPlusSession(localDevice.getId(), ['/', 'as', 'sysdba'], { ...IDENTITY, isDbaGroup: true });
     const outputs = statements.map((sql) => own.session.processLine(`${sql};`).output.join('\n'));
     own.session.disconnect();
@@ -124,7 +125,7 @@ function showConfiguration(device: HostCapableDevice, instance: OracleInstance, 
   for (const name of [state.primaryName, ...state.members.keys()]) {
     lines.push(`  ${name} - ${roleLabel(roleOf(instance, state, name))}`);
     if (lacking.has(name)) lines.push(`    Error: ${SRL_MESSAGE}`);
-    if (state.fsfo.enabled && state.observers.length === 0 && (name === state.primaryName || state.members.has(name))) lines.push('    Warning: ORA-16819: fast-start failover observer not started');
+    if (state.fsfo.enabled && state.observers.length === 0 && (name === state.primaryName || state.members.has(name))) lines.push(`    Warning: ${ORACLE_ERRORS.ORA_16819}`);
   }
   const failing = [...state.members.keys()].some((name) => {
     const dest = readArchiveDestinations(instance.getAllParameters()).find((d) => d.kind === 'SERVICE' && (d.dbUniqueName ?? d.target) === name);
@@ -136,14 +137,14 @@ function showConfiguration(device: HostCapableDevice, instance: OracleInstance, 
   if (!state.enabled) lines.push('DISABLED');
   else if (lacking.size > 0) lines.push(SRL_MESSAGE, 'ERROR');
   else if (unobserved) lines.push('WARNING');
-  else if (failing) lines.push('ORA-16778: redo transport error for one or more members', 'ERROR');
+  else if (failing) lines.push(`${ORACLE_ERRORS.ORA_16778}`, 'ERROR');
   else lines.push('SUCCESS   (status updated 0 seconds ago)');
   return lines;
 }
 
 function showDatabase(device: HostCapableDevice, instance: OracleInstance, state: BrokerState, name: string): string[] {
   const member = state.members.get(name);
-  if (name !== state.primaryName && member === undefined) return [`ORA-16541: member is not enabled`];
+  if (name !== state.primaryName && member === undefined) return [`${ORACLE_ERRORS.ORA_16541}`];
   const role = roleOf(instance, state, name);
   const lines = ['', `Database - ${name}`, '', `  Role:               ${role}`];
   lines.push(`  Intended State:     ${role === 'PRIMARY' ? 'TRANSPORT-ON' : 'APPLY-ON'}`);
@@ -158,7 +159,7 @@ function showDatabase(device: HostCapableDevice, instance: OracleInstance, state
 
 const MAX_OBSERVERS = 3;
 
-const SRL_MESSAGE = 'ORA-16789: standby redo logs configured incorrectly';
+const SRL_MESSAGE = `${ORACLE_ERRORS.ORA_16789}`;
 
 function standbyLogsOf(device: HostCapableDevice, instance: OracleInstance, state: BrokerState, name: string): number | null {
   if (name === state.self) return instance.getStandbyLogs().length;
@@ -242,9 +243,9 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   if (/^(EXIT|QUIT)$/.test(upper)) return [];
   const create = /^CREATE\s+CONFIGURATION\s+('[^']*'|"[^"]*"|\S+)\s+AS\s+PRIMARY\s+DATABASE\s+IS\s+('[^']*'|"[^"]*"|\S+)\s+CONNECT\s+IDENTIFIER\s+IS\s+(\S+)$/i.exec(text);
   if (create) {
-    if (state.created) return ['Error: ORA-16603: detected configuration already exists'];
+    if (state.created) return [`Error: ${ORACLE_ERRORS.ORA_16603}`];
     const primary = unquote(create[2]).toUpperCase();
-    if (primary !== instance.config.sid.toUpperCase()) return [`Error: ORA-16642: DB_UNIQUE_NAME mismatch`];
+    if (primary !== instance.config.sid.toUpperCase()) return [`Error: ${ORACLE_ERRORS.ORA_16642}`];
     state.created = true;
     state.configurationName = unquote(create[1]).toUpperCase();
     state.primaryName = primary;
@@ -257,7 +258,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   const failover = /^FAILOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (failover) {
     const target = unquote(failover[1]).toUpperCase();
-    if (instance.databaseRole !== 'PHYSICAL STANDBY') return ['Error: ORA-16652: Fast-Start Failover target standby not found'];
+    if (instance.databaseRole !== 'PHYSICAL STANDBY') return [`Error: ${ORACLE_ERRORS.ORA_16652}`];
     const answer = instance.failover();
     if (answer !== 'Database altered.') return ['Performing failover NOW, please wait...', `Error: ${answer}`];
     if (state.created) {
@@ -269,18 +270,18 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     }
     return ['Performing failover NOW, please wait...', `Failover succeeded, new primary is "${target}"`];
   }
-  if (!state.created) return ['ORA-16532: Oracle Data Guard broker configuration does not exist'];
+  if (!state.created) return [`${ORACLE_ERRORS.ORA_16532}`];
   const add = /^ADD\s+DATABASE\s+('[^']*'|"[^"]*"|\S+)\s+AS\s+CONNECT\s+IDENTIFIER\s+IS\s+(\S+)(?:\s+MAINTAINED\s+AS\s+PHYSICAL)?$/i.exec(text);
   if (add) {
     const name = unquote(add[1]).toUpperCase();
-    if (state.members.has(name)) return [`Error: ORA-16698: member has a LOG_ARCHIVE_DEST_n parameter setting conflict`];
+    if (state.members.has(name)) return [`Error: ${ORACLE_ERRORS.ORA_16698}`];
     state.members.set(name, { identifier: add[2], logXptMode: 'ASYNC' });
     instance.dataGuard.addStandby(new StandbyDatabase({ dbUniqueName: name, host: add[2], role: 'PHYSICAL STANDBY' }));
     if (state.enabled) destinationFor(instance, name, add[2], 'ASYNC');
     return [`Database "${name}" added`];
   }
   if (upper === 'ENABLE CONFIGURATION') {
-    if (state.members.size === 0) return ['Error: ORA-16626: failed to enable specified member'];
+    if (state.members.size === 0) return [`Error: ${ORACLE_ERRORS.ORA_16626}`];
     state.enabled = true;
     const failures: string[] = [];
     for (const [name, member] of state.members) {
@@ -303,7 +304,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   const remove = /^REMOVE\s+DATABASE\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (remove) {
     const name = unquote(remove[1]).toUpperCase();
-    if (!state.members.delete(name)) return [`Error: ORA-16541: member is not enabled`];
+    if (!state.members.delete(name)) return [`Error: ${ORACLE_ERRORS.ORA_16541}`];
     instance.dataGuard.removeStandby(name);
     return [`Succeeded.`];
   }
@@ -314,9 +315,9 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   if (edit) {
     const name = unquote(edit[1]).toUpperCase();
     const member = state.members.get(name);
-    if (member === undefined) return [`Error: ORA-16541: member is not enabled`];
+    if (member === undefined) return [`Error: ${ORACLE_ERRORS.ORA_16541}`];
     const mode = unquote(edit[2]).toUpperCase();
-    if (mode !== 'SYNC' && mode !== 'ASYNC') return [`Error: ORA-16596: property value is invalid`];
+    if (mode !== 'SYNC' && mode !== 'ASYNC') return [`Error: ${ORACLE_ERRORS.ORA_16596}`];
     member.logXptMode = mode;
     if (state.enabled) destinationFor(instance, name, member.identifier, mode);
     return ['Property "logxptmode" updated'];
@@ -324,10 +325,10 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   const protection = /^EDIT\s+CONFIGURATION\s+SET\s+PROTECTION\s+MODE\s+AS\s+(\w+)$/i.exec(text);
   if (protection) {
     const mode = PROTECTION_WORDS[protection[1].toUpperCase()];
-    if (mode === undefined) return ['Error: ORA-16596: property value is invalid'];
+    if (mode === undefined) return [`Error: ${ORACLE_ERRORS.ORA_16596}`];
     const answer = instance.setProtectionMode(mode);
     if (answer === 'Database altered.') return ['Succeeded.'];
-    if (/ORA-16072/.test(answer)) return ['Error: ORA-16627: operation disallowed since no standby databases would remain to support protection mode'];
+    if (/ORA-16072/.test(answer)) return [`Error: ${ORACLE_ERRORS.ORA_16627}`];
     return [`Error: ${answer}`];
   }
   const nowMs = getDefaultScheduler().now();
@@ -336,7 +337,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   if (register) {
     const name = register[1];
     if (state.observers.some((observer) => observer.name.toLowerCase() === name.toLowerCase())) return ['Error: Unable to open the observer file'];
-    if (state.observers.length >= MAX_OBSERVERS) return ['Error: ORA-16647: maximum number of observers has already been started'];
+    if (state.observers.length >= MAX_OBSERVERS) return [`Error: ${ORACLE_ERRORS.ORA_16647}`];
     state.observers.push({ name, host: register[2] });
     return ['Done.'];
   }
@@ -347,14 +348,14 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     return [registered ? 'registered' : 'unknown'];
   }
   if (upper === 'ENABLE FAST_START FAILOVER') {
-    if (!state.enabled || state.members.size === 0) return ['Error: ORA-16844: database does not have a valid fast-start failover target standby database'];
+    if (!state.enabled || state.members.size === 0) return [`Error: ${ORACLE_ERRORS.ORA_16844}`];
     const targetName = activeTarget(state);
     const target = targetName === null ? undefined : state.members.get(targetName);
     const logsReady = instance.getStandbyLogs().length > 0 && targetName !== null && (standbyLogsOf(device, instance, state, targetName) ?? 0) > 0;
-    if (target === undefined || !logsReady || instance.protectionMode !== 'MAXIMUM AVAILABILITY' || target.logXptMode !== 'SYNC') return ['Error: ORA-16693: requirements not met for enabling fast-start failover'];
+    if (target === undefined || !logsReady || instance.protectionMode !== 'MAXIMUM AVAILABILITY' || target.logXptMode !== 'SYNC') return [`Error: ${ORACLE_ERRORS.ORA_16693}`];
     state.fsfo.target = targetName;
     state.fsfo.enabled = true;
-    return [...(instance.flashbackOn ? [] : ['Warning: ORA-16827: Flashback Database is disabled']), 'Enabled in Zero Data Loss Mode.'];
+    return [...(instance.flashbackOn ? [] : [`Warning: ${ORACLE_ERRORS.ORA_16827}`]), 'Enabled in Zero Data Loss Mode.'];
   }
   if (/^DISABLE\s+FAST_START\s+FAILOVER(\s+FORCE)?$/i.test(text)) {
     state.fsfo.enabled = false;
@@ -363,7 +364,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   const stop = /^STOP\s+OBSERVER(?:\s+(\S+))?$/i.exec(text);
   if (stop) {
     const which = stop[1];
-    if (state.observers.length === 0) return ['Error: ORA-16819: fast-start failover observer not started'];
+    if (state.observers.length === 0) return [`Error: ${ORACLE_ERRORS.ORA_16819}`];
     if (which === undefined && state.observers.length > 1) return ['Error: more than one observer is registered, name the observer or use ALL'];
     if (which !== undefined && which.toUpperCase() !== 'ALL' && !state.observers.some((observer) => observer.name.toLowerCase() === which.toLowerCase())) return [`Error: observer "${which}" is not registered`];
     state.observers = which === undefined || which.toUpperCase() === 'ALL' ? [] : state.observers.filter((observer) => observer.name.toLowerCase() !== which.toLowerCase());
@@ -373,10 +374,10 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   if (targetProperty) {
     const owner = unquote(targetProperty[1]).toUpperCase();
     const wanted = unquote(targetProperty[2]).toUpperCase();
-    if (owner !== state.primaryName) return ['Error: ORA-16596: property value is invalid'];
+    if (owner !== state.primaryName) return [`Error: ${ORACLE_ERRORS.ORA_16596}`];
     const known = [...state.members.keys()].find((name) => name.toUpperCase() === wanted);
-    if (known === undefined && wanted !== 'ANY') return ['Error: ORA-16844: database does not have a valid fast-start failover target standby database'];
-    if (state.fsfo.enabled) return ['Error: ORA-16654: fast-start failover is enabled'];
+    if (known === undefined && wanted !== 'ANY') return [`Error: ${ORACLE_ERRORS.ORA_16844}`];
+    if (state.fsfo.enabled) return [`Error: ${ORACLE_ERRORS.ORA_16654}`];
     state.fsfo.target = known ?? null;
     return [`Property "faststartfailovertarget" updated for member "${state.primaryName}".`];
   }
@@ -397,7 +398,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   const switchover = /^SWITCHOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (switchover) {
     const target = unquote(switchover[1]).toUpperCase();
-    if (!state.members.has(target)) return [`Error: ORA-16642: DB_UNIQUE_NAME mismatch`];
+    if (!state.members.has(target)) return [`Error: ${ORACLE_ERRORS.ORA_16642}`];
     const targetMember = state.members.get(target)!;
     const answer = instance.requestSwitchover(target);
     if (answer !== 'Database altered.') return ['Performing switchover NOW, please wait...', `Error: ${answer}`];
@@ -437,7 +438,7 @@ function launchObserverFor(device: HostCapableDevice, instance: OracleInstance |
   const exported = ask(connectedIdentifier, 'EXPORT CONFIGURATION');
   let primaryIdentifier = '';
   try { primaryIdentifier = (JSON.parse((exported ?? []).join('\n')) as { primaryIdentifier: string }).primaryIdentifier; } catch { primaryIdentifier = ''; }
-  if (primaryIdentifier === '') return ['ORA-16532: Oracle Data Guard broker configuration does not exist'];
+  if (primaryIdentifier === '') return [`${ORACLE_ERRORS.ORA_16532}`];
   const registered = ask(connectedIdentifier, `REGISTER OBSERVER ${name} ${host}`) ?? ['Error: could not reach the database'];
   if (registered[0] !== 'Done.') return registered;
   startObserver(device.getId(), name, primaryIdentifier, {
@@ -458,7 +459,7 @@ export function runBrokerCommand(device: HostCapableDevice, instance: OracleInst
   const state = stateOf(instance);
   const mutating = MUTATING.test(command.trim());
   if (mutating && instance.databaseRole !== 'PRIMARY') {
-    if (!state.created || state.primaryIdentifier === '') return ['ORA-16532: Oracle Data Guard broker configuration does not exist'];
+    if (!state.created || state.primaryIdentifier === '') return [`${ORACLE_ERRORS.ORA_16532}`];
     return viaDatabase(device, state.primaryIdentifier, command);
   }
   const formerMembers = new Map(state.members);
@@ -483,7 +484,7 @@ export function runDgmgrl(device: HostCapableDevice, args: readonly string[], st
     const probe = createSQLPlusSession(device.getId(), ['/', 'as', 'sysdba'], osContext);
     if (probe.loginOutput.some((line) => /ORA-01031/.test(line))) {
       probe.session.disconnect();
-      return [...out, 'ORA-01031: insufficient privileges', 'Error: ORA-01031: insufficient privileges'].join('\n');
+      return [...out, ORACLE_ERRORS.ORA_01031, `Error: ${ORACLE_ERRORS.ORA_01031}`].join('\n');
     }
     probe.session.disconnect();
   }
