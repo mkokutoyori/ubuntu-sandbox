@@ -31,6 +31,7 @@ interface FsDevice {
 export class OracleManagedRecovery {
   private subs: Unsubscribe[] = [];
   private readonly recus = new Map<string, Array<{ name: string; sequence: number; scn: number }>>();
+  private readonly appliedScn = new Map<string, number>();
 
   constructor(
     private readonly bus: IEventBus,
@@ -63,21 +64,25 @@ export class OracleManagedRecovery {
     const db = this.ctx.resolveDatabase(deviceId);
     const dev = this.ctx.resolveDevice(deviceId) as unknown as FsDevice | null;
     if (!db || !dev || !db.instance.managedRecoveryActive) return;
+    const floor = this.appliedScn.get(deviceId) ?? 0;
     const attente = (this.recus.get(deviceId) ?? [])
-      .filter(j => j.sequence > db.instance.appliedSequence)
-      .sort((a, b) => a.sequence - b.sequence);
+      .filter(j => (j.name.endsWith('.srl') ? j.scn > floor : j.sequence > db.instance.appliedSequence))
+      .sort((a, b) => a.sequence - b.sequence || a.scn - b.scn);
     for (const journal of attente) {
       const corps = dev.readFileAsOracle?.(journal.name) ?? dev.readFileForEditor?.(journal.name);
       if (!corps) continue;
-      this.appliquerUnJournal(db, dev, corps);
-      db.instance.noteRedoApplied(journal.sequence, journal.scn);
+      const already = this.appliedScn.get(deviceId) ?? 0;
+      this.appliquerUnJournal(db, dev, corps, already);
+      this.appliedScn.set(deviceId, Math.max(already, journal.scn));
+      if (journal.name.endsWith('.srl')) db.instance.noteStandbyRedoApplied(journal.scn);
+      else db.instance.noteRedoApplied(journal.sequence, journal.scn);
     }
   }
 
-  private appliquerUnJournal(db: OracleDatabase, dev: FsDevice, corps: string): void {
+  private appliquerUnJournal(db: OracleDatabase, dev: FsDevice, corps: string, floor: number): void {
     const storage = db.storage as OracleStorage;
     const image = parseBackupPieceImage(corps);
-    const vecteurs: RedoRecord[] = parseRedoStream(corps);
+    const vecteurs: RedoRecord[] = parseRedoStream(corps).filter((record) => record.scn > floor);
     const parChemin = image?.datafiles ?? {};
     for (const ts of storage.getAllTablespaces()) {
       if (ts.type === 'TEMPORARY' || ts.encrypted) continue;

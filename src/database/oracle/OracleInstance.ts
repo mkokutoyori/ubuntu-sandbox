@@ -45,7 +45,9 @@ import { AwrSnapshotManager } from './awr/AwrSnapshotManager';
 import { PlanCache } from './plan/PlanCache';
 import { StatisticsManager } from './statistics/StatisticsManager';
 import { MultitenantManager } from './multitenant/PluggableDatabase';
-import { DataGuardConfiguration } from './dataguard/DataGuardConfiguration';
+import { DataGuardConfiguration, type ProtectionMode } from './dataguard/DataGuardConfiguration';
+import { readArchiveDestinations } from './dataguard/ArchiveDestination';
+import type { SynchronousRedoPort, CommitSynchronization } from './dataguard/SynchronousRedoPort';
 import { ReplicationManager } from './replication/Replication';
 import { FlashbackArchiveManager } from './flashback/FlashbackArchive';
 import { ResultCacheManager } from './resultcache/ResultCache';
@@ -516,6 +518,66 @@ export class OracleInstance {
     this.logAlert(`LNS: Standby redo logfile shipped to ${standbyName} sequence ${sequence}`);
   }
 
+  recordSynchronousTransportSuccess(destId: number): void {
+    const connu = this._transportState.get(destId);
+    this._transportState.set(destId, { status: 'VALID', error: null, sequence: connu?.sequence ?? 0 });
+  }
+
+  private _synchronousRedoPort: SynchronousRedoPort | null = null;
+  private _resynchronizing = false;
+
+  setSynchronousRedoPort(port: SynchronousRedoPort | null): void { this._synchronousRedoPort = port; }
+
+  get protectionMode(): ProtectionMode { return this.dataGuard.protectionMode; }
+
+  private synchronousDestinations() {
+    return readArchiveDestinations(this.getAllParameters())
+      .filter((d) => d.kind === 'SERVICE' && d.state === 'ENABLE' && d.transport === 'SYNC');
+  }
+
+  get protectionLevel(): string {
+    if (this._databaseRole !== 'PRIMARY') return 'UNPROTECTED';
+    const mode = this.dataGuard.protectionMode;
+    if (mode === 'MAXIMUM PERFORMANCE') return mode;
+    if (this.synchronousDestinations().length === 0) return 'UNPROTECTED';
+    return this._resynchronizing ? 'RESYNCHRONIZATION' : mode;
+  }
+
+  setProtectionMode(mode: ProtectionMode): string {
+    if (this._databaseRole !== 'PRIMARY') return 'ORA-16009: invalid redo transport destination';
+    if (mode !== 'MAXIMUM PERFORMANCE') {
+      if (this.synchronousDestinations().length === 0) {
+        return 'ORA-16072: a minimum of one standby database destination is required';
+      }
+      if (mode === 'MAXIMUM PROTECTION' && this._state === 'OPEN') {
+        return 'ORA-01126: database must be mounted in this instance and not open in any instance';
+      }
+    }
+    this.dataGuard.setProtectionMode(mode);
+    this.logAlert(`Protection mode set to ${mode}`);
+    return 'Database altered.';
+  }
+
+  commitRedoSynchronously(changes: readonly RedoRecord[], scn: number): CommitSynchronization {
+    const port = this._synchronousRedoPort;
+    if (port === null || this._databaseRole !== 'PRIMARY' || changes.length === 0) return 'NONE';
+    const answer = port.writeCommit(changes, scn);
+    if (answer.destinations === 0) return 'NONE';
+    if (answer.acknowledged > 0) {
+      this._resynchronizing = false;
+      return 'OK';
+    }
+    if (this.dataGuard.protectionMode === 'MAXIMUM PROTECTION') {
+      this.logAlert('LGWR: Primary database is in MAXIMUM PROTECTION mode');
+      this.logAlert(`LGWR: Log write to the standby failed (${answer.error ?? 'no acknowledgement'}); instance terminated`);
+      this.shutdown('ABORT');
+      return 'ABORTED';
+    }
+    this._resynchronizing = true;
+    this.logAlert(`LGWR: Standby unreachable (${answer.error ?? 'no acknowledgement'}); redo transport continues asynchronously (${this.dataGuard.protectionMode})`);
+    return 'DEGRADED';
+  }
+
   recordTransportFailure(destId: number, error: string): void {
     const connu = this._transportState.get(destId);
     this._transportState.set(destId, {
@@ -652,6 +714,10 @@ export class OracleInstance {
     this.logAlert(`Media Recovery Log applied, sequence ${sequence}`);
   }
 
+  noteStandbyRedoApplied(scn: number): void {
+    if (scn > this._currentScn) this._currentScn = scn;
+  }
+
   receiveShippedRedo(
     name: string, thread: number, sequence: number, scn: number, body: string,
   ): void {
@@ -659,6 +725,7 @@ export class OracleInstance {
       topic: 'oracle.standby.redo-received',
       payload: { ...this.ref(), name, thread, sequence, scn, body },
     });
+    if (name.endsWith('.srl')) return;
     this.logAlert(`RFS: Archived log thread ${thread} sequence ${sequence}`);
     this.catalogArchivedLog(name, sequence, scn, 'RFS');
   }

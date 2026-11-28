@@ -14,6 +14,7 @@
  * network/Equipment.
  */
 
+import type { ProtectionMode } from '../dataguard/DataGuardConfiguration';
 import { parseOracleTimeZone } from '../time/OracleTimeZone';
 import { type ResultSet, emptyResult } from '../../engine/executor/ResultSet';
 import type {
@@ -149,6 +150,10 @@ export class InstanceAdminExecutor {
       return emptyResult(cible === 'PRIMARY'
         ? this.instance.acceptSwitchover()
         : this.instance.requestSwitchover(cible));
+    }
+    const protection = /^\s*SET\s+STANDBY\s+DATABASE\s+TO\s+MAXIMIZE\s+(PROTECTION|AVAILABILITY|PERFORMANCE)\s*$/i.exec(stmt.action);
+    if (protection) {
+      return emptyResult(this.instance.setProtectionMode(`MAXIMUM ${protection[1].toUpperCase()}` as ProtectionMode));
     }
     const managed = /^\s*RECOVER\s+MANAGED\s+STANDBY\s+DATABASE\b(.*)$/i.exec(stmt.action);
     if (managed) {
