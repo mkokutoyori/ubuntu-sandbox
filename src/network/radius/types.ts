@@ -55,6 +55,37 @@ export const RADIUS_PACKET_NAME: Record<RadiusCode, string> = {
 };
 
 export type RadiusAttrType =
+  | 'framed-ipx-network'
+  | 'login-lat-service'
+  | 'login-lat-node'
+  | 'login-lat-group'
+  | 'framed-appletalk-link'
+  | 'framed-appletalk-network'
+  | 'framed-appletalk-zone'
+  | 'login-lat-port'
+  | 'acct-multi-session-id'
+  | 'acct-link-count'
+  | 'acct-tunnel-connection'
+  | 'acct-tunnel-packets-lost'
+  | 'tunnel-client-endpoint'
+  | 'tunnel-server-endpoint'
+  | 'tunnel-assignment-id'
+  | 'tunnel-preference'
+  | 'tunnel-client-auth-id'
+  | 'tunnel-server-auth-id'
+  | 'arap-password'
+  | 'arap-features'
+  | 'arap-zone-access'
+  | 'arap-security'
+  | 'arap-security-data'
+  | 'password-retry'
+  | 'prompt'
+  | 'connect-info'
+  | 'configuration-token'
+  | 'arap-challenge-response'
+  | 'acct-interim-interval'
+  | 'chargeable-user-identity'
+  | 'delegated-ipv6-prefix'
   | 'user-name'
   | 'user-password'
   | 'chap-password'
@@ -178,6 +209,37 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'callback-id': 20,
   'framed-route': 22,
   'port-limit': 62,
+  'framed-ipx-network': 23,
+  'login-lat-service': 34,
+  'login-lat-node': 35,
+  'login-lat-group': 36,
+  'framed-appletalk-link': 37,
+  'framed-appletalk-network': 38,
+  'framed-appletalk-zone': 39,
+  'login-lat-port': 63,
+  'acct-multi-session-id': 50,
+  'acct-link-count': 51,
+  'acct-tunnel-connection': 68,
+  'acct-tunnel-packets-lost': 86,
+  'tunnel-client-endpoint': 66,
+  'tunnel-server-endpoint': 67,
+  'tunnel-assignment-id': 82,
+  'tunnel-preference': 83,
+  'tunnel-client-auth-id': 90,
+  'tunnel-server-auth-id': 91,
+  'arap-password': 70,
+  'arap-features': 71,
+  'arap-zone-access': 72,
+  'arap-security': 73,
+  'arap-security-data': 74,
+  'password-retry': 75,
+  'prompt': 76,
+  'connect-info': 77,
+  'configuration-token': 78,
+  'arap-challenge-response': 84,
+  'acct-interim-interval': 85,
+  'chargeable-user-identity': 89,
+  'delegated-ipv6-prefix': 123,
 };
 
 export interface RadiusAttribute {

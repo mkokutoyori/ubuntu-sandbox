@@ -1,7 +1,7 @@
 import type { RadiusAttribute } from './types';
 import { RADIUS_DICTIONARY, RADIUS_VALUE_NAMES, lookupVsa, type RadiusValueType } from './dictionary';
 
-const UPPERCASE_WORDS = new Set(['nas', 'ip', 'chap', 'eap', 'mtu', 'tcp']);
+const UPPERCASE_WORDS = new Set(['nas', 'ip', 'chap', 'eap', 'mtu', 'tcp', 'ipx', 'lat', 'arap']);
 
 export function radiusAttributeDisplayName(attribute: RadiusAttribute): string {
   if (attribute.type === 'vendor-specific' && attribute.vendor) {
@@ -9,6 +9,7 @@ export function radiusAttributeDisplayName(attribute: RadiusAttribute): string {
   }
   return attribute.type.split('-').map((word) => {
     if (word === 'ipv6') return 'IPv6';
+    if (word === 'appletalk') return 'AppleTalk';
     if (UPPERCASE_WORDS.has(word)) return word.toUpperCase();
     return word.charAt(0).toUpperCase() + word.slice(1);
   }).join('-');
