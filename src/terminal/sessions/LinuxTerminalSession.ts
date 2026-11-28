@@ -1836,7 +1836,7 @@ export class LinuxTerminalSession extends TerminalSession {
       installDefaultShells();
       const shell = ShellFactory.create('sqlplus', {
         device: this.device,
-        user: this.currentUser,
+        user: this.shell ? this.shell.user : this.currentUser,
         launchLine: `sqlplus ${args.join(' ')}`.trim(),
       }) as SqlPlusShell;
       if (!shell.isReady) {

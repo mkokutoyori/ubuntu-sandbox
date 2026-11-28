@@ -141,7 +141,7 @@ export class LinuxBashShell extends AbstractShell {
     if (subShellKind) {
       const child = ShellFactory.tryCreateChild(subShellKind, {
         device: this.device,
-        user: this.user,
+        user: this.session?.user ?? this.user,
         parent: this,
         launchLine: line,
       });
