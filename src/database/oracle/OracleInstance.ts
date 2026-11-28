@@ -534,6 +534,12 @@ export class OracleInstance {
     return this._transportState.get(destId);
   }
 
+  private _datafileWriteError = false;
+
+  get datafileWriteError(): boolean { return this._datafileWriteError; }
+
+  setDatafileWriteError(failed: boolean): void { this._datafileWriteError = failed; }
+
   private _archiverStuck = false;
 
   get archiverStuck(): boolean { return this._archiverStuck; }

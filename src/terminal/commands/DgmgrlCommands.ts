@@ -58,7 +58,7 @@ function raisedCondition(instance: OracleInstance, state: BrokerState): boolean 
   const log = instance.getAlertLog();
   const from = alertCursors.get(instance) ?? log.length;
   alertCursors.set(instance, log.length);
-  const stuck = state.fsfo.health['Stuck Archiver'] && instance.archiverStuck;
+  const stuck = (state.fsfo.health['Stuck Archiver'] && instance.archiverStuck) || (state.fsfo.health['Datafile Write Errors'] && instance.datafileWriteError);
   return stuck || log.slice(from).some((line) => [...line.matchAll(/ORA-0*(\d+)/g)].some((found) => state.fsfo.errors.includes(Number(found[1]))));
 }
 

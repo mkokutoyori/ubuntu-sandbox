@@ -677,10 +677,16 @@ export class OracleFilesystemSync {
   private writeSegmentImages(deviceId: string): void {
     const dev = this.dev(deviceId);
     if (!dev) return;
+    const instance = this.ctx.resolveDatabase(deviceId)?.instance;
+    const numbers = new Map(((this.ctx.resolveDatabase(deviceId)?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined)?.listDatafiles() ?? []).map((file) => [file.path, file.fileNo]));
+    let failed = false;
     for (const [path, body] of Object.entries(this.segmentImages(deviceId))) {
       if (!this.fileExists(dev, path)) continue;
-      writeAsOracle(dev, path, body);
+      if (writeAsOracle(dev, path, body)) continue;
+      failed = true;
+      instance?.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01114, String(numbers.get(path) ?? 0), '1'));
     }
+    instance?.setDatafileWriteError(failed);
   }
 
   private loadSegmentImages(deviceId: string): void {

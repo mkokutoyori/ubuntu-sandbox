@@ -5,7 +5,7 @@
  * transcript public). Les pages ne donnent ni le texte de sortie de ENABLE/DISABLE CONDITION (le simulateur dit `Succeeded.`) ni le code d'une condition deja posee : les deux commandes sont idempotentes.
  *
  * Evalue : une condition numerique est comparee aux lignes ORA-nnnnn que la primaire ecrit dans son journal d'alerte APRES l'activation ; a la sonde suivante l'observateur bascule sans attendre le seuil
- * (`Shutdown Primary: TRUE` : la primaire est arretee). Evalue aussi : `Stuck Archiver` (le journal archive ne peut pas s'ecrire, disque plein : ORA-19504 puis ORA-00257, titres des pages d'erreur). NON evalue, enregistre dans TODO.md : les autres conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
+ * (`Shutdown Primary: TRUE` : la primaire est arretee). Evalue aussi : `Datafile Write Errors` (un checkpoint dont l'ecriture des fichiers de donnees echoue, disque plein : ORA-01114, titre de la page d'erreur ; condition active par defaut, comme dans SHOW FAST_START FAILOVER) et `Stuck Archiver` (le journal archive ne peut pas s'ecrire, disque plein : ORA-19504 puis ORA-00257, titres des pages d'erreur). NON evalue, enregistre dans TODO.md : les autres conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
  *
  * SHOW CONFIGURATION VERBOSE (page SHOW CONFIGURATION, exemple 2) : cible FSFO marquee `(*)`, liste `Properties:` puis resume du FSFO ; le mot etait accepte et ignore.
  *
@@ -131,7 +131,14 @@ describe('configurable fast-start failover conditions', () => {
 
   const fillProdDisk = (): void => {
     const vfs = (lab.prod as unknown as { executor: { vfs: { setCapacityBytes(n: number): void; usedBytes(): number } } }).executor.vfs;
-    vfs.setCapacityBytes(vfs.usedBytes() + 10);
+    vfs.setCapacityBytes(vfs.usedBytes() - 1);
+  };
+
+  const failDatafileWrite = (): void => {
+    lab.sql(lab.prod, 'CREATE TABLE grown (id NUMBER);');
+    fillProdDisk();
+    lab.sql(lab.prod, 'INSERT INTO grown SELECT level FROM dual CONNECT BY level <= 200;\nCOMMIT;');
+    lab.sql(lab.prod, 'ALTER SYSTEM CHECKPOINT;');
   };
 
   it('Stuck Archiver: a full archive disk writes the archiver errors and fails over once the condition is enabled', () => {
@@ -146,8 +153,27 @@ describe('configurable fast-start failover conditions', () => {
 
   it('a full archive disk alone, with the condition off (the default), does not fail over', () => {
     observed();
+    dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION "Datafile Write Errors";');
     fillProdDisk();
     lab.sql(lab.prod, 'ALTER SYSTEM SWITCH LOGFILE;');
+    scheduler.advance(20000);
+    expect(roleOf(lab.dr)).not.toContain('PRIMARY');
+  });
+
+  it('Datafile Write Errors (on by default): a checkpoint that cannot write the datafiles raises ORA-01114 and fails over', () => {
+    observed();
+    dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION "Stuck Archiver";');
+    failDatafileWrite();
+    expect(getOracleDatabase(lab.prod.getId()).instance.getAlertLog().join('\n')).toMatch(/ORA-01114: IO error writing block to file \d+ \(block # 1\)/);
+    scheduler.advance(6000);
+    expect(roleOf(lab.dr)).toContain('PRIMARY');
+  });
+
+  it('the same checkpoint with Datafile Write Errors disabled does not fail over', () => {
+    observed();
+    dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION "Datafile Write Errors";');
+    failDatafileWrite();
+    expect(getOracleDatabase(lab.prod.getId()).instance.getAlertLog().join('\n')).toContain('ORA-01114');
     scheduler.advance(20000);
     expect(roleOf(lab.dr)).not.toContain('PRIMARY');
   });

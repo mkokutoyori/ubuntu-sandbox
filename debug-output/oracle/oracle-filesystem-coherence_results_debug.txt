@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-filesystem-coherence
-Generated: 2026-11-28T12:01:59.700Z
+Generated: 2026-11-28T12:23:00.515Z
 Topology:  LinuxServer ora-fs — Oracle ORCL OPEN
 Total commands: 373
 ============================================================
@@ -531,21 +531,21 @@ SQL [54/373]> SELECT * FROM dba_extents WHERE owner = 'HR' AND segment_name = 'E
 --- [55] § ORADATA layout ---
 SQL [55/373]> HOST ls -la /u01/app/oracle/oradata/ORCL/
   total 48
-  drwxr-xr-x 2 oracle oinstall 4096 Nov 28 12:01 .
-  drwxr-xr-x 3 oracle oinstall 4096 Nov 28 12:01 ..
-  -rw-r--r-- 1 oracle oinstall  549 Nov 28 12:01 control01.ctl
-  -rw-r--r-- 1 oracle oinstall  549 Nov 28 12:01 control02.ctl
-  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:01 redo01.log
-  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:01 redo02.log
-  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:01 redo03.log
-  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:01 sysaux01.dbf
-  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:01 system01.dbf
-  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:01 temp01.dbf
-  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:01 undotbs01.dbf
-  -rw-r--r-- 1 oracle oinstall   43 Nov 28 12:01 users01.dbf
+  drwxr-xr-x 2 oracle oinstall 4096 Nov 28 12:23 .
+  drwxr-xr-x 3 oracle oinstall 4096 Nov 28 12:23 ..
+  -rw-r--r-- 1 oracle oinstall  549 Nov 28 12:23 control01.ctl
+  -rw-r--r-- 1 oracle oinstall  549 Nov 28 12:23 control02.ctl
+  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:23 redo01.log
+  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:23 redo02.log
+  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:23 redo03.log
+  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:23 sysaux01.dbf
+  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:23 system01.dbf
+  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:23 temp01.dbf
+  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:23 undotbs01.dbf
+  -rw-r--r-- 1 oracle oinstall   43 Nov 28 12:23 users01.dbf
 
 SQL [56/373]> HOST ls -la /u01/app/oracle/oradata/ORCL/system01.dbf
-  -rw-r--r-- 1 oracle oinstall 44 Nov 28 12:01 /u01/app/oracle/oradata/ORCL/system01.dbf
+  -rw-r--r-- 1 oracle oinstall 44 Nov 28 12:23 /u01/app/oracle/oradata/ORCL/system01.dbf
 
 SQL [57/373]> HOST du -sh /u01/app/oracle/oradata/ORCL/
   44K	/u01/app/oracle/oradata/ORCL/
@@ -1222,23 +1222,23 @@ SQL [168/373]> HOST stat /u01/app/oracle/oradata/ORCL/system01.dbf 2>/dev/null
     Size: 44        	Blocks: 8          IO Block: 4096   regular file
   Device: 8h/8d	Inode: 1478        Links: 1
   Access: (0644/-rw-r--r--)  Uid: (54321/  oracle)   Gid: (54321/oinstall)
-  Access: 2026-11-28 12:01:59.559000000 +0000
-  Modify: 2026-11-28 12:01:59.491000000 +0000
-  Change: 2026-11-28 12:01:59.491000000 +0000
+  Access: 2026-11-28 12:23:00.375000000 +0000
+  Modify: 2026-11-28 12:23:00.298000000 +0000
+  Change: 2026-11-28 12:23:00.298000000 +0000
    Birth: -
 
 SQL [169/373]> HOST ls -lh /u01/app/oracle/oradata/ORCL/
   total 40K
-  -rw-r--r-- 1 oracle oinstall 1.4K Nov 28 12:01 control01.ctl
-  -rw-r--r-- 1 oracle oinstall 1.4K Nov 28 12:01 control02.ctl
-  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:01 redo01.log
-  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:01 redo02.log
-  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:01 redo03.log
-  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:01 sysaux01.dbf
-  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:01 system01.dbf
-  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:01 temp01.dbf
-  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:01 undotbs01.dbf
-  -rw-r--r-- 1 oracle oinstall   43 Nov 28 12:01 users01.dbf
+  -rw-r--r-- 1 oracle oinstall 1.4K Nov 28 12:23 control01.ctl
+  -rw-r--r-- 1 oracle oinstall 1.4K Nov 28 12:23 control02.ctl
+  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:23 redo01.log
+  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:23 redo02.log
+  -rw-r--r-- 1 oracle oinstall   33 Nov 28 12:23 redo03.log
+  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:23 sysaux01.dbf
+  -rw-r--r-- 1 oracle oinstall   44 Nov 28 12:23 system01.dbf
+  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:23 temp01.dbf
+  -rw-r--r-- 1 oracle oinstall   42 Nov 28 12:23 undotbs01.dbf
+  -rw-r--r-- 1 oracle oinstall   43 Nov 28 12:23 users01.dbf
 
 SQL [170/373]> HOST ls -lh /u01/app/oracle/flash_recovery_area/ORCL/
   ls: cannot access '/u01/app/oracle/flash_recovery_area/ORCL/': No such file or directory
@@ -1441,7 +1441,7 @@ SQL [181/373]> SELECT name, dbid, open_mode, log_mode FROM v$database;
   
   NAME       DBID OPEN_MODE  LOG_MODE    
   ---- ---------- ---------- ------------
-  ORCL 2395154636 READ WRITE NOARCHIVELOG
+  ORCL 3188110611 READ WRITE NOARCHIVELOG
   
   1 row selected.
 
@@ -1467,7 +1467,7 @@ SQL [184/373]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID ACTIVATION# NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE SWITCHOVER_STATUS PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE# PROTECTION_MODE     PROTECTION_LEVEL   
   ---------- ----------- ---- --------- ------------ ---------- ------------- ----------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------ ------------------- -------------------
-  2395154636   395154636 ORCL 28-NOV-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 28-NOV-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000355            1000001 MAXIMUM PERFORMANCE MAXIMUM PERFORMANCE
+  3188110611   188110611 ORCL 28-NOV-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 28-NOV-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000355            1000001 MAXIMUM PERFORMANCE MAXIMUM PERFORMANCE
   
   1 row selected.
 
@@ -1794,18 +1794,18 @@ SQL [213/373]> SELECT * FROM v$sql WHERE rownum < 5;
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1          938      750           1          0              0 SYS                 2026-11-28T12:01:59
+         REGION_          1          962      769           1          0              0 SYS                 2026-11-28T12:23:00
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1           89       71           1          0              0 SYS                 2026-11-28T12:01:59
+         COUNTR          1           96       77           1          0              0 SYS                 2026-11-28T12:23:00
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          111       89           1          0              0 SYS                 2026-11-28T12:01:59
+         STR          1          172      138           1          0              0 SYS                 2026-11-28T12:23:00
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -1816,7 +1816,7 @@ SQL [213/373]> SELECT * FROM v$sql WHERE rownum < 5;
                  )                                                                                                                                                                                             
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          186      149           1          0              0 SYS                 2026-11-28T12:01:59
+                  1          185      148           1          0              0 SYS                 2026-11-28T12:23:00
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
@@ -1829,10 +1829,10 @@ SQL [214/373]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  0jfss4xa3xqw0               0           1          1       1          938      750           1          0              0 SYS                 28-NOV-26       
-  1p340y2a3xqw0               0           1          1       1           89       71           1          0              0 SYS                 28-NOV-26       
-  0438608a3xqw0               0           1          1       1          111       89           1          0              0 SYS                 28-NOV-26       
-  0jmvs97a3xqw0               0           1          1       1          186      149           1          0              0 SYS                 28-NOV-26       
+  0jfss4xa3xqw0               0           1          1       1          962      769           1          0              0 SYS                 28-NOV-26       
+  1p340y2a3xqw0               0           1          1       1           96       77           1          0              0 SYS                 28-NOV-26       
+  0438608a3xqw0               0           1          1       1          172      138           1          0              0 SYS                 28-NOV-26       
+  0jmvs97a3xqw0               0           1          1       1          185      148           1          0              0 SYS                 28-NOV-26       
   
   4 rows selected.
 
@@ -2180,10 +2180,10 @@ SQL [258/373]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-11-28T12:01:59.570Z          570989842
-           2 SYS$USERS      SYS$USERS      2026-11-28T12:01:59.565Z          570989837
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-11-28T12:01:59.565Z          570989837
-           4 ORCLPDB1       ORCLPDB1       2026-11-28T12:01:59.565Z          570989837
+           1 ORCL           ORCL           2026-11-28T12:23:00.386Z          572250658
+           2 SYS$USERS      SYS$USERS      2026-11-28T12:23:00.381Z          572250653
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-11-28T12:23:00.381Z          572250653
+           4 ORCLPDB1       ORCLPDB1       2026-11-28T12:23:00.381Z          572250653
   
   4 rows selected.
 
@@ -2191,10 +2191,10 @@ SQL [259/373]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-11-28T12:01:59.570Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-11-28T12:01:59.565Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-11-28T12:01:59.565Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-11-28T12:01:59.565Z
+           1 ORCL           ORCL           ORCL 2026-11-28T12:23:00.386Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-11-28T12:23:00.381Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-11-28T12:23:00.381Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-11-28T12:23:00.381Z
   
   4 rows selected.
 
@@ -2241,10 +2241,10 @@ SQL [264/373]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME               VALUE
   --- ---------- ----------------------- -----
-  100 3649082374 DB time                 82235
-  100 3712030189 DB CPU                  65797
-  100 1561673735 background elapsed time 20558
-  100 4157170894 background cpu time     16449
+  100 3649082374 DB time                 93819
+  100 3712030189 DB CPU                  75061
+  100 1561673735 background elapsed time 23454
+  100 4157170894 background cpu time     18765
   
   4 rows selected.
 
@@ -2337,10 +2337,10 @@ SQL [274/373]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:01:59 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:01:59 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:01:59 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:01:59 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:23:00 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:23:00 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:23:00 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        28-NOV-26 28-NOV-26     2026-11-28:12:23:00 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -2649,10 +2649,10 @@ SQL [308/373]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:01:59: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:01:59: Database mounted                            
-            3 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:01:59: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:01:59: Database opened                             
+            1 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:23:00: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:23:00: Database mounted                            
+            3 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:23:00: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 12:23:00: Database opened                             
   
   4 rows selected.
 
@@ -2690,10 +2690,10 @@ SQL [312/373]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 2395154636               1       0 logons cumulative             1
-        1 2395154636               1       1 logons current                1
-        1 2395154636               1       2 opened cursors cumulative   591
-        1 2395154636               1       3 opened cursors current      532
+        1 3188110611               1       0 logons cumulative             1
+        1 3188110611               1       1 logons current                1
+        1 3188110611               1       2 opened cursors cumulative   591
+        1 3188110611               1       3 opened cursors current      532
   
   4 rows selected.
 
@@ -2701,10 +2701,10 @@ SQL [313/373]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 0krxuzra3xqw0               0                1                 21             17                 1                0                    1
-        1 0pjan8ka3xqw0               0                1                379            303                 1                0                    1
-        1 0bpd8mza3xqw0               0                1                104             83                 1                0                    1
-        1 03ovs3qa3xqw0               0                1                 86             69                 1                0                    1
+        1 0krxuzra3xqw0               0                1                 26             21                 1                0                    1
+        1 0pjan8ka3xqw0               0                1                300            240                 1                0                    1
+        1 0bpd8mza3xqw0               0                1                 57             46                 1                0                    1
+        1 03ovs3qa3xqw0               0                1                 44             35                 1                0                    1
   
   4 rows selected.
 
@@ -3099,7 +3099,7 @@ SQL [370/373]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP                  
   ------------------------------
-  2026-11-28 12:01:59.907 +00:00
+  2026-11-28 12:23:00.734 +00:00
   
   1 row selected.
 
