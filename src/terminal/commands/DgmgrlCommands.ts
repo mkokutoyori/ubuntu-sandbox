@@ -6,6 +6,8 @@ import { readArchiveDestinations } from '@/database/oracle/dataguard/ArchiveDest
 import { OracleNetCallStatus } from '@/network/oracle-net/wire/OracleNetCall';
 import { executeOverOracleNet, logonOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
 import { primaryIpv4, resolveOracleConnectTarget } from './oracleNet';
+import { getDefaultScheduler } from '@/events/Scheduler';
+import { startObserver } from './DgmgrlObserver';
 import { registerBrokerCommandRunner } from '@/adapters/OracleBrokerDmon';
 import { BROKER_COMMAND_PARAMETER } from '@/database/oracle/executor/InstanceAdminExecutor';
 import { encodeBrokerCommand } from '@/database/oracle/dataguard/BrokerCommandCodec';
@@ -32,19 +34,21 @@ interface BrokerState {
   primaryName: string;
   primaryIdentifier: string;
   self: string;
+  fsfo: { enabled: boolean; threshold: number };
+  observers: { name: string; host: string }[];
   protectionMode: ProtectionMode;
   members: Map<string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }>;
 }
 
 const CONFIG_PARAMETER = '_dg_broker_config';
 
-const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', self: '', protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
+const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', self: '', fsfo: { enabled: false, threshold: 30 }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
 
 function stateOf(instance: OracleInstance): BrokerState {
   const stored = instance.getParameter(CONFIG_PARAMETER);
   if (stored === undefined || stored === '') return emptyState();
   const parsed = JSON.parse(stored) as Omit<BrokerState, 'members'> & { members: [string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }][] };
-  return { ...parsed, members: new Map(parsed.members) };
+  return { ...emptyState(), ...parsed, members: new Map(parsed.members) };
 }
 
 function serialize(state: BrokerState, self: string): string {
@@ -66,15 +70,24 @@ function save(device: HostCapableDevice, instance: OracleInstance, state: Broker
   return failures;
 }
 
-const MUTATING = /^(CREATE|ADD|ENABLE|DISABLE|REMOVE|EDIT)\b/i;
+const MUTATING = /^(CREATE|ADD|ENABLE|DISABLE|REMOVE|EDIT|STOP|REGISTER|OBSERVER)\b/i;
 
 export function __resetBrokers(): void { /* the configuration lives in each instance's parameters */ }
 
 const unquote = (text: string): string => text.trim().replace(/^['"]|['"]$/g, '');
 
-function remoteExecute(local: HostCapableDevice, identifier: string, statements: readonly string[]): { ok: true; outputs: string[] } | { ok: false; error: string } {
-  const resolved = resolveOracleConnectTarget(local, identifier, getOracleDatabase);
+function remoteExecute(localDevice: HostCapableDevice, identifier: string, statements: readonly string[]): { ok: true; outputs: string[] } | { ok: false; error: string } {
+  const resolved = resolveOracleConnectTarget(localDevice, identifier, getOracleDatabase);
   if (resolved.ok === false) return { ok: false, error: resolved.error };
+  if (resolved.remote === false) {
+    if (resolved.db.instance.state === 'SHUTDOWN') return { ok: false, error: 'ORA-01034: ORACLE not available' };
+    const own = createSQLPlusSession(localDevice.getId(), ['/', 'as', 'sysdba'], { ...IDENTITY, isDbaGroup: true });
+    const outputs = statements.map((sql) => own.session.processLine(`${sql};`).output.join('\n'));
+    own.session.disconnect();
+    const unavailable = [...own.loginOutput, ...outputs].find((line) => /ORA-(01034|01033|01090|03113)\b/.test(line));
+    if (unavailable !== undefined) return { ok: false, error: unavailable.trim() };
+    return { ok: true, outputs };
+  }
   const session = resolved.session as never;
   const entree = logonOverOracleNet(session, { username: 'SYS', password: 'oracle', asSysdba: true, identity: IDENTITY });
   if (entree.status === OracleNetCallStatus.Error) {
@@ -103,15 +116,23 @@ function roleOf(instance: OracleInstance, state: BrokerState, name: string): str
   return name === state.primaryName && name !== state.self ? 'PRIMARY' : 'PHYSICAL STANDBY';
 }
 
+const FSFO_MODE_LABEL = (state: BrokerState): string => (state.protectionMode === 'MAXIMUM PERFORMANCE' ? 'Enabled' : 'Enabled in Zero Data Loss Mode');
+
 function showConfiguration(instance: OracleInstance, state: BrokerState): string[] {
   const lines = ['', `Configuration - ${state.configurationName.toLowerCase()}`, '', `  Protection Mode: ${PROTECTION_LABEL[instance.databaseRole === 'PRIMARY' ? instance.protectionMode : state.protectionMode]}`, '  Members:'];
-  for (const name of [state.primaryName, ...state.members.keys()]) lines.push(`  ${name} - ${roleLabel(roleOf(instance, state, name))}`);
+  for (const name of [state.primaryName, ...state.members.keys()]) {
+    lines.push(`  ${name} - ${roleLabel(roleOf(instance, state, name))}`);
+    if (state.fsfo.enabled && state.observers.length === 0 && (name === state.primaryName || state.members.has(name))) lines.push('    Warning: ORA-16819: fast-start failover observer not started');
+  }
   const failing = [...state.members.keys()].some((name) => {
     const dest = readArchiveDestinations(instance.getAllParameters()).find((d) => d.kind === 'SERVICE' && (d.dbUniqueName ?? d.target) === name);
     return dest !== undefined && instance.getTransportState(dest.destId)?.status === 'ERROR';
   });
-  lines.push('', 'Fast-Start Failover:  Disabled', '', 'Configuration Status:');
+  lines.push(state.fsfo.enabled ? `Fast-Start Failover: ${FSFO_MODE_LABEL(state)}` : 'Fast-Start Failover: DISABLED');
+  const unobserved = state.fsfo.enabled && state.observers.length === 0;
+  lines.push('', 'Configuration Status:');
   if (!state.enabled) lines.push('DISABLED');
+  else if (unobserved) lines.push('WARNING');
   else if (failing) lines.push('ORA-16778: redo transport error for one or more members', 'ERROR');
   else lines.push('SUCCESS   (status updated 0 seconds ago)');
   return lines;
@@ -128,6 +149,55 @@ function showDatabase(instance: OracleInstance, state: BrokerState, name: string
     lines.push(`  Log Transport Mode: ${member?.logXptMode ?? 'ASYNC'}`);
   }
   lines.push('  Instance(s):', `    ${instance.config.sid.toUpperCase()}`, '', 'Database Status:', state.enabled ? 'SUCCESS' : 'DISABLED');
+  return lines;
+}
+
+const MAX_OBSERVERS = 3;
+
+function agoLabel(thenMs: number, nowMs: number): string {
+  const seconds = Math.max(0, Math.round((nowMs - thenMs) / 1000));
+  return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
+}
+
+function showFastStartFailover(instance: OracleInstance, state: BrokerState): string[] {
+  if (!state.fsfo.enabled) return ['Fast-Start Failover: DISABLED'];
+  const target = [...state.members.keys()][0] ?? '';
+  const observers = state.observers.map((observer) => observer.host);
+  return [
+    `Fast-Start Failover: ${FSFO_MODE_LABEL(state)}`,
+    `  Protection Mode:    ${PROTECTION_LABEL[instance.databaseRole === 'PRIMARY' ? instance.protectionMode : state.protectionMode]}`,
+    '  Lag Limit:          0 seconds',
+    `  Threshold:          ${state.fsfo.threshold} seconds`,
+    '  Ping Interval:      3000 milliseconds',
+    '  Ping Retry:         0',
+    `  Active Target:      ${target}`,
+    `  Potential Targets:  "${target}"`,
+    `    ${target} valid`,
+    observers.length === 0 ? '  Observer:           (none)' : observers.length === 1 ? `  Observer:           ${observers[0]}` : `  Observers:          ${observers.join(', ')}`,
+    '  Shutdown Primary:   TRUE',
+    '  Auto-reinstate:     TRUE',
+    '  Observer Reconnect: (none)',
+    '  Observer Override:  FALSE',
+    'Configurable Failover Conditions',
+    '  Health Conditions:',
+    '    Corrupted Controlfile          YES',
+    '    Corrupted Dictionary           YES',
+    '    Inaccessible Logfile            NO',
+    '    Stuck Archiver                  NO',
+    '    Datafile Write Errors          YES',
+    '  Oracle Error Conditions:',
+    '    (none)',
+  ];
+}
+
+function showObserver(instance: OracleInstance, state: BrokerState, nowMs: number): string[] {
+  const target = [...state.members.keys()][0] ?? '';
+  const lines = [`Configuration - ${state.configurationName.toLowerCase()}`, `Primary:               ${state.primaryName}`, `Active Target Standby: ${target}`];
+  state.observers.forEach((observer, index) => {
+    const pings = (instance.getParameter(`_dg_observer_${observer.name.toLowerCase()}`) ?? '').split(',').map(Number);
+    lines.push(`Observer "${observer.name}" - ${index === 0 ? 'Master' : 'Backup'}`, `   Host Name:              ${observer.host}`);
+    if (state.fsfo.enabled && Number.isFinite(pings[0])) lines.push(`   Last Ping to Primary:   ${agoLabel(pings[0], nowMs)}`, `   Last Ping to Target:    ${agoLabel(pings[1], nowMs)}`);
+  });
   return lines;
 }
 
@@ -157,7 +227,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     instance.dataGuard.configurationName = state.configurationName;
     return [`Configuration "${unquote(create[1]).toLowerCase()}" created with primary database "${primary}"`];
   }
-  if (!/^(CREATE|ADD|ENABLE|DISABLE|REMOVE|SHOW|EDIT|SWITCHOVER|FAILOVER)\b/.test(upper)) return [`DGM-16905: syntax error at or near "${text.split(/\s+/)[0]}"`];
+  if (!/^(CREATE|ADD|ENABLE|DISABLE|REMOVE|SHOW|EDIT|SWITCHOVER|FAILOVER|STOP|REGISTER|OBSERVER|EXPORT)\b/.test(upper)) return [`DGM-16905: syntax error at or near "${text.split(/\s+/)[0]}"`];
   if (upper.startsWith('CREATE ')) return [`DGM-16905: syntax error`];
   const failover = /^FAILOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (failover) {
@@ -169,6 +239,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
       state.members.delete(target);
       state.primaryName = target;
       state.self = target;
+      state.fsfo.enabled = false;
       instance.setParameter(CONFIG_PARAMETER, serialize(state, target), 'BOTH');
     }
     return ['Performing failover NOW, please wait...', `Failover succeeded, new primary is "${target}"`];
@@ -234,6 +305,49 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     if (/ORA-16072/.test(answer)) return ['Error: ORA-16627: operation disallowed since no standby databases would remain to support protection mode'];
     return [`Error: ${answer}`];
   }
+  const nowMs = getDefaultScheduler().now();
+  if (upper === 'EXPORT CONFIGURATION') return [serialize(state, state.self)];
+  const register = /^REGISTER\s+OBSERVER\s+(\S+)\s+(\S+)$/i.exec(text);
+  if (register) {
+    const name = register[1];
+    if (state.observers.some((observer) => observer.name.toLowerCase() === name.toLowerCase())) return ['Error: Unable to open the observer file'];
+    if (state.observers.length >= MAX_OBSERVERS) return ['Error: ORA-16647: maximum number of observers has already been started'];
+    state.observers.push({ name, host: register[2] });
+    return ['Done.'];
+  }
+  const ping = /^OBSERVER\s+PING\s+(\S+)\s+(\d+)$/i.exec(text);
+  if (ping) {
+    const registered = state.observers.some((observer) => observer.name === ping[1]);
+    if (registered) instance.setParameter(`_dg_observer_${ping[1].toLowerCase()}`, `${nowMs},${ping[2]}`, 'BOTH');
+    return [registered ? 'registered' : 'unknown'];
+  }
+  if (upper === 'ENABLE FAST_START FAILOVER') {
+    if (!state.enabled || state.members.size === 0) return ['Error: ORA-16844: database does not have a valid fast-start failover target standby database'];
+    const target = [...state.members.values()][0];
+    if (instance.protectionMode !== 'MAXIMUM AVAILABILITY' || target.logXptMode !== 'SYNC') return ['Error: ORA-16693: requirements not met for enabling fast-start failover'];
+    state.fsfo.enabled = true;
+    return [...(instance.flashbackOn ? [] : ['Warning: ORA-16827: Flashback Database is disabled']), 'Enabled in Zero Data Loss Mode.'];
+  }
+  if (/^DISABLE\s+FAST_START\s+FAILOVER(\s+FORCE)?$/i.test(text)) {
+    state.fsfo.enabled = false;
+    return ['Disabled.'];
+  }
+  const stop = /^STOP\s+OBSERVER(?:\s+(\S+))?$/i.exec(text);
+  if (stop) {
+    const which = stop[1];
+    if (state.observers.length === 0) return ['Error: ORA-16819: fast-start failover observer not started'];
+    if (which === undefined && state.observers.length > 1) return ['Error: more than one observer is registered, name the observer or use ALL'];
+    if (which !== undefined && which.toUpperCase() !== 'ALL' && !state.observers.some((observer) => observer.name.toLowerCase() === which.toLowerCase())) return [`Error: observer "${which}" is not registered`];
+    state.observers = which === undefined || which.toUpperCase() === 'ALL' ? [] : state.observers.filter((observer) => observer.name.toLowerCase() !== which.toLowerCase());
+    return ['Done.'];
+  }
+  const threshold = /^EDIT\s+CONFIGURATION\s+SET\s+PROPERTY\s+FastStartFailoverThreshold\s*=\s*'?(\d+)'?$/i.exec(text);
+  if (threshold) {
+    state.fsfo.threshold = Number(threshold[1]);
+    return ['Property "faststartfailoverthreshold" updated'];
+  }
+  if (upper === 'SHOW FAST_START FAILOVER') return showFastStartFailover(instance, state);
+  if (upper === 'SHOW OBSERVER') return showObserver(instance, state, nowMs);
   const switchover = /^SWITCHOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (switchover) {
     const target = unquote(switchover[1]).toUpperCase();
@@ -264,9 +378,34 @@ function commandsOf(args: readonly string[], stdin: string | undefined): string[
   return [...fromArgs, ...fromStdin];
 }
 
+const START_OBSERVER = /^START\s+OBSERVER(?:\s+(?!IN\b)([^\s;]+))?(?:\s+IN\s+BACKGROUND(?:\s+CONNECT\s+IDENTIFIER\s+IS\s+(\S+))?)?\s*;?$/i;
+
+function launchObserverFor(device: HostCapableDevice, instance: OracleInstance | null, remote: string | null, matched: RegExpExecArray): string[] {
+  const connectedIdentifier = remote ?? `${primaryIpv4(device) ?? 'localhost'}:1521/${instance!.config.sid.toUpperCase()}`;
+  const host = (device as { getHostname?: () => string }).getHostname?.() ?? device.getId();
+  const name = matched[1] ?? host;
+  const ask = (identifier: string, command: string): string[] | null => {
+    const sent = remoteExecute(device, identifier, [`ALTER SYSTEM SET "${BROKER_COMMAND_PARAMETER}"='${encodeBrokerCommand(command)}'`]);
+    return sent.ok === true ? sent.outputs[0].trim().split('\n') : null;
+  };
+  const exported = ask(connectedIdentifier, 'EXPORT CONFIGURATION');
+  let primaryIdentifier = '';
+  try { primaryIdentifier = (JSON.parse((exported ?? []).join('\n')) as { primaryIdentifier: string }).primaryIdentifier; } catch { primaryIdentifier = ''; }
+  if (primaryIdentifier === '') return ['ORA-16532: Oracle Data Guard broker configuration does not exist'];
+  const registered = ask(connectedIdentifier, `REGISTER OBSERVER ${name} ${host}`) ?? ['Error: could not reach the database'];
+  if (registered[0] !== 'Done.') return registered;
+  startObserver(device.getId(), name, primaryIdentifier, {
+    ask,
+    sql: (identifier, statement) => remoteExecute(device, identifier, [statement]).ok === true,
+  });
+  return matched[0].toUpperCase().includes('IN BACKGROUND')
+    ? [`Submitted command "START OBSERVER" using connect identifier "${matched[2] ?? connectedIdentifier}"`]
+    : ['Observer started'];
+}
+
 function viaDatabase(device: HostCapableDevice, identifier: string, command: string): string[] {
   const sent = remoteExecute(device, identifier, [`ALTER SYSTEM SET "${BROKER_COMMAND_PARAMETER}"='${encodeBrokerCommand(command)}'`]);
-  return sent.ok === true ? sent.outputs[0].split('\n') : [`Error: ${sent.error}`];
+  return sent.ok === true ? sent.outputs[0].trim().split('\n') : [`Error: ${sent.error}`];
 }
 
 export function runBrokerCommand(device: HostCapableDevice, instance: OracleInstance, command: string): string[] {
@@ -307,6 +446,11 @@ export function runDgmgrl(device: HostCapableDevice, args: readonly string[], st
   out.push(`Connected to "${connectedTo}"`, 'Connected as SYSDBA.');
   for (const command of commandsOf(args, stdin)) {
     out.push(`DGMGRL> ${command.replace(/;$/, '')}`);
+    const started = START_OBSERVER.exec(command.trim());
+    if (started !== null) {
+      out.push(...launchObserverFor(device, instance, remote, started));
+      continue;
+    }
     out.push(...(instance !== null ? runBrokerCommand(device, instance, command) : viaDatabase(device, remote!, command)));
   }
   return out.join('\n');
