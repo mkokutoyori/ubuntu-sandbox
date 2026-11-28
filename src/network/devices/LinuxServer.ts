@@ -106,6 +106,7 @@ export class LinuxServer extends LinuxMachine {
       list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
     }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime(), groupsOf: (name: string) => this.executor.userMgr.getUserGroups(name).map((group) => group.name) });
     this.radiusd.setSqlConnector(oracleSqlConnector(this.id));
+    this.radiusd.setNameResolver((name) => this.executor.resolvedHost(name));
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'postfix') return;

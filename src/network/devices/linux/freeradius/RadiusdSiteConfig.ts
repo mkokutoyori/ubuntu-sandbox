@@ -3,7 +3,7 @@ import type { RadiusClientEntry } from '@/network/radius/ClientTable';
 import type { RadSecTls } from '@/network/radius/RadSecTlsPolicy';
 import { readTlsBody } from './RadSecTlsSection';
 import { UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_AUTH } from '@/network/radius/types';
-import { readClientSections, type ParsedClients } from './ClientsConfParser';
+import { readClientSections, type ClientNameResolver, type ParsedClients } from './ClientsConfParser';
 import type { ConfSection } from './FreeradiusConf';
 
 export type ListenerType = 'auth' | 'acct' | 'auth+acct' | 'status';
@@ -74,12 +74,12 @@ function readControlSocket(section: ConfSection): ControlSocket | { error: strin
   return { path, writable: mode !== undefined && CONTROL_MODES[mode] };
 }
 
-export function readSiteConfig(root: ConfSection, extraListSections: readonly ConfSection[] = []): SiteConfig | { error: string } {
+export function readSiteConfig(root: ConfSection, extraListSections: readonly ConfSection[] = [], resolve?: ClientNameResolver): SiteConfig | { error: string } {
   const servers = root.sections.filter((section) => section.name1 === 'server');
   const namedClients = new Map<string, RadiusClientEntry[]>();
   for (const section of [...root.sections.filter((candidate) => candidate.name1 === 'clients' && candidate.name2 !== null), ...extraListSections]) {
     const own: ParsedClients = { clients: [], errors: [], warnings: [] };
-    readClientSections(section.sections, own);
+    readClientSections(section.sections, own, resolve);
     if (own.errors.length > 0) return { error: own.errors[0] };
     namedClients.set(section.name2 as string, own.clients.map((entry) => ({ ...entry, list: section.name2 as string })));
   }
@@ -140,7 +140,7 @@ export function readSiteConfig(root: ConfSection, extraListSections: readonly Co
       });
     }
     const own: ParsedClients = { clients: [], errors: [], warnings: [] };
-    readClientSections(server.sections, own);
+    readClientSections(server.sections, own, resolve);
     if (own.errors.length > 0) return { error: own.errors[0] };
     if (own.clients.length > 0) serverClients.set(serverName, own.clients.map((entry) => ({ ...entry, list: `server:${serverName}` })));
   }

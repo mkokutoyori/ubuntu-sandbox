@@ -4,7 +4,7 @@
  * id, nasname, shortname, type, secret, server; each row becomes a client with ipaddr = nasname (a CIDR is a network), shortname, nas_type = type and the row's secret; a row
  * the client grammar refuses is an error and is skipped; read_clients without client_query is a configuration error), raddb/mods-config/sql/main/oracle/queries.conf (client_query =
  * "SELECT id, nasname, shortname, type, secret, server FROM ${client_table}"). The rows go through the same grammar as clients.conf (readClientSections): one answer to "what is
- * a client", not two. They are read over a real Oracle Net session to another host. A hostname in nasname is refused as clients.conf refuses it (the grammar takes addresses);
+ * a client", not two. They are read over a real Oracle Net session to another host. A hostname in nasname goes through the same grammar as clients.conf, so the machine's resolver answers it (probe-freeradius-client-hostname);
  * the virtual server column is read and not used (TODO.md).
  *
  * The server column (rlm_sql.c generate_sql_clients row[5], main/client.c client_add): a virtual server that does not exist refuses the client with the message above; an existing one adds it to the global list (the listener `clients =` list is not modelled, see TODO). Of the 9 cases, the one with the unknown server falls on git stash of src/network; the existing-server case is a witness that passes either way.

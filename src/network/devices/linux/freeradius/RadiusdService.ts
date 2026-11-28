@@ -19,7 +19,7 @@ import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { RadiusServerAgent } from '@/network/radius/RadiusServerAgent';
 import type { RadiusTcpServer } from '@/network/radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '@/network/radius/types';
-import { parseClientsConf, readClientSections, type ParsedClients } from './ClientsConfParser';
+import { parseClientsConf, readClientSections, type ClientNameResolver, type ParsedClients } from './ClientsConfParser';
 import { readEapModule, EAP_DEFAULT_FRAGMENT_SIZE, type EapModuleConfig } from './EapModuleConfig';
 import type { EapTlsConfig } from '@/network/radius/eaptls/EapTlsConfig';
 import { PeapMd5InnerAuthServer } from '@/network/radius/eaptls/PeapInnerAuth';
@@ -219,6 +219,9 @@ export class RadiusdService {
   private sqlExpansions: ReadonlyMap<string, ExternalExpansion> = new Map();
 
   setSqlConnector(connector: SqlConnector | null): void { this.sqlConnector = connector; }
+  private nameResolver: ClientNameResolver | undefined;
+
+  setNameResolver(resolver: ClientNameResolver | undefined): void { this.nameResolver = resolver; }
   private threadPoolStartedMs = 0;
   private daemonStartedMs = 0;
 
@@ -1248,8 +1251,8 @@ export class RadiusdService {
       sqlModules.push(sql);
     }
     const clientsText = this.files.read(clientsPath);
-    const clientListSections = clientsText === null ? [] : parseClientsConf(clientsText, clientsPath, (path) => this.files.read(path)).listSections ?? [];
-    const site = readSiteConfig(main.root, clientListSections);
+    const clientListSections = clientsText === null ? [] : parseClientsConf(clientsText, clientsPath, (path) => this.files.read(path), this.nameResolver).listSections ?? [];
+    const site = readSiteConfig(main.root, clientListSections, this.nameResolver);
     if ('error' in site) return { ok: false, error: site.error };
     for (const spec of site.listeners) {
       if (spec.tls === undefined) continue;
@@ -1271,7 +1274,7 @@ export class RadiusdService {
     if (clientsSource === null) return { ok: false, error: `open: ${clientsPath}: file not found` };
     const usersSource = this.files.read(usersPath);
     if (usersSource === null) return { ok: false, error: `open: ${usersPath}: file not found` };
-    const parsed = parseClientsConf(clientsSource, clientsPath, (path) => this.files.read(path));
+    const parsed = parseClientsConf(clientsSource, clientsPath, (path) => this.files.read(path), this.nameResolver);
     if (parsed.errors.length > 0) return { ok: false, error: parsed.errors[0] };
     const users = parseUsersFile(usersSource, usersPath, (path) => this.files.read(path));
     if ('error' in users) return { ok: false, error: users.error };
@@ -1331,7 +1334,7 @@ export class RadiusdService {
         found.errors.push(`Cannot add client - virtual server ${server} does not exist`);
         return false;
       });
-      readClientSections(known, found);
+      readClientSections(known, found, this.nameResolver);
     }
     for (const message of found.errors) this.writeLogLine('Error', message);
     return found.clients;
