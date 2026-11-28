@@ -22,12 +22,35 @@ const portBlock = (port: string, address: string, mask = '255.255.255.0'): strin
   ];
 };
 
-const policy = (id: number, name: string, source: string, destination: string, extra: string[] = []): string[] => [
+const policy = (id: number, name: string, source: string, destination: string, extra: string[] = [], sourceAddress = 'all', destinationAddress = 'all'): string[] => [
   'config firewall policy', `edit ${id}`, `set name "${name}"`,
   `set srcintf "${source}"`, `set dstintf "${destination}"`,
-  'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"', 'set action accept', 'set schedule "always"', ...extra,
+  `set srcaddr "${sourceAddress}"`, `set dstaddr "${destinationAddress}"`, 'set service "ALL"', 'set action accept', 'set schedule "always"', ...extra,
   'next', 'end',
 ];
+
+const subnetObjects = (objects: readonly (readonly [string, string, string])[]): string[] => [
+  'config firewall address',
+  ...objects.flatMap(([name, network, mask]) => [`edit "${name}"`, `set subnet ${network} ${mask}`, 'next']),
+  'end',
+];
+
+const addressGroup = (name: string, members: readonly string[]): string[] => [
+  'config firewall addrgrp', `edit "${name}"`, `set member ${members.map((member) => `"${member}"`).join(' ')}`, 'next', 'end',
+];
+
+const HQ_INSIDE = 'HQ-INSIDE';
+const HQ_DMZ = 'HQ-DMZ';
+const DR_INSIDE = 'DR-INSIDE';
+const DR_DMZ = 'DR-DMZ';
+const DR_NETS = 'DR-NETS';
+const CORPORATE_NETS = 'CORPORATE-NETS';
+const agencyLan = (agency: Agency): string => `${agency.name}-LAN`;
+const siteObjects = (): string[] => subnetObjects([
+  [HQ_INSIDE, '10.10.0.0', '255.255.0.0'], [HQ_DMZ, HQ.dmz.network, '255.255.255.0'],
+  [DR_INSIDE, '10.20.0.0', '255.255.0.0'], [DR_DMZ, DR.dmz.network, '255.255.255.0'],
+  ...AGENCIES.map((agency) => [agencyLan(agency), agency.network, '255.255.255.0'] as const),
+]);
 
 const staticRoute = (id: number, destination: string, mask: string, device: string, gateway?: string): string[] => [
   'config router static', `edit ${id}`, `set dst ${destination} ${mask}`,
@@ -58,9 +81,10 @@ export async function configureFortiGateHq(bench: LabWorkbench, fgt: Equipment, 
     ...staticRoute(2, '0.0.0.0', '0.0.0.0', 'wan1', INTERNET.gateway),
     ...syslog(syslogServer),
   );
-  const spokes: { tunnel: string; wan: string; network: string; mask: string; id: number }[] = [
-    { tunnel: DR_TUNNEL, wan: INTERNET.fgtDr, network: '10.20.0.0', mask: '255.255.0.0', id: 10 },
-    ...AGENCIES.map((agency, index) => ({ tunnel: agency.tunnel, wan: agency.wan, network: agency.network, mask: '255.255.255.0', id: 11 + index })),
+  await bench.shell(fgt, ...siteObjects(), ...addressGroup(DR_NETS, [DR_INSIDE, DR_DMZ]));
+  const spokes: { tunnel: string; wan: string; network: string; mask: string; id: number; address: string }[] = [
+    { tunnel: DR_TUNNEL, wan: INTERNET.fgtDr, network: '10.20.0.0', mask: '255.255.0.0', id: 10, address: DR_NETS },
+    ...AGENCIES.map((agency, index) => ({ tunnel: agency.tunnel, wan: agency.wan, network: agency.network, mask: '255.255.255.0', id: 11 + index, address: agencyLan(agency) })),
   ];
   for (const spoke of spokes) {
     await bench.shell(fgt, ...phase1(spoke.tunnel, spoke.wan), ...phase2(spoke.tunnel), ...staticRoute(spoke.id, spoke.network, spoke.mask, spoke.tunnel));
@@ -82,22 +106,22 @@ export async function configureFortiGateHq(bench: LabWorkbench, fgt: Equipment, 
     'edit 11', 'set name "internet-to-web-https"', 'set srcintf "wan1"', 'set dstintf "port2"', 'set srcaddr "all"',
     'set dstaddr "vip-web-https"', 'set service "ALL"', 'set action accept', 'set schedule "always"', 'next',
     'end',
-    ...policy(20, 'inside-to-internet', 'port1', 'wan1', ['set nat enable']),
-    ...policy(21, 'dmz-to-internet', 'port2', 'wan1', ['set nat enable']),
-    ...policy(22, 'inside-to-dmz', 'port1', 'port2'),
-    ...policy(23, 'dmz-to-inside', 'port2', 'port1'),
+    ...policy(20, 'inside-to-internet', 'port1', 'wan1', ['set nat enable'], HQ_INSIDE),
+    ...policy(21, 'dmz-to-internet', 'port2', 'wan1', ['set nat enable'], HQ_DMZ),
+    ...policy(22, 'inside-to-dmz', 'port1', 'port2', [], HQ_INSIDE, HQ_DMZ),
+    ...policy(23, 'dmz-to-inside', 'port2', 'port1', [], HQ_DMZ, HQ_INSIDE),
   );
   for (const spoke of spokes) {
     await bench.shell(
       fgt,
-      ...policy(30 + spoke.id, `inside-to-${spoke.tunnel}`, 'port1', spoke.tunnel),
-      ...policy(40 + spoke.id, `${spoke.tunnel}-to-inside`, spoke.tunnel, 'port1'),
-      ...policy(50 + spoke.id, `dmz-to-${spoke.tunnel}`, 'port2', spoke.tunnel),
-      ...policy(60 + spoke.id, `${spoke.tunnel}-to-dmz`, spoke.tunnel, 'port2'),
+      ...policy(30 + spoke.id, `inside-to-${spoke.tunnel}`, 'port1', spoke.tunnel, [], HQ_INSIDE, spoke.address),
+      ...policy(40 + spoke.id, `${spoke.tunnel}-to-inside`, spoke.tunnel, 'port1', [], spoke.address, HQ_INSIDE),
+      ...policy(50 + spoke.id, `dmz-to-${spoke.tunnel}`, 'port2', spoke.tunnel, [], HQ_DMZ, spoke.address),
+      ...policy(60 + spoke.id, `${spoke.tunnel}-to-dmz`, spoke.tunnel, 'port2', [], spoke.address, HQ_DMZ),
     );
     for (const other of spokes) {
       if (other === spoke) continue;
-      await bench.shell(fgt, ...policy(100 + spoke.id * 10 + other.id % 10, `${spoke.tunnel}-to-${other.tunnel}`, spoke.tunnel, other.tunnel));
+      await bench.shell(fgt, ...policy(100 + spoke.id * 10 + other.id % 10, `${spoke.tunnel}-to-${other.tunnel}`, spoke.tunnel, other.tunnel, [], spoke.address, other.address));
     }
   }
 }
@@ -113,11 +137,12 @@ export async function configureFortiGateDr(bench: LabWorkbench, fgt: Equipment, 
     ...staticRoute(2, '10.10.0.0', '255.255.0.0', DR_TUNNEL), ...staticRoute(3, '172.16.10.0', '255.255.255.0', DR_TUNNEL),
     ...staticRoute(4, '10.1.0.0', '255.255.255.0', DR_TUNNEL), ...staticRoute(5, '10.2.0.0', '255.255.255.0', DR_TUNNEL),
     ...syslog(syslogServer),
-    ...policy(1, 'inside-to-hq', 'port1', DR_TUNNEL), ...policy(2, 'hq-to-inside', DR_TUNNEL, 'port1'),
-    ...policy(3, 'dmz-to-hq', 'port2', DR_TUNNEL), ...policy(4, 'hq-to-dmz', DR_TUNNEL, 'port2'),
-    ...policy(5, 'inside-to-internet', 'port1', 'wan1', ['set nat enable']),
-    ...policy(6, 'dmz-to-internet', 'port2', 'wan1', ['set nat enable']),
-    ...policy(7, 'inside-to-dmz', 'port1', 'port2'), ...policy(8, 'dmz-to-inside', 'port2', 'port1'),
+    ...siteObjects(), ...addressGroup(CORPORATE_NETS, [HQ_INSIDE, HQ_DMZ, ...AGENCIES.map(agencyLan)]),
+    ...policy(1, 'inside-to-hq', 'port1', DR_TUNNEL, [], DR_INSIDE, CORPORATE_NETS), ...policy(2, 'hq-to-inside', DR_TUNNEL, 'port1', [], CORPORATE_NETS, DR_INSIDE),
+    ...policy(3, 'dmz-to-hq', 'port2', DR_TUNNEL, [], DR_DMZ, CORPORATE_NETS), ...policy(4, 'hq-to-dmz', DR_TUNNEL, 'port2', [], CORPORATE_NETS, DR_DMZ),
+    ...policy(5, 'inside-to-internet', 'port1', 'wan1', ['set nat enable'], DR_INSIDE),
+    ...policy(6, 'dmz-to-internet', 'port2', 'wan1', ['set nat enable'], DR_DMZ),
+    ...policy(7, 'inside-to-dmz', 'port1', 'port2', [], DR_INSIDE, DR_DMZ), ...policy(8, 'dmz-to-inside', 'port2', 'port1', [], DR_DMZ, DR_INSIDE),
   );
 }
 
@@ -130,8 +155,9 @@ export async function configureFortiGateAgency(bench: LabWorkbench, fgt: Equipme
     ...staticRoute(1, '10.0.0.0', '255.0.0.0', 'to-hq'), ...staticRoute(2, '172.16.0.0', '255.254.0.0', 'to-hq'),
     ...staticRoute(3, '0.0.0.0', '0.0.0.0', 'wan1', INTERNET.gateway),
     ...syslog(syslogServer),
-    ...policy(1, 'lan-to-hq', 'port1', 'to-hq'), ...policy(2, 'hq-to-lan', 'to-hq', 'port1'),
-    ...policy(3, 'lan-to-internet', 'port1', 'wan1', ['set nat enable']),
+    ...siteObjects(), ...addressGroup(CORPORATE_NETS, [HQ_INSIDE, HQ_DMZ, DR_INSIDE, DR_DMZ, ...AGENCIES.map(agencyLan)]),
+    ...policy(1, 'lan-to-hq', 'port1', 'to-hq', [], agencyLan(agency), CORPORATE_NETS), ...policy(2, 'hq-to-lan', 'to-hq', 'port1', [], CORPORATE_NETS, agencyLan(agency)),
+    ...policy(3, 'lan-to-internet', 'port1', 'wan1', ['set nat enable'], agencyLan(agency)),
   );
 }
 

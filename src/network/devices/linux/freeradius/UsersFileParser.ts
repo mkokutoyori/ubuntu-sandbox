@@ -203,6 +203,7 @@ function readEntries(
         if (parsed.trailingComma) return fail(lineNo, `Invalid text after check attributes for entry ${name}`);
         for (const pair of parsed.pairs) {
           if (!knownName(pair.name)) return fail(lineNo, `Parse error (check) for entry ${name}: Unknown attribute "${pair.name}"`);
+          if (pair.tag !== null && pair.tag > 31) return fail(lineNo, `Parse error (check) for entry ${name}: Invalid tag for attribute ${pair.name}`);
         }
         check = parsed.pairs;
         mode = 'want-reply';
@@ -217,6 +218,7 @@ function readEntries(
       if ('error' in parsed) return fail(lineNo, `Parse error (reply) for entry ${name}: ${parsed.error}`);
       for (const pair of parsed.pairs) {
         if (!knownName(pair.name)) return fail(lineNo, `Parse error (reply) for entry ${name}: Unknown attribute "${pair.name}"`);
+        if (pair.tag !== null && pair.tag > 31) return fail(lineNo, `Parse error (reply) for entry ${name}: Invalid tag for attribute ${pair.name}`);
         if (pair.name.toLowerCase() in RADIUS_ATTR && usersPairToAttribute(pair) === null) {
           return fail(lineNo, `Parse error (reply) for entry ${name}: Failed parsing "${pair.value}" as a value for attribute "${pair.name}"`);
         }
@@ -245,13 +247,16 @@ export function usersPairToAttribute(pair: UsersPair): RadiusAttribute | null {
   const key = pair.name.toLowerCase();
   const vsa = lookupVsaByName(key);
   if (vsa !== undefined) {
-    const value = vsa.valueType === 'octets' ? (/^0x[0-9a-f]*$/i.test(pair.value) ? pair.value.slice(2) : null) : pair.value;
+    const value = vsa.valueType === 'octets' ? (/^0x[0-9a-f]*$/i.test(pair.value) ? pair.value.slice(2) : null)
+      : vsa.valueType === 'integer' ? (vsa.valueNames?.[pair.value.toLowerCase()] ?? (/^\d+$/.test(pair.value) ? Number(pair.value) : null))
+        : pair.value;
     return value === null ? null : { type: 'vendor-specific', value, vendor: { id: vsa.vendorId, type: vsa.vendorType } };
   }
   if (!(key in RADIUS_ATTR)) return null;
   const type = key as RadiusAttrType;
   const value = encodeValue(RADIUS_DICTIONARY[type].valueType, type, pair.value);
-  return value === null ? null : { type, value };
+  const tagged = RADIUS_DICTIONARY[type].valueType === 'tagged-integer' || RADIUS_DICTIONARY[type].valueType === 'tagged-string';
+  return value === null ? null : { type, value, ...(tagged && pair.tag !== null && pair.tag !== undefined ? { tag: pair.tag } : {}) };
 }
 
 function matches(op: UsersOperator, actual: string | number | undefined, wanted: string): boolean {

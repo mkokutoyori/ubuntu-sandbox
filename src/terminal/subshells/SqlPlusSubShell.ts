@@ -22,9 +22,10 @@ import { syncShellHostOf, wireSqlPlusSession, type SyncShellHost } from '@/termi
  * trail. Returns undefined on devices without a POSIX identity surface,
  * letting the engine fall back to its default context.
  */
-function captureOsContext(device: Equipment, host: SyncShellHost | null): OsSecurityContext | undefined {
+function captureOsContext(device: Equipment, host: SyncShellHost | null, launchingUser?: string): OsSecurityContext | undefined {
   const capable = device as HostCapableDevice;
-  const osUser = capable.getCurrentUser?.()
+  const osUser = launchingUser
+    ?? capable.getCurrentUser?.()
     ?? host?.executeShellCommandSync('whoami').trim();
   if (!osUser) return undefined;
 
@@ -81,11 +82,12 @@ export class SqlPlusSubShell implements ISubShell {
   static create(
     device: Equipment,
     args: string[],
+    launchingUser?: string,
   ): { subShell: SqlPlusSubShell; banner: string[]; loginOutput: string[] } {
     initOracleFilesystem(device);
     const deviceId = device.getId();
     const host = syncShellHostOf(device);
-    const osCtx = captureOsContext(device, host);
+    const osCtx = captureOsContext(device, host, launchingUser);
     const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args, osCtx);
     wireSqlPlusSession(device, session);
 

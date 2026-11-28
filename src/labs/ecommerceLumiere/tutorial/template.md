@@ -1,63 +1,310 @@
-# Oracle & RMAN dans une vraie infrastructure : le lab « Lumière Boutique »
+# Sauvegarder et restaurer Oracle avec RMAN — un parcours guidé dans l'entreprise « Lumière Boutique »
 
-> **À qui s'adresse ce tutoriel ?**
-> À toi qui veux **comprendre et maîtriser la sauvegarde et la restauration d'une base Oracle avec RMAN**, non pas sur une machine isolée, mais dans une entreprise réaliste : plusieurs sites, plusieurs constructeurs, un site de reprise, des journaux centralisés, des accès contrôlés. Si tu cherches le cours de référence sur RMAN lui-même (toutes les commandes, une par une), ouvre d'abord `docs/tuto_rman.md` : ici on **applique** RMAN à une infrastructure complète, on casse des choses, et on les répare.
+> **Ce tutoriel est fait pour toi qui débutes.** Tu n'as besoin de rien savoir : ni administration de bases de données, ni Oracle, ni RMAN, ni même le terminal Linux. On part de zéro, on avance par petites marches, et à la fin tu sais **réparer une base Oracle après une panne**.
 
-> **Ce tutoriel n'a pas été écrit à la main.** Chaque bloc de sortie ci-dessous est la réponse **réelle** du simulateur, capturée en rejouant toutes les commandes sur le lab rouvert depuis `labs/ecommerce-lumiere/topology.json`. Un test (`src/__tests__/unit/labs/ecommerce-lumiere-tutorial.test.ts`) refait ce parcours à chaque modification du simulateur : si une commande cessait de produire ce que le tutoriel annonce, il échouerait. Les dates, les numéros de séquence et les noms de pièces de sauvegarde changent d'une exécution à l'autre ; la structure, elle, ne change pas.
+> **Ce tutoriel n'a pas été écrit à la main.** Chaque bloc de sortie est la réponse **réelle** du simulateur, capturée en rejouant toutes les commandes sur le lab rouvert depuis `labs/ecommerce-lumiere/topology.json`. Un test (`src/__tests__/unit/labs/ecommerce-lumiere-tutorial.test.ts`) refait ce parcours à chaque modification du simulateur : si une commande cessait de produire ce que le tutoriel annonce, il échouerait. Les dates, les numéros de séquence et les noms de pièces changent d'une exécution à l'autre ; la structure, elle, ne change pas.
+
+---
+
+## Comment utiliser ce tutoriel
+
+### Le parcours en cinq niveaux
+
+| Niveau | Tu vas… | Chapitres | Temps indicatif |
+|---|---|---|---|
+| **1 · Découvrir** | Comprendre ce qu'est une base Oracle, ce qu'on y protège, et pourquoi | 1 à 3 | 1 h |
+| **2 · Préparer et sauvegarder** | Mettre la base en état d'être sauvegardée, configurer RMAN, faire, planifier et **vérifier** tes sauvegardes | 4 à 9 | 2 h 30 |
+| **3 · Réparer** | Vivre trois pannes (un fichier perdu, le « sommaire » perdu, une erreur humaine) et les réparer | 10 à 12 | 2 h |
+| **4 · Protéger** | Contrôler qui a le droit de sauvegarder, puis survivre à la perte d'un site entier | 13 et 14 | 1 h 30 |
+| **5 · T'entraîner** | Choisir la bonne réparation, t'exercer, consulter les erreurs courantes et l'aide-mémoire, t'auto-évaluer | 15 à 20 | à ton rythme |
+
+Chaque chapitre se lit **dans l'ordre** : les pannes du niveau 3 supposent les sauvegardes du niveau 2.
+
+### Comment chaque chapitre est construit
+
+Tous les chapitres de manipulation suivent **le même plan**, pour que tu saches toujours où tu es :
+
+| Repère | Ce que tu y trouves |
+|---|---|
+| 🎯 **Objectif** | Ce que tu sauras faire à la fin du chapitre — et **pourquoi** c'est utile |
+| 🧠 **Comprendre** | L'idée, expliquée d'abord **sans commande**, avec une image ou un exemple |
+| 🔧 **Manipuler** | Les commandes à taper, **dans l'ordre**, avec ce qu'elles font |
+| 👀 **Lire la sortie** | Comment lire la réponse **ligne par ligne** : quelles lignes comptent, lesquelles sont du décor |
+| ⚠️ **Piège** | L'erreur que font presque tous les débutants à cet endroit |
+| ✅ **À retenir** | Une à trois phrases à garder en tête |
+| 🧪 **Vérifie-toi** | Deux ou trois questions pour contrôler que tu as compris (réponses repliées) |
+
+Les chapitres de panne (10 à 12, puis 14) ont un fil encore plus régulier : **situation → diagnostic → plan → réparation → vérification → leçon**. C'est exactement la démarche d'un administrateur de base de données de garde.
+
+### Les conventions des blocs de code
+
+L'**invite** (le début de ligne) te dit **qui** tape et **où** :
+
+- `[oracle@ora-prd ~]$` : l'utilisateur `oracle`, dans le terminal de la machine `ORA-PRD` ;
+- `[root@bkp-hq ~]#` : l'administrateur `root`, dans le terminal de `BKP-HQ` ;
+- `SQL>` : une session **SQL\*Plus** (`sqlplus / as sysdba`) ;
+- `RMAN>` : une session **RMAN** (`rman target /`).
+
+Ce que tu tapes suit l'invite ; **le reste est la réponse**. Les dates et numéros changent chez toi : c'est normal.
+
+> 💡 **Pas de panique.** Tu ne peux rien casser : si tu te perds ou si une manipulation tourne mal, réimporte `topology.json` (chapitre 3) et tu repars d'un lab neuf.
 
 ---
 
 ## Table des matières
 
-1. [L'entreprise et son problème](#1-lentreprise-et-son-problème)
-2. [L'infrastructure du lab](#2-linfrastructure-du-lab)
-3. [Cinq notions à avoir en tête](#3-cinq-notions-à-avoir-en-tête)
-4. [Étape 1 — Reconnaissance : qu'est-ce qu'on protège ?](#4-étape-1--reconnaissance--quest-ce-quon-protège-)
-5. [Étape 2 — Passer la base en ARCHIVELOG](#5-étape-2--passer-la-base-en-archivelog)
-6. [Étape 3 — Configurer RMAN une bonne fois pour toutes](#6-étape-3--configurer-rman-une-bonne-fois-pour-toutes)
-7. [Étape 4 — La première sauvegarde](#7-étape-4--la-première-sauvegarde)
-8. [Étape 5 — Une stratégie : niveau 0, niveau 1, journaux, cron](#8-étape-5--une-stratégie--niveau-0-niveau-1-journaux-cron)
-9. [Étape 6 — Vérifier : une sauvegarde non testée n'existe pas](#9-étape-6--vérifier--une-sauvegarde-non-testée-nexiste-pas)
-10. [Scénario A — Un datafile disparaît](#10-scénario-a--un-datafile-disparaît)
-11. [Scénario B — Les fichiers de contrôle disparaissent](#11-scénario-b--les-fichiers-de-contrôle-disparaissent)
-12. [Scénario C — Un `DROP TABLE` en production : retour dans le temps](#12-scénario-c--un-drop-table-en-production--retour-dans-le-temps)
-13. [Accès, audit et journaux : qui a le droit de sauvegarder ?](#13-accès-audit-et-journaux--qui-a-le-droit-de-sauvegarder-)
-14. [Scénario D — Le siège brûle : le site de reprise](#14-scénario-d--le-siège-brûle--le-site-de-reprise)
-15. [Exercices](#15-exercices)
-16. [Les erreurs que tu rencontreras](#16-les-erreurs-que-tu-rencontreras)
-17. [Aide-mémoire](#17-aide-mémoire)
-18. [Ce que le simulateur ne fait pas (encore)](#18-ce-que-le-simulateur-ne-fait-pas-encore)
-19. [Conclusion](#19-conclusion)
+1. [Les bases — pour partir vraiment de zéro](#1-les-bases--pour-partir-vraiment-de-zéro)
+2. [L'entreprise et ses trois mauvais lundis](#2-lentreprise-et-ses-trois-mauvais-lundis)
+3. [Le lab : l'entreprise dans ton navigateur](#3-le-lab--lentreprise-dans-ton-navigateur)
+4. [Reconnaissance : qu'est-ce qu'on protège ?](#4-reconnaissance--quest-ce-quon-protège-)
+5. [Préparer la base : le mode ARCHIVELOG](#5-préparer-la-base--le-mode-archivelog)
+6. [Configurer RMAN une bonne fois pour toutes](#6-configurer-rman-une-bonne-fois-pour-toutes)
+7. [La première sauvegarde](#7-la-première-sauvegarde)
+8. [Une stratégie : niveau 0, niveau 1, journaux, cron](#8-une-stratégie--niveau-0-niveau-1-journaux-cron)
+9. [Vérifier : une sauvegarde non testée n'existe pas](#9-vérifier--une-sauvegarde-non-testée-nexiste-pas)
+10. [Panne n° 1 — Un fichier de données disparaît](#10-panne-n-1--un-fichier-de-données-disparaît)
+11. [Panne n° 2 — Les fichiers de contrôle disparaissent](#11-panne-n-2--les-fichiers-de-contrôle-disparaissent)
+12. [Panne n° 3 — Un `DROP TABLE` en production : retour dans le temps](#12-panne-n-3--un-drop-table-en-production--retour-dans-le-temps)
+13. [Qui a le droit de sauvegarder ? Accès, audit et journaux](#13-qui-a-le-droit-de-sauvegarder--accès-audit-et-journaux)
+14. [Panne n° 4 — Le siège brûle : le site de reprise](#14-panne-n-4--le-siège-brûle--le-site-de-reprise)
+15. [Que faire quand ? L'arbre de décision](#15-que-faire-quand--larbre-de-décision)
+16. [Exercices](#16-exercices)
+17. [Les erreurs que tu rencontreras](#17-les-erreurs-que-tu-rencontreras)
+18. [Aide-mémoire](#18-aide-mémoire)
+19. [Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas](#19-ce-que-le-simulateur-fait-comme-oracle--et-ce-quil-ne-fait-pas)
+20. [Conclusion](#20-conclusion)
 
 ---
 
-## 1. L'entreprise et son problème
+## 1. Les bases — pour partir vraiment de zéro
 
-**Lumière Boutique** vend en ligne. Son site web tourne sur deux frontaux (`WEB-1`, `WEB-2`) en DMZ ; les commandes, les clients, les paiements vivent dans **une base Oracle**, `ORCL`, sur le serveur `ORA-PRD` du siège. Si cette base disparaît, la boutique ne vend plus rien : plus de panier, plus de paiement, plus de suivi de commande.
+> 🎯 **Objectif** — Comprendre, avec des mots simples, ce qu'est une base de données Oracle, de quoi elle est faite, et comment on lui parle. Tu n'as besoin de **rien d'autre** pour suivre le reste. Si tu connais déjà instance, datafile et `ARCHIVELOG`, saute au chapitre 2.
 
-Imagine les trois e-mails qu'un DBA peut recevoir un lundi matin :
+### 1.1 Une base de données, c'est quoi ?
 
-| 📧 De | Sujet | Ce qui est arrivé | Ce qu'il te faut |
-|---|---|---|---|
-| **L'exploitant** | « Un disque a lâché cette nuit » | Un fichier de données (`shop_data01.dbf`) est illisible | Une **restauration** du fichier et un **rejeu des journaux** |
-| **Le développeur** | « J'ai supprimé la table des paiements en prod » | Une erreur humaine, base ouverte et saine | Un **retour dans le temps** juste avant l'erreur |
-| **Le réseau** | « Le siège est hors service » | Tout le site est perdu : serveurs, baies, base | Un **site de reprise** déjà prêt (Paris → Lyon… ici `DR`) |
+🧠 **Comprendre.** Une **base de données** est un endroit organisé où un programme range des informations pour les retrouver vite et sans les perdre. Celle de Lumière Boutique contient les **clients**, les **produits**, les **commandes** et les **paiements** de la boutique.
 
-Une bonne stratégie répond à trois chiffres :
+L'information y est rangée dans des **tables**, comme des feuilles de tableur :
 
-| Objectif | Question | Réponse retenue pour Lumière |
+- une **table** = un sujet (les clients, les commandes…) ;
+- une **ligne** = un élément (un client, une commande) ;
+- une **colonne** = une caractéristique (le nom, la ville, le montant).
+
+On parle à une base dans un langage qui s'appelle **SQL** : on lui **pose des questions** (`SELECT`), on lui **ajoute** des lignes (`INSERT`), on les **modifie** (`UPDATE`), on les **supprime** (`DELETE`).
+
+🔧 **Manipuler.** Les trois premiers clients de la boutique :
+
+{{step:zero-clients}}
+
+> 💡 **Deux conventions de ce tutoriel.** `WHERE ROWNUM <= 3` veut dire *« ne garde que les 3 premières lignes »* (`ROWNUM` est le numéro de ligne que fournit Oracle). Et quand un bloc contient **plusieurs commandes**, il les affiche d'abord, puis tous leurs résultats **dans le même ordre**.
+
+👀 **Lire la sortie.** La première ligne, c'est ce que tu as demandé : *« donne-moi ces colonnes, dans la table `customers` du **schéma** `shop` »*. Un **schéma** est le « dossier » d'un utilisateur de la base : `shop` est le compte de l'application de la boutique. Ensuite, la réponse est un petit tableau (une ligne par client), puis un compte rendu (`3 rows selected.`).
+
+✅ **À retenir.** Une base de données n'est pas un fichier que l'on ouvre avec un éditeur : c'est un **logiciel** (ici **Oracle**) qui gère des fichiers pour toi, protège les données quand plusieurs personnes écrivent en même temps, et sait refaire le travail après une panne. Ce tutoriel t'apprend à **lui faire survivre aux pannes**.
+
+### 1.2 Oracle : une instance, une base, des fichiers
+
+🧠 **Comprendre.** Quand on dit « la base Oracle », on parle en fait de **deux choses** :
+
+| Terme | Ce que c'est | Où ça vit |
 |---|---|---|
-| **RPO** (perte de données tolérée) | Combien de temps de commandes accepte-t-on de perdre ? | **≈ 0** si le siège brûle (la base du site de reprise reçoit les journaux en continu) ; **≤ 4 h** après une erreur logique (sauvegarde des journaux toutes les 4 h) |
-| **RTO** (durée d'indisponibilité) | Combien de temps la boutique peut-elle être fermée ? | **Quelques minutes** pour basculer sur le site de reprise ; **quelques dizaines de minutes** pour restaurer un fichier |
-| **Rétention** | Combien de temps garde-t-on les sauvegardes ? | **7 jours** de fenêtre de récupération sur le volume de sauvegarde |
+| **La base** (*database*) | Les **fichiers** sur le disque : les données et leurs journaux | Disque |
+| **L'instance** | Les **programmes en cours d'exécution** et leur mémoire, qui ouvrent la base et répondent aux utilisateurs | Mémoire et processus |
 
-> 💡 **Le point à retenir dès maintenant** : une sauvegarde et un site de reprise ne répondent **pas** à la même question. Le site de reprise copie *aussi* l'erreur (un `DROP TABLE` est rejoué sur la standby). Seule une **sauvegarde** te permet de revenir *avant* l'erreur. Il faut les deux.
+Une image : la base est **un livre rangé dans une bibliothèque** ; l'instance est **le bibliothécaire**. On peut renvoyer le bibliothécaire chez lui : le livre reste sur l'étagère. On peut aussi faire venir le bibliothécaire sans ouvrir le livre. D'où les quatre **états** que tu verras partout :
+
+| État de l'instance | Ce qui est fait | À quoi ça sert |
+|---|---|---|
+| `SHUTDOWN` | Rien ne tourne | Maintenance |
+| `NOMOUNT` | Le bibliothécaire est là, **aucun fichier** n'est lu | Reconstruire le sommaire (chapitre 11) |
+| `MOUNT` | Le **sommaire** (le *fichier de contrôle*) est lu : on sait où est chaque fichier, sans les ouvrir | **Restaurer** des fichiers (chapitre 10) |
+| `OPEN` | Les fichiers de données sont ouverts : les utilisateurs travaillent | Fonctionnement normal |
+
+🔧 **Manipuler.** L'instance et la base se voient par deux **vues** (une vue est une « table » que la base tient à jour elle-même pour parler d'elle) :
+
+{{step:zero-instance}}
+
+👀 **Lire la sortie.** `STATUS OPEN` : l'instance a ouvert la base. `OPEN_MODE READ WRITE` : on peut lire **et** écrire. Dans Linux, l'instance est **un ensemble de processus**, chacun avec un métier :
+
+{{step:zero-processus}}
+
+`pmon` surveille les sessions, `smon` répare après un arrêt brutal, `dbw` écrit les données sur le disque, `lgwr` écrit le **journal** des modifications, `ckpt` marque les points de contrôle. Tu n'as pas à retenir ces noms : retiens qu'**une instance = des processus** qu'on voit avec `ps`.
+
+Les **fichiers** de la base sont de quatre sortes, et la suite du tutoriel ne parle que d'eux :
+
+| Fichier | Contenu | Pourquoi on s'en soucie |
+|---|---|---|
+| **Fichiers de données** (*datafiles*, `.dbf`) | Les tables et les index | C'est **ce qu'on sauvegarde** et ce qui peut disparaître |
+| **Journaux de reprise** (*redo logs*) | La liste de **tous les changements**, dans l'ordre | Ils permettent de **rejouer** le travail fait depuis la dernière sauvegarde |
+| **Fichiers de contrôle** (*control files*) | Le « sommaire » : où sont les fichiers, l'état de la base, **l'historique des sauvegardes** | Sans lui, la base ne démarre pas |
+| **Journaux archivés** (*archived logs*) | Les copies des journaux de reprise, **rangées au lieu d'être écrasées** | Ils permettent de revenir **jusqu'à la dernière transaction** |
+
+Un **tablespace** est un regroupement logique de fichiers de données (« l'étagère » où l'on range des tables). Chez Lumière : `SHOP_DATA` (les tables) et `SHOP_IDX` (les index, qui accélèrent les recherches).
+
+✅ **À retenir.** *Instance* = les programmes ; *base* = les fichiers. Quatre sortes de fichiers : **données, journaux, contrôle, journaux archivés**.
+
+### 1.3 Le terminal Linux : dix commandes suffisent
+
+🧠 **Comprendre.** Les serveurs Oracle tournent sous **Linux**. Tu les pilotes dans un **terminal** : tu tapes une commande après l'**invite**, tu lis la réponse.
+
+```
+[oracle@ora-prd ~]$ 
+  │       │      │  └─ $ = utilisateur ordinaire    # = administrateur (root)
+  │       │      └──── ~ = ton dossier personnel
+  │       └─────────── le nom de la machine (ici ORA-PRD)
+  └─────────────────── l'utilisateur connecté
+```
+
+| Commande | Ce qu'elle fait |
+|---|---|
+| `whoami` | Qui suis-je ? |
+| `pwd` | Dans quel dossier suis-je ? |
+| `ls` / `ls -l` | Liste les fichiers (`-l` : avec propriétaire, taille, date) |
+| `cd dossier` | Change de dossier |
+| `cat fichier` | Affiche le contenu d'un fichier |
+| `mkdir`, `rm`, `cp`, `mv` | Crée un dossier, supprime, copie, déplace |
+| `id` | Mon identifiant et mes groupes |
+| `su - utilisateur` | Devenir cet utilisateur (`su - oracle`) |
+| `sudo commande` | Lancer une commande avec les droits d'administrateur |
+| `exit` | Quitter la session courante |
+
+Un **utilisateur** Linux a un numéro (`uid`) et appartient à des **groupes** : ce sont les groupes qui décident de ce qu'on a le droit de faire.
+
+🔧 **Manipuler.** Qui est l'utilisateur **`oracle`** — le propriétaire du logiciel Oracle et des fichiers de la base ?
+
+{{step:zero-linux}}
+
+👀 **Lire la sortie.** `uid=54321(oracle)` : son numéro. `groups=…(oinstall),…(dba)` : ses groupes. **`dba`** (*database administrators*) est le groupe qui donne le droit de se connecter à la base **comme administrateur, sans mot de passe** (on y revient en 1.4). Plus bas, le contenu du dossier de la base : `.dbf` (données), `.ctl` (contrôle), `redo*.log` (journaux). Les tailles sont minuscules, car le simulateur représente les fichiers : seul leur **rôle** compte.
+
+⚠️ **Piège.** **`root` n'est pas dans le groupe `dba`** : sur une vraie machine Oracle, `root` **ne peut pas** administrer la base. Le lab respecte cette règle :
+
+{{step:zero-root-refuse}}
+
+`ORA-01031: insufficient privileges` : *« tu n'as pas le droit »*. Les erreurs Oracle ont toutes la forme `ORA-` + cinq chiffres ; on apprend à les reconnaître au chapitre 17. **Règle d'or du tutoriel : on administre Oracle en tant qu'`oracle`, jamais en root.**
+
+### 1.4 SQL*Plus : parler à la base
+
+🧠 **Comprendre.** **SQL\*Plus** est le programme en ligne de commande d'Oracle : tu y tapes du SQL, il affiche les réponses. On le lance avec `sqlplus`. La forme que nous utilisons, `sqlplus / as sysdba`, se lit :
+
+- `/` : « ne me demande pas de mot de passe » (le système d'exploitation m'a déjà identifié) ;
+- `as sysdba` : « connecte-moi avec le **rôle d'administrateur** » — le plus puissant d'Oracle (démarrer, arrêter, restaurer). Il est réservé aux membres du groupe `dba`.
+
+🔧 **Manipuler.** L'invite devient `SQL>`. Tout ce qui se termine par `;` est envoyé à la base :
+
+{{step:zero-sqlplus}}
+
+👀 **Lire la sortie.** `SHOW USER` n'est pas du SQL : c'est une **commande SQL\*Plus** (pas de `;`). `SELECT 'bonjour' AS message FROM dual;` est du SQL : `dual` est une table spéciale d'**une seule ligne**, utile quand on veut juste calculer une valeur. `SYSDATE` est la date de la base. Pour quitter : `EXIT`.
+
+Tu verras aussi des requêtes sur des noms qui commencent par `v$` ou `dba_` : ce sont les **vues du dictionnaire** (`v$database`, `v$datafile`…). C'est là qu'un administrateur lit l'état de la base.
+
+### 1.5 Pourquoi sauvegarder, et de quoi ?
+
+🧠 **Comprendre.** Une base peut être abîmée de trois façons très différentes, et **chacune demande une réponse différente** :
+
+| Ce qui arrive | Exemple | Ce qui sauve |
+|---|---|---|
+| **Une panne de fichier** | Un disque lâche, un fichier est effacé | **Restaurer** le fichier depuis une sauvegarde, puis **rejouer** les journaux |
+| **Une erreur humaine** | Un `DROP TABLE` en production, un `DELETE` sans `WHERE` | **Revenir dans le temps** à un instant d'avant l'erreur |
+| **Un sinistre de site** | Incendie, inondation, panne totale du datacenter | Un **site de reprise** déjà prêt, ailleurs |
+
+Une image pour comprendre le vocabulaire. Imagine que tu écris un livre :
+
+- La **sauvegarde** (*backup*) est une **photocopie** du livre à une date donnée ;
+- Les **journaux** sont un **cahier de notes** où tu écris *chaque modification* au moment où tu la fais ;
+- **Restaurer** (*restore*) = récupérer la photocopie ;
+- **Récupérer** (*recover*) = **rejouer** le cahier de notes sur la photocopie pour la ramener à aujourd'hui.
+
+On **restaure toujours avant de récupérer** : on ne rejoue pas des notes sur un livre qui n'existe plus. C'est **LA** règle de ce tutoriel.
+
+Deux chiffres mesurent une bonne stratégie, **fixés par l'entreprise** (pas par la technique) : le **RPO** (*Recovery Point Objective*) — combien de travail on accepte de **perdre** — et le **RTO** (*Recovery Time Objective*) — combien de temps on accepte d'être **hors service**.
+
+### 1.6 RMAN : l'outil de sauvegarde d'Oracle
+
+🧠 **Comprendre.** **RMAN** (*Recovery Manager*) est le programme livré avec Oracle pour sauvegarder, restaurer et récupérer. On le lance avec `rman target /` (« travaille sur la base **cible** de cette machine »). L'invite devient `RMAN>`.
+
+🔧 **Manipuler.** Premier contact, sans rien casser : on lui demande quelles sauvegardes il connaît.
+
+{{step:zero-rman}}
+
+👀 **Lire la sortie.** `connected to target database: ORCL (DBID=…)` : RMAN est branché sur la base `ORCL` ; le **DBID** est son identifiant numérique. Puis `no backup found in the repository` : **aucune** sauvegarde, ce qui est normal. L'objectif des chapitres suivants est que cette réponse ne soit plus jamais vide.
+
+💡 **Astuce.** RMAN écrit sa sortie **comme un journal de bord** : chaque ligne dit ce qu'il fait, sur quel fichier, avec quel résultat. Quand quelque chose ne va pas, la cause est dans les **dernières lignes** (`RMAN-` ou `ORA-`).
+
+### 1.7 Glossaire
+
+| Terme | Définition en une phrase |
+|---|---|
+| **Base de données** | Les fichiers qui contiennent les données (et ce qu'il faut pour les protéger) |
+| **Instance** | Les processus et la mémoire d'Oracle, qui ouvrent la base et répondent |
+| **Schéma** | L'ensemble des objets d'un utilisateur de la base (`shop`) |
+| **SQL / SQL\*Plus** | Le langage pour interroger la base / le programme où on le tape |
+| **SYSDBA** | Le rôle d'administrateur de la base ; réservé au groupe `dba` |
+| **Vue `V$`** | Une « table » que la base tient à jour pour décrire son propre état |
+| **Datafile / tablespace** | Un fichier de données / un regroupement logique de datafiles |
+| **Redo log** | Le journal de **tous** les changements, écrit au fil de l'eau |
+| **ARCHIVELOG** | Mode où chaque journal plein est **archivé** au lieu d'être écrasé |
+| **Fichier de contrôle** | Le sommaire de la base ; sans lui, pas de démarrage |
+| **SCN** | Le « numéro d'horloge » de la base : il augmente à chaque changement validé |
+| **DBID** | L'identifiant numérique de la base |
+| **RMAN** | L'outil de sauvegarde et de restauration d'Oracle |
+| **Backup set / pièce** | Le résultat d'une sauvegarde : un ensemble contenant un ou plusieurs fichiers (les pièces) |
+| **Niveau 0 / niveau 1** | Sauvegarde complète / sauvegarde de ce qui a changé depuis |
+| **Restore / Recover** | Récupérer la copie ancienne / rejouer les changements dessus |
+| **RESETLOGS** | Repartir d'une numérotation de journaux neuve après une récupération incomplète |
+| **Incarnation** | Une « version de l'histoire » de la base, créée par un `RESETLOGS` |
+| **Standby** | Une copie de la base tenue à jour sur un autre site |
+| **RPO / RTO** | Perte de données tolérée / durée d'arrêt tolérée |
+
+### 🧪 Vérifie-toi (chapitre 1)
+
+1. Quelle est la différence entre l'**instance** et la **base** ? <details><summary>Réponse</summary>L'instance, ce sont les processus et la mémoire ; la base, ce sont les fichiers sur le disque. On peut arrêter l'instance sans toucher aux fichiers.</details>
+2. Pourquoi `root` est-il refusé par `sqlplus / as sysdba` alors qu'`oracle` ne l'est pas ? <details><summary>Réponse</summary>`oracle` est dans le groupe `dba`, pas `root`. La connexion sans mot de passe s'appuie sur ce groupe du système d'exploitation.</details>
+3. Complète : « on _____ la photocopie, puis on _____ le cahier de notes ». <details><summary>Réponse</summary>On **restaure** la photocopie (la sauvegarde), puis on **récupère** (on rejoue) le cahier de notes (les journaux).</details>
 
 ---
 
-## 2. L'infrastructure du lab
+## 2. L'entreprise et ses trois mauvais lundis
 
-Le lab est un jeu de **35 équipements** — trois constructeurs réseau (Cisco, Huawei, Fortinet) et des serveurs Linux et Windows — construit en tapant les mêmes commandes qu'un administrateur. Le détail est dans `labs/ecommerce-lumiere/README.md` ; voici ce qui compte pour ce tutoriel :
+> 🎯 **Objectif** — Comprendre **pourquoi** on sauvegarde en donnant un visage aux pannes, et poser les trois chiffres (RPO, RTO, rétention) qui guideront tout le reste. Pas de commande dans ce chapitre.
+
+**Lumière Boutique** vend en ligne de la décoration lumineuse. Son site web tourne sur deux frontaux (`WEB-1`, `WEB-2`) ; les commandes, les clients et les paiements vivent dans **une base Oracle**, `ORCL`, sur le serveur `ORA-PRD` du siège. Si cette base disparaît, la boutique ne vend plus rien : plus de panier, plus de paiement, plus de suivi.
+
+🧠 **Comprendre.** Imagine les trois courriels qu'un administrateur de base peut recevoir **un lundi matin** :
+
+| 📧 De | Sujet | Ce qui est arrivé | Ce qu'il te faut | Chapitre |
+|---|---|---|---|---|
+| **L'exploitant** | « Un disque a lâché cette nuit » | Un fichier de données (`shop_data01.dbf`) est illisible | **Restaurer** le fichier, **rejouer** les journaux | 10 |
+| **Le développeur** | « J'ai supprimé la table des paiements en prod » | Une erreur humaine : base ouverte, saine… mais amputée | **Revenir dans le temps**, juste avant l'erreur | 12 |
+| **Le réseau** | « Le siège est hors service » | Tout le site est perdu : serveurs, baies, base | Un **site de reprise** déjà prêt | 14 |
+
+Ces trois histoires sont le **fil rouge** du tutoriel : chacune sera vécue dans le lab, de la panne à la réparation.
+
+Une bonne stratégie répond à trois questions, dont les réponses sont des **décisions d'entreprise** :
+
+| Objectif | La question | Réponse retenue pour Lumière |
+|---|---|---|
+| **RPO** — perte de données tolérée | Combien de temps de commandes accepte-t-on de perdre ? | **≈ 0** si le siège brûle (la base de reprise reçoit les modifications en continu) ; **≤ 4 h** après une erreur logique (sauvegarde des journaux toutes les 4 h) |
+| **RTO** — durée d'arrêt tolérée | Combien de temps la boutique peut-elle être fermée ? | **Quelques minutes** pour basculer sur le site de reprise ; **quelques dizaines de minutes** pour restaurer un fichier |
+| **Rétention** | Combien de temps garde-t-on les sauvegardes ? | **7 jours** de fenêtre de récupération |
+
+⚠️ **Piège.** **Une sauvegarde et un site de reprise ne répondent pas à la même question.** Le site de reprise copie *aussi* l'erreur : un `DROP TABLE` est rejoué sur la standby. Seule une **sauvegarde** permet de revenir *avant* l'erreur. Et seul le site de reprise survit à la perte du datacenter *avec* ses sauvegardes. **Il faut les deux.**
+
+✅ **À retenir.** Trois pannes, trois réponses : *restaurer* (fichier perdu), *revenir dans le temps* (erreur humaine), *basculer* (site perdu). RPO = ce qu'on perd ; RTO = combien de temps on attend.
+
+### 🧪 Vérifie-toi (chapitre 2)
+
+1. Un développeur supprime une table par erreur. Le site de reprise peut-il t'aider ? <details><summary>Réponse</summary>Non : il a rejoué la suppression lui aussi. Il faut une sauvegarde et un retour dans le temps.</details>
+2. La boutique perd au plus 4 h de commandes si le siège brûle : est-ce un RPO ou un RTO ? <details><summary>Réponse</summary>Un RPO (perte de données tolérée). Le RTO, lui, mesure la durée d'indisponibilité.</details>
+
+---
+
+## 3. Le lab : l'entreprise dans ton navigateur
+
+> 🎯 **Objectif** — Savoir **ouvrir le lab**, repérer les machines qui comptent, et utiliser les terminaux avec la bonne identité. Après ce chapitre, tu es prêt à manipuler.
+
+### 3.1 Les machines
+
+🧠 **Comprendre.** Le lab est un jeu de **35 équipements** — trois constructeurs réseau (Cisco, Huawei, Fortinet) et des serveurs Linux et Windows — construit en tapant les mêmes commandes qu'un administrateur. Le détail est dans `labs/ecommerce-lumiere/README.md` ; voici l'essentiel :
 
 ```
         INTERNET (203.0.113.0/24)  ─  R-ISP, DNS public, client web, passerelle de paiement
@@ -74,319 +321,548 @@ Le lab est un jeu de **35 équipements** — trois constructeurs réseau (Cisco,
    └─ DMZ 172.16.10.0/24  WEB-1, WEB-2, APP-1    └─ DMZ 172.17.10.0/24  WEB-DR
 ```
 
-Les rôles à connaître :
-
-| Machine | Rôle dans ce tutoriel |
+| Machine | Son rôle dans ce tutoriel |
 |---|---|
-| `ORA-PRD` | Serveur de production. Il porte la base `ORCL` (schéma `SHOP` : clients, produits, commandes, paiements) |
-| `BKP-HQ` | Serveur de sauvegarde. Il **exporte** `/srv/backup/rman` en NFS ; `ORA-PRD` le monte sur `/backup` (déclaré dans `/etc/fstab`) |
-| `ORA-STB` | Serveur Oracle du site de reprise. Il deviendra la **base de secours** (standby) de `ORCL` |
-| `BKP-DR` | Volume de sauvegarde du site de reprise |
-| `LOG-HQ` | Serveur de journaux (rsyslog UDP 514) : toutes les machines Oracle, sauvegarde et web lui envoient leurs journaux |
-| `FGT-HQ` / `FGT-DR` | Les FortiGate qui portent le tunnel IPsec entre les deux sites : c'est par là que passeront les fichiers de données de la standby |
+| `ORA-PRD` | Le serveur de **production**. Il porte la base `ORCL` (schéma `SHOP` : clients, produits, commandes, paiements) |
+| `BKP-HQ` | Le serveur de **sauvegarde**. Il **exporte** `/srv/backup/rman` par le réseau (NFS) ; `ORA-PRD` le monte sur `/backup` |
+| `ORA-STB` | Le serveur Oracle du **site de reprise** : il deviendra la **base de secours** (*standby*) de `ORCL` |
+| `BKP-DR` | Le volume de sauvegarde du site de reprise |
+| `LOG-HQ` | Le serveur de **journaux** : toutes les machines Oracle, sauvegarde et web lui envoient leurs messages |
+| `FGT-HQ` / `FGT-DR` | Les pare-feu **FortiGate** qui portent le tunnel IPsec entre les deux sites |
 
-> ⚠️ **Règle du projet, et raison pour laquelle ce lab est instructif : tout ce qui circule entre deux machines passe par de vraies trames.** Quand `ORA-PRD` écrit une pièce de sauvegarde sur `/backup`, ce sont des appels NFSv3 qui traversent le câble jusqu'à `BKP-HQ`. Quand on construit la standby, ce sont les octets des fichiers de données qui traversent le tunnel IPsec. Tu pourras le **prouver** (étape 4).
+Deux notions réseau suffisent : **NFS** est un protocole qui permet à une machine de **monter** un dossier d'une autre comme s'il était local ; un **tunnel IPsec** est un « tuyau » chiffré entre les deux sites, à travers Internet.
 
-### 2.1 Ouvrir le lab
+> 🔌 **Un détail de câblage** : un routeur Cisco de ce modèle n'a que **trois interfaces**. `R-HQ` en utilise une vers le pare-feu et **une seule** vers les trois réseaux du siège (serveurs, utilisateurs, bases), qu'il sépare par des **VLAN** : c'est un *routeur sur un bâton* (*router-on-a-stick*), avec trois sous-interfaces `.10`, `.20`, `.30` sur un lien **trunk** dot1Q vers `SW-HQ-SRV`.
+
+> ⚠️ **Règle du projet, et raison pour laquelle ce lab est instructif : tout ce qui circule entre deux machines passe par de vraies trames.** Quand `ORA-PRD` écrit une pièce de sauvegarde sur `/backup`, ce sont des appels NFSv3 qui traversent le câble jusqu'à `BKP-HQ`. Quand on construit la standby, ce sont les octets des fichiers de données qui traversent le tunnel IPsec. Tu pourras le **prouver** (chapitre 7).
+
+### 3.2 Ouvrir le lab
+
+🔧 **Manipuler.**
 
 1. Lance l'application : `npm run dev`, puis ouvre <http://localhost:8080>.
-2. Barre d'outils → **Importer** → choisis `labs/ecommerce-lumiere/topology.json`.
-3. Double-clique sur `ORA-PRD` pour ouvrir son terminal.
+2. Barre d'outils → **Importer** → choisis `labs/ecommerce-lumiere/topology.json`. Les 35 équipements et les 34 câbles se posent, sans avertissement.
+3. Double-clique sur `ORA-PRD` pour ouvrir son terminal. **Il s'ouvre en `root`** (invite `#`). Tape `su - oracle` : l'invite devient `[oracle@ora-prd ~]$`. C'est sous cette identité que se joue presque tout le tutoriel ; `exit` te rend `root`.
+4. Chaque bloc de code commence par une **invite** qui dit *qui* tape et *sur quelle machine* : suis-la. Un bloc `[root@bkp-hq ~]#` se tape dans le terminal de `BKP-HQ` ; un bloc `[root@ora-prd ~]#` dans celui d'`ORA-PRD`, en root.
 
-Le fichier d'export est « une machine qui tournait et qui redémarre » : adresses, services, scripts, schéma `SHOP` sont là. **Le montage NFS, lui, est à refaire** : c'est exactement ce qui se passe sur un vrai serveur qui démarre sans que le serveur de sauvegarde soit joignable, et c'est la première commande de l'étape 1.
+👀 **Lire ce que tu vois.** Le fichier d'export est « une machine qui tournait et qui redémarre » : adresses, services, scripts et schéma `SHOP` sont là. **Le montage NFS, lui, est à refaire** : c'est exactement ce qui arrive à un vrai serveur qui démarre sans que le serveur de sauvegarde soit joignable, et c'est la première manipulation du chapitre 4.
 
-> 💡 Dans les blocs qui suivent, l'invite te dit **qui tape quoi, et où** : `[oracle@ora-prd ~]$` est le shell de l'utilisateur `oracle` sur `ORA-PRD`, `[root@bkp-hq ~]#` celui de root sur `BKP-HQ`, `SQL>` une session SQL*Plus (`sqlplus / as sysdba`), `RMAN>` une session RMAN (`rman target /`). **En production, on sauvegarde en tant qu'`oracle`, jamais en root** : on le verra à l'œuvre à l'étape 4.
+💡 **Astuce.** Garde sous la main ce petit rappel : *root pour monter et administrer le système ; oracle pour tout ce qui touche à la base.*
 
----
+### 3.3 Les cinq notions à retenir
 
-## 3. Cinq notions à avoir en tête
-
-Pas de cours complet ici, seulement ce qu'il faut pour lire les sorties.
+La partie 1 a posé les bases ; voici, en cinq lignes, ce qui servira à lire **toutes** les sorties qui suivent.
 
 | Notion | Ce que c'est | Pourquoi ça compte |
 |---|---|---|
-| **Datafile / tablespace** | Les fichiers qui contiennent les données. Chez Lumière : `SHOP_DATA` (tables) et `SHOP_IDX` (index) | C'est ce qu'on sauvegarde et ce qui peut disparaître |
-| **Redo / ARCHIVELOG** | Le journal de toutes les modifications. Quand un groupe de redo est plein, Oracle l'**archive** (`ARCHIVELOG`) au lieu de l'écraser | Sans journaux archivés, on ne peut restaurer qu'**au moment de la sauvegarde** ; avec, **jusqu'à la dernière transaction** |
-| **SCN** | Le numéro de série du temps de la base : il augmente à chaque changement validé | C'est l'horloge de la récupération : `RECOVER ... UNTIL SCN n` |
-| **Fichier de contrôle** | Le petit fichier qui sait où est tout le reste (fichiers, journaux, **historique des sauvegardes**) | Le perdre rend la base muette ; RMAN l'**auto-sauvegarde** pour cette raison |
-| **Incarnation / RESETLOGS** | Après une récupération *incomplète*, Oracle repart d'une nouvelle numérotation des journaux : une nouvelle « incarnation » | Une règle simple : **récupération incomplète ⇒ `OPEN RESETLOGS`** |
+| **Datafile / tablespace** | Les fichiers qui contiennent les données | C'est ce qu'on sauvegarde et ce qui peut disparaître |
+| **Redo / ARCHIVELOG** | Le journal de toutes les modifications ; en `ARCHIVELOG`, on le **garde** | Sans journaux archivés : restauration seulement **au moment de la sauvegarde**. Avec : **jusqu'à la dernière transaction** |
+| **SCN** | Le numéro d'horloge de la base | C'est l'horloge de la récupération : `UNTIL SCN n` |
+| **Fichier de contrôle** | Le sommaire (fichiers, journaux, **historique des sauvegardes**) | Le perdre rend la base muette ; RMAN l'**auto-sauvegarde** pour cette raison |
+| **Incarnation / RESETLOGS** | Après une récupération *incomplète*, nouvelle numérotation de journaux | **Récupération incomplète ⇒ `OPEN RESETLOGS`** |
 
-Et le vocabulaire RMAN : un **backup set** contient une ou plusieurs **pièces** (`piece handle=...`, les vrais fichiers) ; un **niveau 0** est la base complète (la référence), un **niveau 1** ne contient que ce qui a changé depuis ; le **DBID** est l'identifiant numérique de la base (à noter **avant** le sinistre).
+Et le vocabulaire RMAN : un **backup set** contient une ou plusieurs **pièces** (les vrais fichiers) ; un **niveau 0** est la base complète (la référence), un **niveau 1** ne contient que ce qui a changé depuis ; le **DBID** est l'identifiant numérique de la base (à noter **avant** le sinistre).
+
+### 🧪 Vérifie-toi (chapitre 3)
+
+1. Sur quelle machine tapes-tu un bloc dont l'invite est `[root@bkp-hq ~]#` ? <details><summary>Réponse</summary>Dans le terminal de `BKP-HQ`, en `root`.</details>
+2. Pourquoi les sauvegardes passent-elles par le réseau jusqu'à un **autre** serveur ? <details><summary>Réponse</summary>Une sauvegarde qui meurt avec la machine qu'elle protège ne sert à rien : elle doit vivre ailleurs.</details>
 
 ---
 
-## 4. Étape 1 — Reconnaissance : qu'est-ce qu'on protège ?
+## 4. Reconnaissance : qu'est-ce qu'on protège ?
 
-On commence par savoir où l'on est. Tu es `oracle` sur `ORA-PRD`.
+> 🎯 **Objectif** — Avant de protéger quoi que ce soit, **savoir où l'on est et ce qu'on a** : qui tu es, où est le volume de sauvegarde, dans quel état est la base, quel est son DBID, où sont ses fichiers. C'est la même démarche qu'un médecin qui commence par un examen.
 
 ### 4.1 Qui suis-je, où suis-je ?
 
+🔧 **Manipuler.** Tu es `oracle` sur `ORA-PRD` (chapitre 3) :
+
 {{step:identite}}
 
-`uid=54321(oracle)` : le propriétaire des logiciels Oracle, membre du groupe `dba` (celui qui a le droit de se connecter `AS SYSDBA` sans mot de passe).
+👀 **Lire la sortie.** `uid=54321(oracle)` : le propriétaire des logiciels Oracle, membre du groupe `dba`. `ora-prd` : le nom de la machine. C'est pour cette raison que **tout le tutoriel se joue en `oracle`**.
 
 ### 4.2 Monter le volume de sauvegarde
 
-Le volume est **déclaré** dans `/etc/fstab`, mais il n'est pas monté au démarrage de ce lab. Un `mount -a` (en root) monte tout ce qui est déclaré :
+🧠 **Comprendre.** Une sauvegarde doit vivre **hors de la machine qu'elle protège**. Ici, le volume est sur `BKP-HQ` et `ORA-PRD` le **monte** (le fait apparaître) dans le dossier `/backup`. Le montage est **déclaré** dans `/etc/fstab` mais n'est pas actif au démarrage du lab : `mount -a` (en root) monte tout ce qui est déclaré.
+
+🔧 **Manipuler.**
 
 {{step:montage-sauvegarde}}
 
-Trois choses à voir :
+👀 **Lire la sortie.**
 
-- la source est `10.10.30.20:/srv/backup/rman` : le **serveur de sauvegarde** (`BKP-HQ`), à travers le réseau ;
-- le propriétaire du dossier est **54321** : l'utilisateur `oracle` *du serveur de sauvegarde*. Pour que `oracle` d'`ORA-PRD` puisse y écrire, il faut le **même uid** des deux côtés. C'est la raison pour laquelle le lab crée le compte `oracle` (uid 54321) sur `BKP-HQ` : NFS ne transporte pas des noms, il transporte des **numéros** ;
-- l'export est `rw` pour le réseau des bases du siège, et `ro` (lecture seule) pour celui du site de reprise.
+- `10.10.30.20:/srv/backup/rman on /backup type nfs` : la **source** est le serveur de sauvegarde `BKP-HQ`, à travers le réseau (type `nfs`) ;
+- `drwxrwxr-x 2 54321 54321` : le propriétaire du dossier est le **numéro 54321**, c'est-à-dire l'utilisateur `oracle` *de `BKP-HQ`* ;
+- `df -h` : la **taille du volume distant**, lue sur le serveur par NFS (`Size`, `Used`, `Avail`, `Use%`). C'est la première chose qu'on regarde avant une sauvegarde : *y a-t-il de la place ?*
+
+🧠 **Pourquoi le numéro 54321 ?** NFS ne transporte pas des **noms** d'utilisateurs, mais des **numéros**. Pour que `oracle` d'`ORA-PRD` puisse écrire dans un dossier de `BKP-HQ`, il faut le **même numéro** des deux côtés. C'est la raison pour laquelle le lab crée le compte `oracle` (uid 54321) sur `BKP-HQ`.
+
+Un dernier test, en tant qu'`oracle`, que le volume est bien **accessible en écriture** — on crée un fichier, on le date, on attend, on le re-date, on le supprime :
+
+{{step:test-ecriture-sauvegarde}}
+
+👀 **Lire la sortie.** Les deux dates `stat` diffèrent de quelques secondes : `touch` sur un fichier qui existe déjà met sa date à jour **sur le serveur**. Le volume est vivant.
+
+⚠️ **Piège.** Un volume monté **en lecture seule** ou **plein** ne dit rien tant qu'on ne l'utilise pas : on le découvre à la première sauvegarde, c'est-à-dire trop tard. Ce petit test d'écriture se fait **avant**.
 
 ### 4.3 L'état de santé de la base
 
-Un script livré avec le lab (`/home/oracle/scripts/health.sql`) résume l'essentiel :
+🔧 **Manipuler.** Un script livré avec le lab (`/home/oracle/scripts/health.sql`) résume l'essentiel :
 
 {{step:sante}}
 
-Deux lignes comptent : la base est en **`NOARCHIVELOG`** (la valeur par défaut, et l'erreur classique des bases « de test » qui finissent en production), et le schéma contient **12 commandes** réparties en `NEW`, `PAID`, `SHIPPED`.
+👀 **Lire la sortie.** Trois lignes comptent :
+
+- `LOG_MODE NOARCHIVELOG` : les journaux sont **écrasés** quand ils sont pleins. C'est le défaut d'Oracle, et **l'erreur classique** des bases « de test » qui finissent en production. On la corrige au chapitre 5 ;
+- les **tablespaces** `SHOP_DATA` et `SHOP_IDX` sont `ONLINE` : les données de la boutique sont accessibles ;
+- `COMMANDES 12` et la répartition `NEW` / `PAID` / `SHIPPED` : l'état **actuel** des données. On le comparera après les pannes : c'est notre preuve que la réparation a marché.
 
 ### 4.4 Noter le DBID
 
+🧠 **Comprendre.** Le **DBID** est le numéro d'identité de la base. Si tu perds le fichier de contrôle **et** le catalogue de RMAN (chapitre 11), c'est lui qui te permet de retrouver tes sauvegardes automatiques. Il faut donc le **noter ailleurs** que dans la base — dans un coffre, dans le runbook de l'équipe.
+
+🔧 **Manipuler.**
+
 {{step:identite-base}}
 
-> 📝 **Note le DBID** (ici `{{var:DBID}}`) quelque part **en dehors** de la base : dans le runbook, dans le coffre de l'équipe. Si tu perds le fichier de contrôle *et* le catalogue, c'est lui qui te permet de retrouver tes sauvegardes automatiques (scénario B).
+👀 **Lire la sortie.** `ORCL` est le nom de la base ; le nombre à côté est le DBID : ici `{{var:DBID}}`.
+
+✅ **À retenir.** **Note le DBID avant d'en avoir besoin.** Le jour où tu en auras besoin, la base ne pourra plus te le dire.
 
 ### 4.5 Où sont les fichiers ?
 
+🔧 **Manipuler.**
+
 {{step:fichiers}}
 
-Retiens l'emplacement des **deux fichiers de contrôle** (`control01.ctl`, `control02.ctl` : Oracle les multiplexe) et des fichiers de données ; ce sont eux que les scénarios vont détruire.
+👀 **Lire la sortie.** Trois listes : les **fichiers de données** (`v$datafile` : `shop_data01.dbf`, numéro 5, et `shop_idx01.dbf`, numéro 6, sont ceux de la boutique) ; les **deux fichiers de contrôle** (`control01.ctl`, `control02.ctl` : Oracle les **multiplie** pour qu'on n'en perde pas un seul) ; les **groupes de journaux** (`v$log`). Ce sont ces objets-là que les pannes vont détruire.
+
+### 🧪 Vérifie-toi (chapitre 4)
+
+1. Pourquoi l'utilisateur `oracle` du serveur de sauvegarde doit-il avoir le **même numéro** (54321) que celui d'`ORA-PRD` ? <details><summary>Réponse</summary>NFS identifie les propriétaires par numéro, pas par nom : sans le même numéro, `oracle` d'`ORA-PRD` n'a pas le droit d'écrire sur le volume.</details>
+2. Dans quel mode de journalisation la base est-elle livrée, et pourquoi est-ce un problème ? <details><summary>Réponse</summary>`NOARCHIVELOG` : les journaux sont écrasés, on ne peut restaurer qu'au point de la sauvegarde et on ne peut même pas sauvegarder à chaud (chapitre 5).</details>
+3. Où note-t-on le DBID ? <details><summary>Réponse</summary>**Hors de la base** : dans le runbook ou le coffre de l'équipe.</details>
 
 ---
 
-## 5. Étape 2 — Passer la base en ARCHIVELOG
+## 5. Préparer la base : le mode ARCHIVELOG
 
-En `NOARCHIVELOG`, Oracle **écrase** les journaux quand ils sont pleins : on ne peut sauvegarder la base qu'**arrêtée proprement**, et on ne peut restaurer qu'au point de la sauvegarde. Pour une boutique ouverte 24 h/24, c'est inacceptable. Le passage en `ARCHIVELOG` demande un **redémarrage** (la commande n'est acceptée qu'en `MOUNT`) ; le lab livre le script `03_archivelog.sql` qui le fait :
+> 🎯 **Objectif** — Mettre la base en état **d'être sauvegardée sans l'arrêter** et de pouvoir être restaurée **jusqu'à la dernière transaction**. Sans cette préparation, rien de ce qui suit n'est possible. Tu vas d'abord **constater** l'échec, puis le corriger.
+
+### 5.1 Ce qui se passe si on ne le fait pas
+
+🧠 **Comprendre.** Chaque modification est écrite dans un **journal de reprise**. Oracle en tient **trois** (`redo01`, `redo02`, `redo03`), utilisés **à tour de rôle**. Quand le troisième est plein, il repart sur le premier — et **l'écrase**, sauf si la base est en mode **`ARCHIVELOG`**, auquel cas il **copie d'abord** le journal plein dans un fichier d'archive.
+
+Image : le cahier de notes (chapitre 1) n'a que trois pages. En `NOARCHIVELOG`, quand on arrive à la fin on **efface la première page** pour réécrire dessus. En `ARCHIVELOG`, on la **photocopie et on la range** avant de l'effacer.
+
+Premier réflexe d'un débutant : sauvegarder tout de suite. Essayons, **base ouverte**, telle qu'elle est livrée :
+
+🔧 **Manipuler.**
+
+{{step:noarchivelog-refus}}
+
+👀 **Lire la sortie.** Le cadre `RMAN-00571 / RMAN-00569` est du **décor** : ignore-le. Les deux lignes utiles sont à la fin :
+
+- `RMAN-03002: failure of backup command` : *quelle* commande a échoué ;
+- **`RMAN-06149: cannot BACKUP DATABASE in NOARCHIVELOG mode`** : *pourquoi*.
+
+Oracle **refuse**, et il a raison : sans journaux archivés, une copie faite pendant que la base change serait **incohérente** et inutilisable. Il n'y a que deux issues : **arrêter la base** pour la sauvegarder à froid (inacceptable pour une boutique ouverte 24 h/24), ou passer en `ARCHIVELOG`.
+
+### 5.2 Passer en ARCHIVELOG
+
+🧠 **Comprendre.** Le passage demande un **redémarrage** : la commande n'est acceptée qu'à l'état `MOUNT` (chapitre 1.2). Le lab livre un script qui déroule toute la séquence :
+
+1. `SHUTDOWN IMMEDIATE` — arrêt propre ;
+2. `STARTUP MOUNT` — démarrage, sans ouvrir les fichiers ;
+3. `ALTER DATABASE ARCHIVELOG` — **le changement de mode** ;
+4. `ALTER DATABASE FORCE LOGGING` — plus aucune opération ne peut échapper au journal avec `NOLOGGING` (indispensable pour une standby, chapitre 14) ;
+5. `ALTER DATABASE OPEN` — on rouvre ;
+6. `ARCHIVE LOG LIST` — on vérifie.
+
+🔧 **Manipuler.**
 
 {{step:passage-archivelog}}
 
-Ce que le script fait, ligne à ligne : `SHUTDOWN IMMEDIATE`, `STARTUP MOUNT`, `ALTER DATABASE ARCHIVELOG`, `ALTER DATABASE FORCE LOGGING` (aucune opération ne peut plus échapper au journal avec `NOLOGGING`, ce qui est indispensable pour une standby), `ALTER DATABASE OPEN`, puis `ARCHIVE LOG LIST`. On vérifie :
+👀 **Lire la sortie.** Cherche `Database log mode  Archive Mode` : c'est la confirmation. Puis on vérifie par la vue :
 
 {{step:verif-archivelog}}
 
-> ⚠️ **Limite du simulateur, à connaître.** Un vrai Oracle refuse `BACKUP DATABASE` sur une base **ouverte en `NOARCHIVELOG`** (`RMAN-06149: cannot BACKUP DATABASE in NOARCHIVELOG mode`). Le simulateur l'accepte encore (des dizaines de tests historiques en dépendent ; c'est consigné dans `TODO.md`). Tu ne dois pas en conclure que c'est permis : **passe toujours en ARCHIVELOG d'abord**, comme on le fait ici.
+`LOG_MODE ARCHIVELOG` et `FORCE_LOGGING YES` : la base est prête.
+
+⚠️ **Piège.** `ALTER DATABASE ARCHIVELOG` **en `OPEN`** est refusé (`ORA-01126`) : il faut passer par `MOUNT`. Et il faut **prévoir de la place** pour les archives : une zone d'archivage pleine **bloque la base** (`ORA-00257`). On verra au chapitre 8 comment l'éviter.
+
+✅ **À retenir.** `ARCHIVELOG` = les journaux sont **gardés**. C'est la condition pour **sauvegarder à chaud** et pour **restaurer jusqu'à la dernière transaction**.
+
+### 🧪 Vérifie-toi (chapitre 5)
+
+1. Que garde-t-on, en `ARCHIVELOG`, que l'on perd en `NOARCHIVELOG` ? <details><summary>Réponse</summary>Les journaux de reprise pleins sont copiés dans des archives au lieu d'être écrasés.</details>
+2. Pourquoi `BACKUP DATABASE` a-t-il été refusé base ouverte ? <details><summary>Réponse</summary>Sans journaux archivés, une sauvegarde faite pendant que la base change est incohérente : `RMAN-06149`.</details>
+3. À quel état de l'instance la commande `ALTER DATABASE ARCHIVELOG` est-elle acceptée ? <details><summary>Réponse</summary>`MOUNT`.</details>
 
 ---
 
-## 6. Étape 3 — Configurer RMAN une bonne fois pour toutes
+## 6. Configurer RMAN une bonne fois pour toutes
 
-On lance `rman target /` (en tant qu'`oracle`). RMAN stocke sa configuration **dans le fichier de contrôle** : on la règle une fois, elle vaut pour tous les `BACKUP` suivants.
+> 🎯 **Objectif** — Régler RMAN **une fois**, pour que toutes les sauvegardes suivantes aillent **au bon endroit**, avec la **bonne durée de conservation**, et que le fichier de contrôle soit **toujours sauvegardé avec elles**.
 
 ### 6.1 Ce que RMAN fait par défaut
 
+🧠 **Comprendre.** RMAN range sa **configuration dans le fichier de contrôle** : on la règle une fois, elle vaut pour tous les `BACKUP` suivants.
+
+🔧 **Manipuler.** On regarde d'abord les réglages d'usine :
+
 {{step:show-all}}
 
-Trois réglages par défaut ne nous conviennent pas : la rétention est de **1 sauvegarde** (`REDUNDANCY 1`), l'**auto-sauvegarde du fichier de contrôle est éteinte**, et les pièces iraient dans la zone de récupération locale (`fast_recovery_area`), c'est-à-dire **sur le même disque que la base**. Une sauvegarde qui meurt avec la base ne sert à rien.
+👀 **Lire la sortie.** Trois réglages par défaut ne conviennent pas :
+
+| Réglage d'usine | Le problème |
+|---|---|
+| `RETENTION POLICY TO REDUNDANCY 1` | On ne garde **qu'une** sauvegarde : au premier incident, plus de marge |
+| `CONTROLFILE AUTOBACKUP OFF` | Le fichier de contrôle n'est **pas sauvegardé automatiquement** : le chapitre 11 serait impossible |
+| Pas de `FORMAT` sur le canal | Les pièces iraient dans la zone de récupération locale, **sur le même disque que la base** : une sauvegarde qui meurt avec la base ne sert à rien |
 
 ### 6.2 Notre politique
+
+🔧 **Manipuler.**
 
 {{step:configure}}
 
 | Réglage | Pourquoi |
 |---|---|
-| `RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS` | On doit pouvoir revenir à n'importe quel instant des 7 derniers jours ; RMAN garde ce qu'il faut pour cela et déclare le reste **obsolète** |
-| `CONTROLFILE AUTOBACKUP ON` | Après chaque sauvegarde, RMAN sauvegarde aussi le fichier de contrôle. C'est ce qui rend le scénario B possible |
-| `CONTROLFILE AUTOBACKUP FORMAT ... '/backup/cf_%F'` | Le fichier de contrôle est sauvegardé **sur le volume NFS**, sous un nom qui contient le DBID (`%F`) |
-| `CHANNEL ... FORMAT '/backup/%d_%T_%U.bkp'` | Toutes les pièces vont sur `/backup` ; `%d` nom de la base, `%T` date, `%U` identifiant unique |
+| `RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS` | On doit pouvoir revenir à **n'importe quel instant des 7 derniers jours** ; RMAN garde ce qu'il faut pour cela et déclare le reste **obsolète** |
+| `CONTROLFILE AUTOBACKUP ON` | Après chaque sauvegarde, RMAN sauvegarde **aussi** le fichier de contrôle |
+| `CONTROLFILE AUTOBACKUP FORMAT … '/backup/cf_%F'` | Le fichier de contrôle est sauvegardé **sur le volume NFS**, sous un nom qui contient le DBID (`%F`) |
+| `CHANNEL … FORMAT '/backup/%d_%T_%U.bkp'` | Toutes les pièces vont sur `/backup` ; `%d` nom de la base, `%T` date, `%U` identifiant unique |
+
+On relit pour **vérifier** que la configuration a été prise en compte :
 
 {{step:show-config}}
 
+👀 **Lire la sortie.** `RECOVERY WINDOW OF 7 DAYS` et le format `cf_%F` sont bien enregistrés. Réflexe d'administrateur : **toujours relire** après avoir configuré.
+
+⚠️ **Piège.** Cette configuration vit **dans le fichier de contrôle**. Si tu le perds, RMAN **oublie tout** (c'est la leçon du chapitre 11).
+
+### 🧪 Vérifie-toi (chapitre 6)
+
+1. Que veut dire « fenêtre de récupération de 7 jours » ? <details><summary>Réponse</summary>On doit pouvoir restaurer la base à n'importe quel instant des 7 derniers jours ; RMAN conserve les sauvegardes nécessaires et déclare le reste obsolète.</details>
+2. Pourquoi règle-t-on le format des pièces vers `/backup` ? <details><summary>Réponse</summary>Pour que les sauvegardes soient sur un **autre serveur** que la base, et survivent à sa perte.</details>
+
 ---
 
-## 7. Étape 4 — La première sauvegarde
+## 7. La première sauvegarde
+
+> 🎯 **Objectif** — Faire ta première sauvegarde complète, **savoir lire sa sortie**, la retrouver dans le catalogue, et **prouver** qu'elle est bien arrivée sur l'autre serveur.
 
 ### 7.1 La commande
 
-`BACKUP DATABASE PLUS ARCHIVELOG` sauvegarde les fichiers de données **et** les journaux archivés, ce qui est le strict minimum pour pouvoir récupérer jusqu'à la dernière transaction :
+🧠 **Comprendre.** `BACKUP DATABASE PLUS ARCHIVELOG` sauvegarde les **fichiers de données** *et* les **journaux archivés** : c'est le strict minimum pour pouvoir récupérer jusqu'à la dernière transaction. `TAG 'PREMIERE'` est une **étiquette** pour s'y retrouver : elle ne s'applique qu'à la sauvegarde des **fichiers de données** ; RMAN en invente une (`TAG2026…`) pour la sauvegarde des journaux, et nomme `AUTOBACKUP` celle du fichier de contrôle.
+
+🔧 **Manipuler.**
 
 {{step:premiere-sauvegarde}}
 
-Lis la sortie comme un journal de bord :
+👀 **Lire la sortie.** Lis-la comme un journal de bord :
 
-- `piece handle=/backup/ORCL_...bkp tag=PREMIERE` : **le fichier créé** et l'étiquette de la sauvegarde (le `tag`) ;
-- trois blocs `Starting backup / Finished backup` : les fichiers de données, les journaux archivés, puis l'**auto-sauvegarde du fichier de contrôle** (`tag=AUTOBACKUP`, nommée `cf_c-<DBID>-<date>-<n>`).
+- `Starting backup … / Finished backup …` : **trois blocs** — les fichiers de données, les journaux archivés, puis l'**auto-sauvegarde du fichier de contrôle** ;
+- `piece handle=/backup/ORCL_….bkp tag=PREMIERE` : **le fichier créé** (la *pièce*) et son étiquette ;
+- `elapsed time` : la durée (simulée dans le lab).
 
 ### 7.2 Ce qu'il y a dans le catalogue
 
+🧠 **Comprendre.** RMAN tient un **catalogue** de tout ce qu'il a sauvegardé (dans le fichier de contrôle). Trois commandes de **supervision** à connaître : `LIST BACKUP SUMMARY` (ce que j'ai), `REPORT SCHEMA` (ce qu'il y a à protéger), `REPORT NEED BACKUP` (ce qui n'est **plus** assez protégé).
+
+🔧 **Manipuler.**
+
 {{step:liste-sauvegardes}}
 
-`LIST BACKUP SUMMARY` : une ligne par backup set (`TY` type — `B` backup set ; `LV` niveau — `F` full, `A` journaux ; `S` état — `A` available). `REPORT SCHEMA` liste ce qu'il y a à protéger. `REPORT NEED BACKUP` confronte chaque fichier à la politique de rétention : la colonne `Days` donne le nombre de jours écoulés depuis la dernière sauvegarde de ce fichier (ici 0 : on vient de les sauvegarder tous). Dans une supervision, c'est elle qu'on surveille : un fichier dont `Days` dépasse la fenêtre n'est plus protégé.
+👀 **Lire la sortie.** Dans `LIST BACKUP SUMMARY`, une ligne par **backup set** : `TY` le type (`B` = backup set), `LV` le niveau (`F` complet, `A` journaux), `S` l'état (`A` = *available*, disponible). `REPORT NEED BACKUP` confronte chaque fichier à la politique : la colonne `Days` donne le nombre de jours depuis la dernière sauvegarde de ce fichier (ici 0 : on vient de les sauvegarder tous). **Dans une supervision, c'est cette liste qu'on surveille.**
 
 ### 7.3 La preuve par le fil
 
-Va sur **l'autre machine**, `BKP-HQ`, et regarde ce qui est arrivé :
+🧠 **Comprendre.** Ces pièces sont-elles **vraiment** sur l'autre serveur ? Va le voir **sur `BKP-HQ`** :
+
+🔧 **Manipuler.**
 
 {{step:preuve-par-le-fil}}
 
-Les pièces et les trois fichiers `cf_c-...` sont là, et ils appartiennent à l'uid **54321** : c'est bien `oracle` d'`ORA-PRD` qui les a créés, **à travers le réseau** (NFSv3 sur le port 2049, trames réelles), pas un fichier local qui prétend l'être. C'est la raison pour laquelle on sauvegarde en tant qu'`oracle` et non en root : en root, les pièces appartiendraient à `root` sur le serveur de sauvegarde.
+👀 **Lire la sortie.** Les pièces `ORCL_….bkp` et les trois `cf_c-….` sont là, avec le propriétaire **54321 / 54321** : c'est bien `oracle` d'`ORA-PRD` qui les a créées, **à travers le réseau** (NFSv3 sur le port 2049, trames réelles). C'est la raison pour laquelle on sauvegarde en `oracle` et non en `root` : en root, les pièces appartiendraient à `root` sur le serveur de sauvegarde.
 
 ### 7.4 Ce que la base sait de ses sauvegardes
 
-Le catalogue de RMAN vit dans le fichier de contrôle ; la base l'expose par des vues `V$` :
+🔧 **Manipuler.** Le catalogue se lit aussi par des vues `V$` :
 
 {{step:vues-sauvegardes}}
 
-`V$BACKUP_PIECE` liste les fichiers, `V$RMAN_BACKUP_JOB_DETAILS` l'historique des travaux avec leur état. Ce sont les vues qu'on interroge pour **superviser** une chaîne de sauvegarde.
+👀 **Lire la sortie.** `V$BACKUP_PIECE` liste les fichiers avec leur état ; `V$RMAN_BACKUP_JOB_DETAILS` l'**historique des travaux** (`COMPLETED`). Ce sont les vues qu'on interroge pour **superviser** une chaîne de sauvegarde depuis un outil de monitoring.
+
+✅ **À retenir.** Une sauvegarde se **lit**, se **catalogue** et se **prouve** : trois contrôles, trois commandes.
+
+### 🧪 Vérifie-toi (chapitre 7)
+
+1. Que signifie `tag=PREMIERE` ? <details><summary>Réponse</summary>Une étiquette libre donnée à la sauvegarde pour la retrouver (et la distinguer des autres).</details>
+2. Pourquoi la pièce appartient-elle à l'uid 54321 sur `BKP-HQ` ? <details><summary>Réponse</summary>Parce que c'est `oracle` d'`ORA-PRD` (uid 54321) qui l'a écrite par NFS, et que le même numéro existe sur `BKP-HQ`.</details>
 
 ---
 
-## 8. Étape 5 — Une stratégie : niveau 0, niveau 1, journaux, cron
+## 8. Une stratégie : niveau 0, niveau 1, journaux, cron
 
-Une seule sauvegarde ne fait pas une stratégie. Voici celle de Lumière :
+> 🎯 **Objectif** — Passer d'**une** sauvegarde à une **stratégie** qui tient les objectifs (RPO ≤ 4 h) sans refaire une copie complète à chaque fois, **automatisée** et **tracée**.
+
+### 8.1 Le plan
+
+🧠 **Comprendre.** Refaire une copie complète toutes les heures serait lent et lourd. On combine :
 
 | Quand | Quoi | Ce que ça protège |
 |---|---|---|
-| **Dimanche 02:00** | Niveau 0 (base complète) | La référence |
-| **Lundi–samedi 02:00** | Niveau 1 (ce qui a changé) | La nuit précédente, à peu de frais |
-| **Toutes les 4 heures** | Sauvegarde des journaux archivés, puis suppression de ceux qui sont sauvegardés | **Le RPO** : on ne perd au plus que 4 h de commandes |
+| **Dimanche 02:00** | **Niveau 0** (base complète) | La **référence** |
+| **Lundi–samedi 02:00** | **Niveau 1** (ce qui a changé depuis) | La nuit précédente, à peu de frais |
+| **Toutes les 4 heures** | Sauvegarde des **journaux archivés**, puis suppression de ceux qui sont sauvegardés | **Le RPO** : on ne perd au plus que 4 h |
 
-### 8.1 Les scripts
+Une image : le niveau 0 est la photocopie du livre entier ; le niveau 1, une photocopie **des seules pages modifiées** depuis ; les journaux, le cahier de notes archivé.
 
-Trois fichiers de commandes RMAN (`l0.rman`, `l1.rman`, `arc.rman`) et **un seul** script shell qui les lance, journalise leur sortie dans un fichier, et envoie le **code retour** au serveur de journaux avec `logger` :
+### 8.2 Les scripts
+
+🧠 **Comprendre.** Un `cron` (chapitre 8.5) lance des **commandes**, pas une session interactive. On écrit donc **trois fichiers de commandes RMAN** (`l0.rman`, `l1.rman`, `arc.rman`) et **un seul** script shell qui les lance, journalise leur sortie dans un fichier, et envoie le **code retour** au serveur de journaux (`logger`).
+
+🔧 **Manipuler.**
 
 {{step:ecriture-scripts}}
 
-`rman target / cmdfile=... log=...` exécute un fichier de commandes sans intervention ; le code retour (`$?`) vaut 0 si tout va bien. C'est lui que l'ordonnanceur et la supervision regardent.
+👀 **Lire la sortie.** `rman target / cmdfile=… log=…` exécute un fichier de commandes **sans intervention** ; `$?` (le **code retour**) vaut **0 si tout va bien**. C'est lui que l'ordonnanceur et la supervision regardent.
 
-### 8.2 Un niveau 0, des données qui changent, un niveau 1
+### 8.3 Un niveau 0, des données qui changent, un niveau 1
+
+🔧 **Manipuler.** Le niveau 0 d'abord :
 
 {{step:niveau-0}}
 
-On modifie des données (les commandes `NEW` passent en `PAID`) et on force l'archivage du journal courant :
+On modifie ensuite des données (les commandes `NEW` passent en `PAID`) et on **force l'archivage** du journal courant :
 
 {{step:donnees-du-jour}}
 
+Puis le niveau 1, qui est **quasi instantané** par rapport au niveau 0 : il ne contient que les changements.
+
 {{step:niveau-1}}
 
-Le niveau 1 est quasi instantané par rapport au niveau 0 : il ne contient que les changements.
-
-Une dernière modification, **après** le niveau 1 (le stock de la lampe passe de 120 à 115, une vente) : elle ne sera dans **aucune sauvegarde de fichier de données**, seulement dans les journaux. C'est ce que le scénario A utilisera pour montrer à quoi servent les journaux :
+Une dernière modification, **après** le niveau 1 (le stock de la lampe passe de 120 à 115, une vente). Elle ne sera dans **aucune sauvegarde de fichier de données**, seulement dans les journaux. **C'est ce que le chapitre 10 utilisera pour montrer à quoi servent les journaux** :
 
 {{step:donnees-apres-niveau-1}}
 
-### 8.3 Les journaux archivés
+### 8.4 Les journaux archivés
+
+🧠 **Comprendre.** Avant de les sauvegarder, deux journaux archivés sont sur le disque. `CROSSCHECK ARCHIVELOG ALL` vérifie que **chaque fichier de journal que la base croit avoir existe réellement**.
+
+🔧 **Manipuler.**
+
+{{step:crosscheck-journaux}}
+
+👀 **Lire la sortie.** `validation succeeded for archived log` suivi de `archived log file name=…` : le fichier est là. (Un fichier absent donnerait `validation failed for archived log`, et le journal serait marqué `EXPIRED`.)
+
+Puis on sauvegarde les journaux **et on supprime ceux qui sont sauvegardés** (`DELETE INPUT`) :
 
 {{step:sauvegarde-journaux}}
 
-`DELETE INPUT` supprime du disque les journaux **une fois sauvegardés** : sans cela, la zone d'archivage se remplit et la base **se bloque** (`ORA-00257`) quand elle ne peut plus archiver. C'est l'incident de production le plus banal d'Oracle.
+⚠️ **Piège.** Sans `DELETE INPUT`, la zone d'archivage **se remplit** et la base **se bloque** (`ORA-00257`) quand elle ne peut plus archiver. C'est l'**incident de production le plus banal** d'Oracle.
 
 {{step:liste-niveaux}}
 
-On lit maintenant la structure de la stratégie : `LV 0` (niveau 0), `LV 1` (niveau 1), `LV A` (journaux), `LV F` (les auto-sauvegardes du fichier de contrôle). `LIST ARCHIVELOG ALL` répond que plus aucun journal n'est sur le disque : ils ont tous été sauvegardés **puis supprimés** (on verra au scénario A que RMAN sait les **récupérer depuis la sauvegarde** au moment d'en avoir besoin).
+👀 **Lire la sortie.** On lit la structure de la stratégie : `LV 0` (niveau 0), `LV 1` (niveau 1), `LV A` (journaux), `LV F` (les auto-sauvegardes du fichier de contrôle). `LIST ARCHIVELOG ALL` répond qu'**aucun journal n'est plus sur le disque** : ils ont été sauvegardés **puis supprimés**. On verra au chapitre 10 que RMAN sait les **récupérer depuis la sauvegarde** quand il en a besoin.
 
-### 8.4 La planification
+### 8.5 La planification
+
+🧠 **Comprendre.** **cron** est le programme de Linux qui lance des commandes **à heures fixes**. On lui donne une liste dans un fichier, la **crontab**. Le format : `minute heure jour-du-mois mois jour-de-la-semaine commande` (`0 2 * * 0` = à 02:00 le dimanche).
+
+🔧 **Manipuler.**
 
 {{step:planification}}
 
-Trois lignes de `crontab`, dans le crontab de l'utilisateur `oracle`. Le format est celui de cron : `minute heure jour-du-mois mois jour-de-la-semaine commande` (`0 2 * * 0` : à 02:00 le dimanche).
+👀 **Lire la sortie.** Trois lignes dans la crontab de l'utilisateur `oracle` : niveau 0 le dimanche, niveau 1 du lundi au samedi, journaux toutes les 4 h (`0 */4 * * *`).
 
-### 8.5 Le journal central
+### 8.6 Le journal central
 
-Chaque exécution du script a envoyé son code retour à `LOG-HQ` par rsyslog. Sur `LOG-HQ` :
+🧠 **Comprendre.** **rsyslog** est le service Linux qui collecte les messages des programmes ; il peut les **envoyer à un autre serveur** pour les centraliser. La commande `logger` écrit un message dans ce système depuis un script. Chaque exécution du script a envoyé son code retour à `LOG-HQ`.
+
+🔧 **Manipuler.** Sur `LOG-HQ` :
 
 {{step:journal-central}}
 
-C'est la **trace centrale** de la chaîne de sauvegarde : `ora-prd` est le nom de la machine émettrice, `job=l0 code=0` dit quel travail et avec quel résultat. Une supervision n'a qu'à chercher `code=` différent de `0`. Le lab configure cet envoi (`/etc/rsyslog.d/90-forward-lumiere.conf`, `*.* @10.10.10.40:514`) sur toutes les machines Oracle, sauvegarde et web.
+👀 **Lire la sortie.** `ora-prd` : la machine émettrice. `job=l0 code=0` : quel travail, avec quel résultat. **C'est la trace centrale de la chaîne de sauvegarde** : une supervision n'a qu'à chercher `code=` différent de `0`. Le lab configure cet envoi (`*.* @10.10.10.40:514`) sur toutes les machines Oracle, sauvegarde et web.
+
+✅ **À retenir.** Niveau 0 = référence ; niveau 1 = écart ; journaux = RPO ; **code retour** = ce que surveille la supervision ; **un seul journal central** = une seule trace où regarder.
+
+### 🧪 Vérifie-toi (chapitre 8)
+
+1. À quoi sert le niveau 1 par rapport à un niveau 0 quotidien ? <details><summary>Réponse</summary>Il ne copie que ce qui a changé : bien plus rapide et léger, pour une protection quasi équivalente.</details>
+2. Pourquoi sauvegarder les journaux **toutes les 4 heures** ? <details><summary>Réponse</summary>Pour tenir le RPO : on ne perd au plus que 4 h de modifications. Et `DELETE INPUT` évite que la zone d'archivage ne se remplisse.</details>
+3. Quel code retour dit que le travail a réussi ? <details><summary>Réponse</summary>`0`.</details>
 
 ---
 
-## 9. Étape 6 — Vérifier : une sauvegarde non testée n'existe pas
+## 9. Vérifier : une sauvegarde non testée n'existe pas
 
-Trois niveaux de vérification, du moins cher au plus cher.
+> 🎯 **Objectif** — Savoir **contrôler** ses sauvegardes à trois niveaux, du moins cher au plus cher, et gérer leur **durée de vie**. C'est ce qui sépare une sauvegarde **rassurante** d'une sauvegarde **utile**.
+
+🧠 **Comprendre.** On peut s'assurer de trois choses, de plus en plus fortes :
+
+| # | La question | La commande |
+|---|---|---|
+| 1 | Les **fichiers de la base** sont-ils lisibles ? | `VALIDATE DATABASE` |
+| 2 | RMAN **pourrait-il restaurer** ? (sans rien écrire) | `RESTORE DATABASE VALIDATE` |
+| 3 | Le **catalogue** correspond-il à la réalité du disque ? | `CROSSCHECK BACKUP` |
+
+🔧 **Manipuler.**
 
 **1. Les fichiers de la base sont-ils lisibles ?**
 
 {{step:validate}}
 
-**2. RMAN pourrait-il restaurer ?** (sans rien écrire : il lit les pièces)
+**2. RMAN pourrait-il restaurer ?** Il lit **toutes les pièces nécessaires** et vérifie qu'elles sont lisibles et cohérentes, sans rien écrire :
 
 {{step:restore-validate}}
 
-`RESTORE DATABASE VALIDATE` lit **toutes les pièces nécessaires** à une restauration complète et vérifie qu'elles sont lisibles et cohérentes. C'est le test que tu mets dans ta supervision.
+C'est **le test à mettre dans ta supervision**.
 
 **3. Le catalogue correspond-il à la réalité ?**
 
 {{step:crosscheck}}
 
-`CROSSCHECK` compare ce que RMAN croit avoir et ce qu'il y a vraiment sur le disque : une pièce effacée à la main passerait en `EXPIRED`. Enfin, la politique de rétention :
+👀 **Lire la sortie.** `CROSSCHECK BACKUP` compare **toutes les sauvegardes** que RMAN connaît — fichiers de données **et** journaux — avec ce qu'il y a vraiment sur le disque : une pièce effacée à la main passerait en `EXPIRED`. (Le `CROSSCHECK ARCHIVELOG ALL` du chapitre 8 contrôle autre chose : les **fichiers** de journaux.)
+
+Enfin, la **durée de vie** : la politique de rétention décide ce qui est **obsolète** :
 
 {{step:obsolete}}
 
 `REPORT OBSOLETE` liste ce que la fenêtre de 7 jours permet de supprimer ; `DELETE OBSOLETE` le supprime. Tout est « récent » ici : rien n'est obsolète.
 
-> 💡 **La règle d'or** : le seul test valable d'une sauvegarde est une **restauration**. Les trois scénarios qui suivent sont ce test.
+✅ **À retenir.** *« Le seul test valable d'une sauvegarde est une **restauration**. »* Les trois pannes qui suivent sont ce test.
+
+### 🧪 Vérifie-toi (chapitre 9)
+
+1. Quelle commande vérifie que RMAN **pourrait** restaurer, sans rien restaurer ? <details><summary>Réponse</summary>`RESTORE DATABASE VALIDATE`.</details>
+2. Qu'est-ce qu'une sauvegarde **obsolète** ? <details><summary>Réponse</summary>Une sauvegarde dont la politique de rétention n'a plus besoin : elle est hors de la fenêtre de récupération.</details>
 
 ---
 
-## 10. Scénario A — Un datafile disparaît
+## 10. Panne n° 1 — Un fichier de données disparaît
 
-*Un disque a lâché : le fichier de données `shop_data01.dbf` (le tablespace `SHOP_DATA`, avec toutes les tables de la boutique) n'existe plus.*
+> 🎯 **Objectif** — Réparer la perte d'un fichier de données **sans perdre une seule transaction**, base arrêtée puis base ouverte. Tu apprends le **geste de base** de toute restauration : `RESTORE`, puis `RECOVER`.
 
-### 10.1 Avant
+### La situation
+
+📧 *L'exploitant :* « Un disque a lâché cette nuit. Plus de commandes. » Le fichier `shop_data01.dbf` (le tablespace `SHOP_DATA`, **toutes les tables de la boutique**) n'existe plus.
+
+### Avant de toucher à quoi que ce soit : l'état de référence
+
+🔧 **Manipuler.** On note ce qu'on **doit retrouver** à la fin :
 
 {{step:a-avant}}
 
-### 10.2 Le sinistre
+👀 **Lire la sortie.** 12 commandes. À la fin, il faudra **12**, la mise à jour de la journée **et** le stock de la lampe à **115**.
+
+### Le sinistre
+
+🔧 **Manipuler.**
 
 {{step:a-sinistre}}
 
-Rien ne se passe, et c'est **normal** : tant que la base est ouverte, Oracle a le fichier ouvert ; il ne s'aperçoit de sa disparition qu'à un redémarrage (ou à la prochaine lecture sur disque). On simule la panne la plus brutale : l'arrêt immédiat de l'instance.
+🧠 **Pourquoi ne se passe-t-il rien ?** Tant que la base est ouverte, Oracle a le fichier **ouvert** ; il ne s'aperçoit de sa disparition qu'à un redémarrage (ou à la prochaine lecture sur disque). On simule la panne la plus brutale : l'arrêt immédiat de l'instance.
 
 {{step:a-arret}}
 
-### 10.3 Le diagnostic
+### Le diagnostic
+
+🧠 **Comprendre.** Premier réflexe : **ne rien réparer avant d'avoir compris**. On redémarre pour voir ce qu'Oracle dit :
+
+🔧 **Manipuler.**
 
 {{step:a-demarrage}}
 
-C'est **LE** message à reconnaître : `ORA-01157` (impossible d'identifier le fichier), suivi de `ORA-01110` qui **nomme le fichier** : numéro 5, chemin complet. Remarque deux choses : l'instance est bien **montée** (`Database mounted.`, le fichier de contrôle est lisible : c'est lui qui connaît la liste des fichiers) ; c'est seulement l'**ouverture** qui échoue, parce qu'un fichier manque.
+👀 **Lire la sortie.** C'est **LE** message à reconnaître :
 
-### 10.4 La réparation
+- `Database mounted.` : l'instance est **montée** — le fichier de contrôle est lisible, c'est lui qui connaît la liste des fichiers ;
+- `ORA-01157: cannot identify/lock data file 5` : *impossible d'identifier le fichier* ;
+- `ORA-01110: data file 5: '…/shop_data01.dbf'` : **le nom du fichier** — numéro 5, chemin complet.
 
-Deux commandes RMAN, dans cet ordre, et **toujours** dans cet ordre :
+L'**ouverture** échoue seulement parce qu'un fichier manque. Et c'est exactement l'état `MOUNT` dont on a besoin pour restaurer.
+
+### Le plan en trois étapes
+
+1. **`RESTORE DATAFILE 5`** — RMAN retrouve la sauvegarde la plus récente du fichier 5 et la **recopie à sa place** (depuis `/backup`, à travers le réseau) ;
+2. **`RECOVER DATAFILE 5`** — le fichier restauré date de la sauvegarde : RMAN lui **rejoue les journaux** pour le ramener au présent. Les journaux ont été supprimés du disque après leur sauvegarde : RMAN les **extrait de la pièce de sauvegarde des journaux** avant de les rejouer ;
+3. **`ALTER DATABASE OPEN`** — on ouvre.
+
+### La réparation
+
+🔧 **Manipuler.** Deux commandes RMAN, **toujours dans cet ordre** :
 
 {{step:a-restauration}}
 
-- `RESTORE DATAFILE 5` : RMAN retrouve **la sauvegarde la plus récente du fichier 5** et la recopie à sa place (depuis `/backup`, c'est-à-dire à travers le réseau) ;
-- `RECOVER DATAFILE 5` : le fichier restauré date de la sauvegarde ; RMAN lui **rejoue les journaux** pour le ramener au présent. Ici, ceux-ci ont été supprimés du disque après leur sauvegarde : RMAN les **extrait de la pièce de sauvegarde des journaux** avant de les rejouer.
+👀 **Lire la sortie.** `restoring datafile 00005` : le fichier est recopié. `starting archived log restore` / `reading from backup piece` : les journaux avaient été supprimés du disque après leur sauvegarde, RMAN les **ressort de la sauvegarde** ; `media recovery complete` : les journaux sont rejoués. Aucune ligne `RMAN-06054` (journal manquant) : la chaîne est complète.
 
-> 💡 `RESTORE` ramène un état **ancien** ; `RECOVER` le **met à jour**. Sans `RECOVER`, le fichier est trop vieux par rapport au reste de la base et Oracle refuse de l'ouvrir.
+⚠️ **Piège.** `RESTORE` ramène un état **ancien** ; `RECOVER` le **met à jour**. Sans `RECOVER`, le fichier est trop vieux par rapport au reste de la base et Oracle **refuse de l'ouvrir**.
+
+### La vérification
+
+🔧 **Manipuler.**
 
 {{step:a-ouverture}}
 
-La base est ouverte, les 12 commandes sont là, neuf sont payées (la mise à jour de la journée est revenue avec le niveau 1) **et le stock de la lampe vaut 115** : cette vente a eu lieu **après** le niveau 1, elle n'était dans aucune sauvegarde de fichier de données, seulement dans le journal archivé que RMAN a retrouvé dans sa pièce. C'est exactement ce que valent les journaux archivés : sans eux, tu aurais retrouvé 120.
+👀 **Lire la sortie.** La base est ouverte ; les 12 commandes sont là ; neuf sont payées (la mise à jour de la journée est revenue avec le niveau 1) **et le stock de la lampe vaut 115**. Cette vente a eu lieu **après** le niveau 1 : elle n'était dans aucune sauvegarde de fichier de données, **seulement dans le journal archivé** que RMAN a retrouvé dans sa pièce. **C'est exactement ce que valent les journaux archivés** : sans eux, tu aurais retrouvé 120.
 
-### 10.5 Variante : réparer pendant que la boutique tourne
+### Variante : réparer pendant que la boutique tourne
 
-Si **seul le tablespace** est en cause, on n'est pas obligé d'arrêter la base : on met **uniquement** `SHOP_DATA` hors ligne, on le restaure, on le remet en ligne. Les autres tablespaces (et donc, par exemple, la connexion des clients dans leurs tables d'index ou de sessions) continuent de fonctionner.
+🧠 **Comprendre.** Si **seul un tablespace** est en cause, on n'est pas obligé d'arrêter la base : on met **uniquement** `SHOP_DATA` **hors ligne**, on le restaure, on le remet en ligne. Les autres tablespaces continuent de fonctionner. (Ici le fichier vient d'être restauré ; on met tout de même le tablespace hors ligne **comme si** son fichier était de nouveau perdu : c'est le geste à connaître.)
+
+🔧 **Manipuler.**
 
 {{step:a2-hors-ligne}}
 
-Les deux erreurs sont celles qu'un utilisateur de la boutique verrait : `ORA-00376` (fichier illisible) et `ORA-01110` (lequel). Restauration, **en ligne** :
+👀 **Lire la sortie.** Les deux erreurs sont celles qu'un utilisateur de la boutique verrait : `ORA-00376` (fichier illisible à ce moment) et `ORA-01110` (lequel). Restauration, **en ligne** :
 
 {{step:a2-restauration-en-ligne}}
 
 {{step:a2-remise-en-ligne}}
 
-> 💡 Cette restauration « en ligne » n'est possible qu'en `ARCHIVELOG`. En `NOARCHIVELOG`, Oracle refuse de mettre un tablespace `OFFLINE IMMEDIATE` (`ORA-01145`) : encore une raison de l'étape 2.
+⚠️ **Piège.** Cette restauration « en ligne » n'est possible **qu'en `ARCHIVELOG`** : en `NOARCHIVELOG`, Oracle refuse de mettre un tablespace `OFFLINE IMMEDIATE` (`ORA-01145`). Encore une raison du chapitre 5.
+
+### ✅ La leçon
+
+**`RESTORE` ramène, `RECOVER` met à jour — dans cet ordre, toujours.** Le diagnostic tient dans deux lignes : `ORA-01157` (quoi) + `ORA-01110` (quel fichier).
+
+### 🧪 Vérifie-toi (chapitre 10)
+
+1. Que dit `ORA-01110` que ne dit pas `ORA-01157` ? <details><summary>Réponse</summary>Le **nom** et le **numéro** du fichier en cause.</details>
+2. Pourquoi retrouve-t-on le stock à 115 et non à 120 ? <details><summary>Réponse</summary>Parce que `RECOVER` a rejoué le journal archivé qui contenait cette vente, faite après la dernière sauvegarde de fichier.</details>
+3. Dans quel état de l'instance restaure-t-on un fichier base arrêtée ? <details><summary>Réponse</summary>`MOUNT`.</details>
 
 ---
 
-## 11. Scénario B — Les fichiers de contrôle disparaissent
+## 11. Panne n° 2 — Les fichiers de contrôle disparaissent
 
-*Pire : les **deux** copies du fichier de contrôle sont perdues. La base ne peut plus ni se monter, ni dire où sont ses fichiers, ni où sont ses sauvegardes (le catalogue RMAN vivait dedans).*
+> 🎯 **Objectif** — Survivre à la perte du **sommaire** de la base : reconstruire le fichier de contrôle **depuis l'auto-sauvegarde**, avec seulement le **DBID** en main. Tu comprends pourquoi on le note à l'avance et pourquoi on active l'auto-sauvegarde.
 
-C'est là que **le DBID noté à l'étape 1** et **l'auto-sauvegarde** servent.
+### La situation
 
-### 11.1 Le contexte avant la panne
+Pire que la panne précédente : les **deux** copies du fichier de contrôle sont perdues. La base ne peut plus ni se monter, ni dire où sont ses fichiers, ni où sont **ses sauvegardes** (le catalogue de RMAN vivait dedans). C'est là que **le DBID** (chapitre 4) et **l'auto-sauvegarde** (chapitre 6) servent.
+
+### Le plan en cinq étapes
+
+1. `STARTUP NOMOUNT` — l'instance sans fichiers ;
+2. dire à RMAN **qui** il sauvegarde (`SET DBID`) et **où chercher** (`SET CONTROLFILE AUTOBACKUP FORMAT`) ;
+3. `RESTORE CONTROLFILE FROM AUTOBACKUP` ;
+4. `ALTER DATABASE MOUNT`, puis `RECOVER DATABASE` ;
+5. `ALTER DATABASE OPEN RESETLOGS`.
+
+### Le contexte avant la panne
+
+🔧 **Manipuler.**
 
 {{step:c-identite}}
 
-### 11.2 Le sinistre
+### Le sinistre
+
+🔧 **Manipuler.**
 
 {{step:c-sinistre}}
 
@@ -394,166 +870,286 @@ C'est là que **le DBID noté à l'étape 1** et **l'auto-sauvegarde** servent.
 
 {{step:c-demarrage}}
 
-`ORA-00205` : l'instance démarre (`ORACLE instance started`), mais ne peut pas lire son fichier de contrôle. Elle reste dans l'état `NOMOUNT`, ce qui est exactement ce qu'il faut pour la suite : RMAN peut se connecter à une instance non montée.
+👀 **Lire la sortie.** `ORACLE instance started.` — l'instance est démarrée, **mais** `ORA-00205: error in identifying control file` : aucun fichier de contrôle lisible. L'instance reste en **`NOMOUNT`**, ce qui est exactement ce qu'il faut : RMAN peut se connecter à une instance non montée.
 
-### 11.3 La restauration du fichier de contrôle
+### La restauration du fichier de contrôle
 
-RMAN a **tout oublié** : sa configuration (stockée dans le fichier de contrôle) et son catalogue. Il faut donc lui dire qui il sauvegarde (`SET DBID`) et **où chercher** les auto-sauvegardes (`SET CONTROLFILE AUTOBACKUP FORMAT`, le même format que celui de l'étape 3) :
+🧠 **Comprendre.** RMAN a **tout oublié** : sa configuration et son catalogue vivaient dans le fichier de contrôle. Il faut donc lui redire qui il sauvegarde (`SET DBID` — le numéro noté au chapitre 4) et **où chercher** les auto-sauvegardes (le même format qu'au chapitre 6).
+
+🔧 **Manipuler.**
 
 {{step:c-restauration-controle}}
 
-RMAN a trouvé `cf_c-<DBID>-<date>-<n>`, **la plus récente**, et en a refait les deux fichiers de contrôle. Plus bas, `MOUNT` puis `RECOVER` : le fichier de contrôle restauré dit que la base est « plus ancienne » que ses fichiers de données ; les journaux comblent l'écart.
+👀 **Lire la sortie.** `AUTOBACKUP found: /backup/cf_c-<DBID>-<date>-<n>` : RMAN a trouvé **la plus récente**. Puis `control file restore from AUTOBACKUP complete` et `output file name=…/control01.ctl` : le fichier de contrôle est refait à sa place (le second est recréé à partir du premier).
+
+⚠️ **Piège.** Sans `SET DBID`, RMAN ne sait pas **quelle** auto-sauvegarde chercher : `RMAN-06172`. C'est l'usage du DBID **noté à l'avance**.
+
+### Montage et récupération
+
+🧠 **Comprendre.** Le fichier de contrôle restauré dit que la base est « plus ancienne » que ses fichiers de données ; les journaux comblent l'écart.
 
 {{step:c-montage}}
 
 {{step:c-recover}}
 
-### 11.4 L'ouverture : `RESETLOGS`
+### L'ouverture : `RESETLOGS`
+
+🔧 **Manipuler.**
 
 {{step:c-ouverture}}
 
-Un fichier de contrôle **restauré** n'est plus « celui de la base vivante » : Oracle exige `OPEN RESETLOGS` (`ORA-01589` sinon) et crée une **nouvelle incarnation**. Les commandes sont toutes là.
+👀 **Lire la sortie.** Le premier `OPEN` est refusé : `ORA-01589: must use RESETLOGS or NORESETLOGS`. Un fichier de contrôle **restauré** n'est plus « celui de la base vivante » : Oracle exige `OPEN RESETLOGS`, qui crée une **nouvelle incarnation**. Les commandes sont toutes là.
 
-> 📌 **Réflexe après tout `RESETLOGS`** : faire immédiatement une **nouvelle sauvegarde complète** (en dessous). La précédente est celle d'une incarnation antérieure : on peut s'en servir, mais on ne veut pas dépendre d'elle.
+🧠 **Réflexe après tout `RESETLOGS` :** faire **immédiatement** une nouvelle sauvegarde complète. La précédente est celle d'une incarnation antérieure : on peut s'en servir, mais on ne veut pas dépendre d'elle.
 
 {{step:c-sauvegarde-apres}}
 
-`LIST INCARNATION` montre l'incarnation d'origine (`PARENT`) et la nouvelle (`CURRENT`).
+👀 **Lire la sortie.** `LIST INCARNATION` montre l'incarnation d'origine (`PARENT`) et la nouvelle (`CURRENT`).
+
+### ✅ La leçon
+
+Trois réflexes qui sauvent : **noter le DBID hors de la base**, **activer l'auto-sauvegarde du fichier de contrôle**, **sauvegarder après tout `RESETLOGS`**.
+
+### 🧪 Vérifie-toi (chapitre 11)
+
+1. Pourquoi l'instance est-elle laissée en `NOMOUNT` ? <details><summary>Réponse</summary>Parce qu'on n'a pas de fichier de contrôle : `NOMOUNT` est le seul état qui n'en demande pas, et RMAN peut s'y connecter.</details>
+2. Que se passe-t-il si on oublie `SET DBID` ? <details><summary>Réponse</summary>RMAN ne sait pas quelle auto-sauvegarde chercher : `RMAN-06172`.</details>
+3. Pourquoi `RESETLOGS` est-il obligatoire ici ? <details><summary>Réponse</summary>Le fichier de contrôle restauré n'est pas celui de la base vivante : Oracle ouvre une nouvelle incarnation.</details>
 
 ---
 
-## 12. Scénario C — Un `DROP TABLE` en production : retour dans le temps
+## 12. Panne n° 3 — Un `DROP TABLE` en production : retour dans le temps
 
-*Un développeur supprime la table des paiements. La base est saine, ouverte, tout fonctionne… sauf qu'il manque les paiements. Aucun fichier n'est perdu : il faut revenir **avant** l'erreur.*
+> 🎯 **Objectif** — Réparer une **erreur humaine** : aucun fichier n'est perdu, la base est saine, mais il manque des données. Tu apprends le **retour à un instant précis** (`UNTIL SCN`) et ses conséquences (`RESETLOGS`, incarnations).
 
-C'est le cas que le site de reprise **ne résout pas** (il a rejoué le `DROP TABLE` aussi) et que la sauvegarde résout, grâce au **SCN**.
+### La situation
 
-### 12.1 Noter l'instant juste avant
+📧 *Le développeur :* « J'ai supprimé la table des paiements en prod. » Aucun fichier n'est perdu ; tout fonctionne… sauf qu'**il manque les paiements**. Le site de reprise **ne résout pas** ce cas (il a rejoué le `DROP TABLE` aussi) ; la sauvegarde le résout, grâce au **SCN**.
 
-En pratique, on retrouve cet instant dans les journaux, dans l'audit, ou en demandant à l'utilisateur « vers quelle heure ? ». Ici, on le relève juste avant :
+🧠 **Comprendre.** Le **SCN** est l'horloge de la base : un nombre qui augmente à chaque changement validé. « Revenir à 14 h 02 » se traduit par « revenir au SCN 1234567 ». En pratique, on retrouve cet instant dans les journaux, dans l'audit, ou en demandant à l'utilisateur « vers quelle heure ? ».
+
+### Le plan en quatre étapes
+
+1. **Noter** le SCN d'*avant* l'erreur ;
+2. arrêter la base et la **monter** ;
+3. **restaurer et récupérer jusqu'à ce SCN** (`RUN { SET UNTIL SCN … ; RESTORE ; RECOVER }`) ;
+4. ouvrir avec **`RESETLOGS`**.
+
+### Noter l'instant juste avant
+
+🔧 **Manipuler.** On crée d'abord une commande **témoin** (la `2001`) : si elle réapparaît à la fin, c'est la preuve que l'on est revenu **après** elle et **avant** l'erreur. On relève aussi le nombre de paiements et le SCN :
 
 {{step:b-avant}}
 
-Le SCN `{{var:SCN}}` est notre **point de retour**.
+👀 **Lire la sortie.** Le nombre de paiements, puis le **SCN** `{{var:SCN}}` : c'est notre **point de retour**.
 
-### 12.2 L'erreur
+### L'erreur
 
 {{step:b-erreur}}
 
-### 12.3 Revenir dans le temps
+👀 **Lire la sortie.** `Table dropped.` puis `ORA-00942: table or view does not exist` : la table est partie, **définitivement** (`PURGE`).
 
-On arrête la base, on la monte, et on restaure **jusqu'à un SCN** précis. Les deux commandes sont dans un bloc `RUN { ... }` pour que le `SET UNTIL` s'applique aux deux :
+### Revenir dans le temps
+
+🔧 **Manipuler.** On arrête, on monte, et on restaure **jusqu'au SCN**. Les deux commandes sont dans un bloc `RUN { … }` pour que le `SET UNTIL` s'applique aux deux :
 
 {{step:b-arret-montage}}
 
 {{step:b-pitr}}
 
-`SET UNTIL SCN {{var:SCN}}` borne le travail : RMAN choisit la sauvegarde la plus récente **antérieure** à ce SCN, la restaure, puis ne rejoue les journaux **que jusqu'à ce SCN**. Les modifications d'après (dont le `DROP TABLE`) sont ignorées.
+👀 **Lire la sortie.** `SET UNTIL SCN {{var:SCN}}` **borne** le travail : RMAN choisit la sauvegarde la plus récente **antérieure** à ce SCN, la restaure, puis ne rejoue les journaux **que jusqu'à ce SCN**. Les modifications d'après — dont le `DROP TABLE` — sont **ignorées**.
 
-### 12.4 L'ouverture avec `RESETLOGS`
+### L'ouverture avec `RESETLOGS`
 
 {{step:b-ouverture}}
 
-La table `PAYMENTS` est revenue **avec son contenu**, la commande `2001` (créée *avant* l'erreur) aussi. Le premier `OPEN` est refusé (`ORA-01589`) : une récupération **incomplète** exige `RESETLOGS`.
+👀 **Lire la sortie.** La table `PAYMENTS` est revenue **avec son contenu**, et la commande `2001` (créée *avant* l'erreur) aussi. Le premier `OPEN` est refusé (`ORA-01589`) : une récupération **incomplète** exige `RESETLOGS`.
 
-### 12.5 Les incarnations, et la sauvegarde d'après
+### Les incarnations, et la sauvegarde d'après
+
+🧠 **Comprendre.** `RESETLOGS` **ouvre une nouvelle « version de l'histoire »** de la base (une incarnation). Les journaux repartent d'une numérotation neuve, et les anciens ne s'appliquent plus à la nouvelle branche.
 
 {{step:b-incarnations}}
 
 {{step:b-sauvegarde-apres}}
 
-> 💡 **Ce que tu as perdu** en revenant au SCN `{{var:SCN}}` : tout ce qui est arrivé **après**, y compris des commandes légitimes passées entre-temps. Un retour dans le temps de toute la base est un instrument lourd ; en production on lui préfère souvent *Flashback Table* ou une restauration dans une **base auxiliaire** pour ne récupérer que la table. Ces deux techniques sortent du cadre de ce tutoriel.
+⚠️ **Piège : ce que tu as perdu.** En revenant au SCN `{{var:SCN}}`, tu perds tout ce qui est arrivé **après** — y compris des commandes légitimes passées entre-temps. Un retour dans le temps de **toute** la base est un instrument lourd ; en production on lui préfère souvent *Flashback Table* ou une restauration dans une **base auxiliaire** pour ne récupérer que la table. Ces techniques sortent du cadre de ce tutoriel.
+
+### Variante : la méthode historique, sous SQL\*Plus
+
+🧠 **Comprendre.** Avant RMAN, on récupérait « à la main » depuis SQL\*Plus, et les cours l'enseignent encore. Le principe est le même : une fois les fichiers **restaurés** (ici par RMAN), la commande `RECOVER DATABASE` rejoue les journaux. La forme `UNTIL CANCEL` demande une récupération **incomplète** : elle s'arrête quand on le décide.
+
+🔧 **Manipuler.**
+
+{{step:sp-montage}}
+
+{{step:sp-restauration}}
+
+{{step:sp-recover}}
+
+👀 **Lire la sortie.** `Media recovery complete.` : les journaux ont été rejoués. Et, comme pour toute récupération incomplète, le premier `OPEN` est refusé (`ORA-01589`) : **`RESETLOGS` est obligatoire**. C'est le même moteur que le `RECOVER` de RMAN, avec la même règle.
+
+### ✅ La leçon
+
+**Récupération incomplète ⇒ `OPEN RESETLOGS` ⇒ nouvelle incarnation ⇒ nouvelle sauvegarde.** Et un site de reprise ne remplace pas une sauvegarde.
+
+### 🧪 Vérifie-toi (chapitre 12)
+
+1. Pourquoi le site de reprise n'aurait-il pas pu corriger le `DROP TABLE` ? <details><summary>Réponse</summary>Il applique les mêmes journaux que la production : il a aussi supprimé la table.</details>
+2. Que perd-on en revenant au SCN d'avant l'erreur ? <details><summary>Réponse</summary>Tout ce qui s'est passé **après** ce SCN, y compris des transactions légitimes.</details>
+3. Quelle commande rend ces opérations cohérentes avec l'histoire de la base, et que crée-t-elle ? <details><summary>Réponse</summary>`ALTER DATABASE OPEN RESETLOGS` : elle crée une nouvelle incarnation.</details>
 
 ---
 
-## 13. Accès, audit et journaux : qui a le droit de sauvegarder ?
+## 13. Qui a le droit de sauvegarder ? Accès, audit et journaux
 
-Une sauvegarde contient **toute la base**, mots de passe hachés compris. Ceux qui peuvent la lancer — ou la restaurer — sont aussi puissants que le DBA.
+> 🎯 **Objectif** — Comprendre qu'une sauvegarde est **aussi sensible que la base elle-même**, savoir qui peut la lancer, et constater que **chaque refus laisse une trace**.
 
-### 13.1 Un compte ordinaire essaie
+🧠 **Comprendre.** Une sauvegarde contient **toute la base**, mots de passe hachés compris. Ceux qui peuvent la lancer — ou la restaurer — sont aussi puissants que le DBA. Chez Lumière, trois verrous se cumulent :
 
-Un stagiaire (compte `stagiaire`, simple utilisateur, **hors du groupe `dba`**) tente de lancer RMAN :
+| Verrou | Où il est | Qui passe |
+|---|---|---|
+| Le **groupe `dba`** du système | Linux | Seuls ses membres se connectent `AS SYSDBA` / lancent `rman target /` |
+| Le **volume NFS** | Exports de `BKP-HQ` | `rw` pour les bases du siège seulement ; `ro` pour le site de reprise |
+| Les **journaux centralisés** | `LOG-HQ` (rsyslog) | Tout le monde est vu, **y compris les refus** |
+
+### Un compte ordinaire essaie
+
+🔧 **Manipuler.** Un stagiaire (compte `stagiaire`, simple utilisateur, **hors du groupe `dba`**) tente de lancer RMAN :
 
 {{step:acces-intrus}}
 
-`ORA-01031: insufficient privileges`, enveloppé dans `RMAN-00554` / `RMAN-04005`. Sur la machine, la connexion « bequeath » (`rman target /` sans mot de passe) n'est possible que pour les membres du groupe **`dba`** ; c'est le système d'exploitation qui authentifie.
+👀 **Lire la sortie.** `ORA-01031: insufficient privileges`, enveloppé dans `RMAN-00554` / `RMAN-04005` : *« erreur de la base cible »*. C'est la même erreur que celle de `root` au chapitre 1. La connexion « bequeath » (`rman target /` sans mot de passe) n'est possible que pour les membres du groupe **`dba`** : **c'est le système d'exploitation qui authentifie**.
 
-### 13.2 La trace
+### La trace
 
-Cette tentative **n'est pas perdue** : elle est auditée côté base, et inscrite au journal d'alerte :
+🧠 **Comprendre.** Cette tentative n'est pas perdue : elle est **auditée** côté base et inscrite au **journal d'alerte**.
+
+🔧 **Manipuler.**
 
 {{step:acces-audit}}
 
 {{step:journal-alerte}}
 
-Ligne à ligne : `stagiaire` est l'utilisateur système qui a essayé, `1031` le code d'erreur. Un contrôle de sécurité efficace commence par là : **chaque refus laisse une trace**, et la trace va au serveur de journaux (§8.5).
+👀 **Lire la sortie.** `stagiaire` est l'utilisateur système qui a essayé ; `1031` le code d'erreur. Un contrôle de sécurité efficace commence là : **chaque refus laisse une trace**, et la trace va au serveur de journaux (chapitre 8.6).
 
-### 13.3 À retenir pour ton organisation
+⚠️ **Piège.** « Donner le groupe `dba` pour que ça marche » est la mauvaise réponse : tu donnes le pouvoir de tout lire **et** de tout détruire. Le droit de sauvegarder se donne par un **compte dédié**, pas en élargissant `dba`.
 
-| Contrôle | Où |
-|---|---|
-| Qui peut lancer RMAN / se connecter `AS SYSDBA` ? | Les membres du groupe OS `dba` (et eux seuls) |
-| Qui peut **écrire** les sauvegardes ? | Le volume NFS `rw` pour les bases du siège seulement ; `ro` pour le site de reprise |
-| Qui voit passer les travaux ? | `LOG-HQ` (rsyslog) : code retour de chaque travail |
-| Qui administre les équipements réseau ? | FreeRADIUS sur `LOG-HQ` (Cisco-AVPair `priv-lvl=15`) |
+✅ **À retenir.** *Qui peut sauvegarder = qui peut tout lire.* Contrôle d'accès + audit + journal central, **ensemble**.
+
+### 🧪 Vérifie-toi (chapitre 13)
+
+1. Qui peut lancer `rman target /` sans mot de passe ? <details><summary>Réponse</summary>Les membres du groupe Linux `dba`, et eux seuls (pas `root`).</details>
+2. Où retrouve-t-on la trace d'une tentative refusée ? <details><summary>Réponse</summary>Dans l'audit de la base (`DBA_AUDIT_TRAIL`, code 1031), dans le journal d'alerte, et sur `LOG-HQ`.</details>
 
 ---
 
-## 14. Scénario D — Le siège brûle : le site de reprise
+## 14. Panne n° 4 — Le siège brûle : le site de reprise
 
-*Le siège est perdu : `ORA-PRD`, `BKP-HQ`, tout. Les sauvegardes avaient été prises sur `BKP-HQ`… qui vient de brûler avec elles. Voilà pourquoi on a besoin d'un **site de reprise vivant**, qui reçoit les modifications **en continu**.*
+> 🎯 **Objectif** — Construire un **site de reprise vivant**, le tenir à jour **en continu**, comprendre les **trois modes de protection**, et **basculer** dessus sans perdre une transaction validée.
 
-La technique : une **base de secours physique** (*physical standby*) sur `ORA-STB`, créée par RMAN depuis la base active, alimentée par l'envoi des journaux, que l'on **promeut** en base primaire le jour du sinistre.
+### La situation
+
+📧 *Le réseau :* « Le siège est hors service. » `ORA-PRD`, `BKP-HQ`, tout. Les sauvegardes avaient été prises sur `BKP-HQ`… qui vient de brûler **avec** elles. Voilà pourquoi il faut un **site de reprise vivant**, qui reçoit les modifications **en continu**.
+
+🧠 **Quelques mots avant de commencer.** Un **site de reprise** (*disaster recovery*, DR) est un second datacenter, loin du premier, relié par un **tunnel IPsec** tenu par les pare-feu **FortiGate**. Une **base de secours** (*standby*) est une **copie de la production** qui reçoit en continu ses journaux et les rejoue : elle reste « un pas derrière », prête à la remplacer. La production s'appelle alors la **primaire**.
+
+### Le plan en cinq étapes
+
+1. Vérifier que le **chemin** (le tunnel) est ouvert ;
+2. Préparer la machine de secours (`NOMOUNT`) ;
+3. **Dupliquer** la base active vers la standby (`DUPLICATE … FOR STANDBY`) ;
+4. **Expédier** les journaux et les **appliquer** (à la main, puis avec le **broker**) ;
+5. **Basculer** (`FAILOVER`) le jour du sinistre.
 
 ### 14.1 Le chemin est-il ouvert ?
 
-Tout passe par le tunnel IPsec entre `FGT-HQ` et `FGT-DR` :
+🔧 **Manipuler.** Tout passe par le tunnel IPsec entre `FGT-HQ` et `FGT-DR` :
 
 {{step:dr-tunnel}}
 
-`'to-dr'` : `selectors(total,up): 1/1` : le tunnel est établi. C'est lui que traverseront, **en trames chiffrées**, les fichiers de la base.
+👀 **Lire la sortie.** `'to-dr'` : `selectors(total,up): 1/1` : le tunnel est établi. C'est lui que traverseront, **en trames chiffrées**, les fichiers de la base.
 
 ### 14.2 Préparer la machine de secours
 
-`ORA-STB` doit être une **instance démarrée mais sans base** : `NOMOUNT`.
+🧠 **Comprendre.** `ORA-STB` doit être une **instance démarrée mais sans base** : `NOMOUNT` (chapitre 1.2).
 
 {{step:dr-nomount}}
 
 ### 14.3 Créer la standby depuis la base active
 
-Depuis `ORA-PRD`, RMAN se connecte à la **cible** (la production) et à l'**auxiliaire** (la future standby, `10.20.30.10`), puis recopie toute la base à travers le tunnel :
+🧠 **Comprendre.** Depuis `ORA-PRD`, RMAN se connecte à la **cible** (la production) et à l'**auxiliaire** (la future standby, `10.20.30.10`), puis recopie toute la base **à travers le tunnel** :
+
+🔧 **Manipuler.**
 
 {{step:dr-duplicate}}
 
-`DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE` : *« fais-moi une standby de cette base, en lisant directement les fichiers de la base ouverte »*, sans passer par une sauvegarde intermédiaire. `DORECOVER` rejoue les journaux disponibles, `NOFILENAMECHECK` autorise les mêmes noms de fichiers des deux côtés. Les octets des six fichiers de données ont **réellement traversé** le tunnel.
+👀 **Lire la sortie.** `DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE` : *« fais-moi une standby de cette base, en lisant directement les fichiers de la base **ouverte** »*, sans sauvegarde intermédiaire. `DORECOVER` rejoue les journaux disponibles ; `NOFILENAMECHECK` autorise les mêmes noms de fichiers des deux côtés. Les octets des six fichiers de données ont **réellement traversé** le tunnel.
 
 Sur `ORA-STB` :
 
 {{step:dr-role}}
 
-`PHYSICAL STANDBY` + `MOUNTED` : c'est une standby ; les six fichiers de données y sont. (Une standby est toujours en `ARCHIVELOG`, car elle reçoit des journaux archivés.)
+👀 **Lire la sortie.** `PHYSICAL STANDBY` + `MOUNTED` : c'est une standby ; les six fichiers de données y sont. (Une standby est toujours en `ARCHIVELOG`, car elle reçoit des journaux archivés.)
 
 ### 14.4 Expédier les journaux, les appliquer
 
-On dit à la production d'envoyer ses journaux vers la standby (`log_archive_dest_2`), et on démarre sur la standby le processus qui les **applique** (*managed recovery*) :
+🧠 **Comprendre.** Deux mécanismes, un de chaque côté :
+
+- côté production, `log_archive_dest_2` dit **où envoyer** les journaux ;
+- côté standby, la **récupération gérée** (*managed recovery*) les **applique**.
+
+🔧 **Manipuler.**
 
 {{step:dr-expedition}}
 
 {{step:dr-application}}
 
-### 14.5 Une commande tombe, elle arrive de l'autre côté
+### 14.5 Le broker : la même chose, gérée pour toi
+
+🧠 **Comprendre.** Ces deux commandes, le **Data Guard Broker** les exécute à ta place. Son interface est un programme, **`dgmgrl`**, qui garde une **configuration** : *qui est la primaire, quelles sont les standbys, comment les journaux circulent*. `CREATE CONFIGURATION` la nomme, `ADD DATABASE` déclare la standby **par son identifiant de connexion**, `ENABLE CONFIGURATION` l'active (le broker pose la destination d'archivage et démarre l'application sur la standby par une session Oracle Net).
+
+🔧 **Manipuler.**
+
+{{step:dr-broker}}
+
+👀 **Lire la sortie.** `Configuration Status: SUCCESS` : tout va bien. S'il y avait une erreur de transport, tu la lirais ici (`ORA-16778`) : c'est la commande de **supervision** d'un environnement Data Guard.
+
+### 14.6 Les trois modes de protection
+
+🧠 **Comprendre.** Entre la **vitesse** et la **certitude de ne rien perdre**, Data Guard offre trois modes :
+
+| Mode | Comment le redo part | Si la standby ne répond plus | Perte de données possible |
+|---|---|---|---|
+| `MAXIMUM PERFORMANCE` (défaut) | **Asynchrone** : à l'archivage du journal | La production continue | Les dernières transactions |
+| `MAXIMUM AVAILABILITY` | **Synchrone** : chaque `COMMIT` attend l'accusé de la standby | La production **continue** et repasse en asynchrone (`RESYNCHRONIZATION`), puis revient | Aucune tant que la standby répond |
+| `MAXIMUM PROTECTION` | Synchrone, **obligatoire** | La production **s'arrête** (`ORA-03113`) plutôt que de valider sans copie | **Jamais** |
+
+Le broker ne laisse activer un mode synchrone que si un membre est lui-même **synchrone** (`LogXptMode='SYNC'`) : `ORA-16627` sinon.
+
+🔧 **Manipuler.** On passe la standby en `SYNC`, puis la configuration en `MaxAvailability` :
+
+{{step:dr-protection}}
+
+{{step:dr-niveau}}
+
+👀 **Lire la sortie.** `PROTECTION_MODE` est le mode **demandé**, `PROTECTION_LEVEL` celui qui est **effectivement tenu** à cet instant (il passerait à `RESYNCHRONIZATION` si la standby se taisait, et à `UNPROTECTED` sans destination synchrone). `MAXIMUM PROTECTION` se règle de la même façon, mais base **montée** (`ORA-01126` sinon) : la production **s'arrêterait** à la première validation sans accusé.
+
+### 14.7 Une commande tombe, elle arrive de l'autre côté
+
+🔧 **Manipuler.** Deux commandes validées : la `3001`, suivie d'un **changement de journal**, et la `3002`, validée **sans** changement de journal.
 
 {{step:dr-commande}}
 
-Le deuxième `SELECT` montre la destination 2 (`10.20.30.10:1521/ORCL`) à l'état `VALID`. Maintenant, lisons côté standby (qu'on ouvre en **lecture seule** après avoir arrêté l'application) :
+Maintenant, lisons côté standby (qu'on ouvre en **lecture seule** après avoir arrêté l'application) :
 
 {{step:dr-lecture}}
 
-`APPLIED = 'YES'` : les journaux sont appliqués. La commande `3001`, passée sur la production **il y a quelques secondes**, est lisible sur le site de reprise : le RPO est de zéro pour ce scénario.
+👀 **Lire la sortie.** `APPLIED = 'YES'` : les journaux sont appliqués. La `3001` est là parce que **son journal a été archivé et expédié**. La `3002`, elle, **n'a pas eu de journal archivé** : elle est lisible quand même, parce qu'en mode synchrone **son `COMMIT` a envoyé son redo à la standby avant de rendre la main**. C'est ce qui fait un RPO **réellement nul**.
 
-### 14.6 Le sinistre et la bascule
+### 14.8 Le sinistre et la bascule
 
-On éteint brutalement la production : le siège est perdu.
+🔧 **Manipuler.** On éteint brutalement la production : le siège est perdu.
 
 {{step:dr-sinistre}}
 
@@ -561,48 +1157,113 @@ Sur le site de reprise, on **promeut** la standby :
 
 {{step:dr-bascule}}
 
-`ALTER DATABASE FAILOVER TO ORCL` fait de la standby la **base primaire**, ouverte en `READ WRITE`. La commande `3001` est là : **aucune transaction validée n'a été perdue**. Il ne reste qu'à pointer les frontaux web (`WEB-DR`) sur cette base.
+👀 **Lire la sortie.** `ALTER DATABASE FAILOVER TO ORCL` fait de la standby la **base primaire**, ouverte en `READ WRITE`. Les commandes `3001` **et** `3002` sont là : **aucune transaction validée n'a été perdue**. Il ne reste qu'à pointer les frontaux web (`WEB-DR`) sur cette base. (Avec le broker, la même opération se tape `FAILOVER TO 'ORCL_STB'` dans `dgmgrl`, connecté à la standby ; la bascule **programmée** depuis la production est `SWITCHOVER TO 'ORCL_STB'`.)
 
-> ⚠️ **Ce que ce scénario ne couvre pas** : la **protection de bout en bout** (`MAXIMUM PROTECTION`, `MAXIMUM AVAILABILITY`) n'est pas appliquée par le simulateur (le mode est stocké et affiché, jamais imposé) et il n'y a pas de *Data Guard Broker* (`DGMGRL`). La standby, elle, est réelle : octets, journaux, rôle et bascule.
+⚠️ **Piège.** Un `FAILOVER` est **à sens unique** : l'ancienne primaire, si elle revient, **ne peut plus rejoindre** la configuration sans être reconstruite. Un `SWITCHOVER`, lui, est réversible : c'est l'opération **planifiée**.
 
----
+### ✅ La leçon
 
-## 15. Exercices
+Le site de reprise répond au **sinistre de site** ; la sauvegarde répond à l'**erreur humaine** ; il faut **les deux**. Et le **mode de protection** est une décision d'entreprise (RPO) avant d'être un réglage technique.
 
-Chacun se fait dans le lab rouvert (importe `topology.json` pour repartir d'un état propre).
+### 🧪 Vérifie-toi (chapitre 14)
 
-1. **Perte d'un fichier d'index.** Détruis `shop_idx01.dbf` (fichier 6), redémarre en `MOUNT`, restaure-le et récupère-le. Combien de commandes RMAN faut-il ? *Indice : c'est le scénario A pour un autre numéro de fichier.*
-2. **Le niveau 1 sert-il à quelque chose ?** Après un niveau 0 et un niveau 1, restaure `SHOP_DATA`. Dans la sortie de `RESTORE`, quelles pièces RMAN lit-il ? *Indice : `LIST BACKUP SUMMARY` et la colonne `LV`.*
-3. **Une pièce disparaît.** Supprime à la main (`rm` sur `BKP-HQ`) la pièce du niveau 0, puis lance `CROSSCHECK BACKUP`. Que passe-t-il à son statut ? Que répond `RESTORE DATABASE VALIDATE` ? *Indice : `EXPIRED`, puis `DELETE EXPIRED BACKUP`.*
-4. **Retour à une heure plutôt qu'à un SCN.** Refais le scénario C avec `SET UNTIL TIME` au lieu de `SET UNTIL SCN`. *Indice : l'heure se lit dans `SELECT SYSDATE FROM dual` ; le format dépend de `NLS_DATE_FORMAT`.*
-5. **Qui a lancé cette sauvegarde ?** Donne à `stagiaire` le groupe `dba` (`usermod -aG dba stagiaire`) et fais-lui lancer `rman target /`. Qu'est-ce qui a changé ? Et dans les journaux de `LOG-HQ` ? *Indice : il faut ouvrir une nouvelle session pour que les groupes soient pris en compte.*
-6. **Repartir à zéro.** Après la bascule du scénario D, que faudrait-il faire pour que le siège reconstruit redevienne un site de secours de `ORA-STB` ? *Indice : c'est le même `DUPLICATE`, dans l'autre sens.*
-7. **Mesurer ton RTO.** Chronomètre, dans le simulateur, chaque scénario (le temps simulé est indiqué dans les sorties : `elapsed time`). Lequel est le plus long ? Pourquoi ?
+1. Pourquoi la commande `3002` est-elle lisible sur la standby sans journal archivé ? <details><summary>Réponse</summary>En mode synchrone, le `COMMIT` envoie son redo à la standby et attend l'accusé avant de rendre la main.</details>
+2. Que se passe-t-il, sous `MAXIMUM AVAILABILITY`, si la standby se tait ? <details><summary>Réponse</summary>La production continue ; le niveau de protection passe à `RESYNCHRONIZATION` jusqu'au retour de la standby.</details>
+3. Quelle différence entre `SWITCHOVER` et `FAILOVER` ? <details><summary>Réponse</summary>Switchover : bascule **planifiée** et réversible, les deux sites sont vivants. Failover : bascule d'**urgence**, l'ancienne primaire est présumée perdue.</details>
 
 ---
 
-## 16. Les erreurs que tu rencontreras
+## 15. Que faire quand ? L'arbre de décision
+
+> 🎯 **Objectif** — Savoir **quelle réparation choisir** devant un symptôme, sans repartir du début du tutoriel. À garder sous les yeux pendant une garde.
+
+🧠 **Comprendre.** Devant une panne, on **diagnostique d'abord** (quel message, quelle ligne `ORA-`), puis on choisit. Voici le raisonnement, **de haut en bas** :
+
+```
+La base répond-elle ?
+├── NON, l'instance ne démarre pas jusqu'à MOUNT
+│     ├── ORA-00205 / « control file » ............. chapitre 11  (restaurer le fichier de contrôle)
+│     └── sinon ................................... lire l'alerte : adrci / alert_ORCL.log
+├── NON, elle monte mais n'ouvre pas
+│     └── ORA-01157 + ORA-01110 « data file n » ..... chapitre 10  (RESTORE + RECOVER DATAFILE n)
+├── OUI, mais un tablespace est illisible (ORA-00376)
+│     └── ................................ chapitre 10  variante en ligne (OFFLINE, RESTORE, ONLINE)
+├── OUI, mais des données ont disparu / une table a été supprimée
+│     └── ................................ chapitre 12  (RESTORE + RECOVER jusqu'à un SCN, RESETLOGS)
+└── Le site entier est perdu
+      └── ................................ chapitre 14  (FAILOVER sur la standby)
+```
+
+| Symptôme | Cause probable | Réparation | Reperdre des données ? |
+|---|---|---|---|
+| `ORA-01157` + `ORA-01110` | Un fichier de données manque | `RESTORE DATAFILE n; RECOVER DATAFILE n;` | **Non** |
+| `ORA-00205` au montage | Plus de fichier de contrôle | `SET DBID`, `RESTORE CONTROLFILE FROM AUTOBACKUP`, `MOUNT`, `RECOVER`, `OPEN RESETLOGS` | **Non** (si journaux présents) |
+| Table / lignes supprimées par erreur | Erreur humaine | `UNTIL SCN`, `OPEN RESETLOGS` | **Oui** : tout ce qui suit le SCN |
+| Datacenter perdu | Sinistre | `FAILOVER` sur la standby | **Non** en mode synchrone |
+| `ORA-00257` | Zone d'archivage pleine | `BACKUP ARCHIVELOG ALL DELETE INPUT` | **Non** |
+
+✅ **À retenir.** Trois questions : *qu'est-ce qui est cassé ? (le message) — que dit la base qui reste ? (l'état) — jusqu'où veux-je revenir ? (la borne)*.
+
+---
+
+## 16. Exercices
+
+> 🎯 **Objectif** — T'entraîner, du plus facile au plus ouvert. Chacun se fait dans le lab rouvert (importe `topology.json` pour repartir d'un état propre). **Essaie avant de lire le corrigé.**
+
+### Niveau 1 — Comprendre
+
+1. **Qui est qui ?** Sans regarder, explique la différence entre *instance* et *base*, puis entre `NOMOUNT`, `MOUNT` et `OPEN`. <details><summary>Corrigé</summary>L'instance : processus et mémoire ; la base : fichiers. `NOMOUNT` : l'instance tourne, aucun fichier n'est lu ; `MOUNT` : le fichier de contrôle est lu, les fichiers sont fermés (l'état où l'on restaure) ; `OPEN` : tout est ouvert.</details>
+2. **Pourquoi pas root ?** Lance `sqlplus / as sysdba` en root, puis en `oracle`. Qu'est-ce qui explique la différence ? <details><summary>Corrigé</summary>`oracle` est membre du groupe `dba`, pas `root`. Vérifie avec `id root` et `id oracle`.</details>
+3. **Restore ou recover ?** « Je remets le fichier tel qu'il était à la sauvegarde » ; « je rejoue le journal sur ce fichier ». <details><summary>Corrigé</summary>`RESTORE` ; puis `RECOVER`. Toujours dans cet ordre.</details>
+
+### Niveau 2 — Pratiquer
+
+4. **Perte d'un fichier d'index.** Détruis `shop_idx01.dbf` (fichier 6), redémarre en `MOUNT`, restaure-le et récupère-le. *Indice : le chapitre 10 pour un autre numéro de fichier.* <details><summary>Corrigé</summary>`RESTORE DATAFILE 6;` puis `RECOVER DATAFILE 6;`, suivis de `ALTER DATABASE OPEN;` côté SQL\*Plus.</details>
+5. **Le niveau 1 sert-il à quelque chose ?** Après un niveau 0 et un niveau 1, restaure `SHOP_DATA`. Quelles pièces RMAN lit-il ? *Indice : `LIST BACKUP SUMMARY`, colonne `LV`.* <details><summary>Corrigé</summary>Le niveau 0 puis le niveau 1 : RMAN part de la référence et applique ce qui a changé ensuite.</details>
+6. **Une pièce disparaît.** Supprime à la main (`rm` sur `BKP-HQ`) la pièce du niveau 0, puis lance `CROSSCHECK BACKUP`. Que devient son statut ? Que répond `RESTORE DATABASE VALIDATE` ? <details><summary>Corrigé</summary>La pièce passe `EXPIRED` ; `RESTORE DATABASE VALIDATE` échoue faute de pièce ; `DELETE EXPIRED BACKUP` nettoie le catalogue — et il faut refaire un niveau 0.</details>
+7. **Un journal archivé disparaît.** Supprime un fichier `.arc`, lance `CROSSCHECK ARCHIVELOG ALL`. Que lis-tu ? <details><summary>Corrigé</summary>`validation failed for archived log` + le nom du fichier absent. Le journal est marqué `EXPIRED` (`SELECT status FROM v$archived_log` → `X`).</details>
+
+### Niveau 3 — Raisonner
+
+*Ces exercices sont ouverts : il n'y a pas de corrigé unique, mais chacun se vérifie par une sortie que tu sais maintenant lire (voir le chapitre indiqué dans l'arbre de décision, chapitre 15).*
+
+8. **Heure plutôt que SCN.** Refais le chapitre 12 avec `SET UNTIL TIME`. *Indice : `SELECT SYSDATE FROM dual` ; le format dépend de `NLS_DATE_FORMAT`.*
+9. **Qui a lancé cette sauvegarde ?** Donne à `stagiaire` le groupe `dba` (`usermod -aG dba stagiaire`) et fais-lui lancer `rman target /`. Qu'est-ce qui change ? Et dans les journaux de `LOG-HQ` ? *Indice : il faut une nouvelle session pour que les groupes soient pris en compte.*
+10. **Repartir à zéro.** Après la bascule du chapitre 14, que faudrait-il pour que le siège reconstruit redevienne un site de secours de `ORA-STB` ? *Indice : le même `DUPLICATE`, dans l'autre sens.*
+11. **Mesurer ton RTO.** Chronomètre chaque panne (le temps simulé est dans les sorties : `elapsed time`). Laquelle est la plus longue ? Pourquoi ?
+12. **Choisir un mode de protection.** Lumière peut-il accepter de **perdre** 30 secondes de commandes ? Quel mode de protection choisis-tu, et que se passe-t-il si le lien avec le site de reprise est coupé ? <details><summary>Corrigé</summary>Si oui : `MAXIMUM PERFORMANCE` (asynchrone, aucun frein). Si non : `MAXIMUM AVAILABILITY` (la boutique continue, mais en `RESYNCHRONIZATION`, donc non protégée, le temps de la coupure). `MAXIMUM PROTECTION` arrêterait la boutique à la coupure : à n'accepter que si la perte de données est **pire** que l'arrêt.</details>
+
+---
+
+## 17. Les erreurs que tu rencontreras
+
+> 🎯 **Objectif** — Reconnaître une erreur **au premier coup d'œil** et savoir où aller. **Lire une erreur RMAN** : ignore l'encadré `RMAN-00571 / RMAN-00569` (c'est le décor). La **dernière** ligne numérotée dit la vraie raison, et très souvent elle est suivie d'un code `ORA-` qui donne la cause côté base.
 
 | Code | Message | Cause | Solution |
 |---|---|---|---|
-| `ORA-01157` + `ORA-01110` | cannot identify/lock data file *n* | Le fichier *n* est absent ou illisible | `RESTORE DATAFILE n; RECOVER DATAFILE n` (base en `MOUNT`) |
-| `ORA-00376` | file *n* cannot be read at this time | Le tablespace est hors ligne ou le fichier en attente de récupération | `RESTORE TABLESPACE ...; RECOVER TABLESPACE ...;` puis `ONLINE` |
+| `ORA-01157` + `ORA-01110` | cannot identify/lock data file *n* | Le fichier *n* est absent ou illisible | `RESTORE DATAFILE n; RECOVER DATAFILE n;` (base en `MOUNT`) |
+| `ORA-00376` | file *n* cannot be read at this time | Le tablespace est hors ligne ou le fichier attend une récupération | `RESTORE TABLESPACE …; RECOVER TABLESPACE …;` puis `ONLINE` |
 | `ORA-00205` | error in identifying control file | Aucun fichier de contrôle lisible | `STARTUP NOMOUNT` puis `RESTORE CONTROLFILE FROM AUTOBACKUP` |
 | `ORA-01589` | must use RESETLOGS or NORESETLOGS option | Récupération incomplète ou fichier de contrôle restauré | `ALTER DATABASE OPEN RESETLOGS` |
-| `ORA-01139` | RESETLOGS option only valid after an incomplete database recovery | `OPEN RESETLOGS` sans récupération incomplète | `ALTER DATABASE OPEN` simplement |
-| `ORA-01031` | insufficient privileges | L'utilisateur du système n'est pas dans le groupe `dba` | `usermod -aG dba` (en connaissance de cause !) |
-| `RMAN-06172` | no autobackup found | `RESTORE CONTROLFILE FROM AUTOBACKUP` sans `SET DBID` ou mauvais format | `SET DBID`, `SET CONTROLFILE AUTOBACKUP FORMAT ... %F` |
-| `RMAN-06026` | no backup or copy of the database is available to satisfy the requested SET UNTIL bound | Aucune sauvegarde **antérieure** au SCN demandé | Choisir un SCN plus récent, ou une sauvegarde plus ancienne |
+| `ORA-01139` | RESETLOGS option only valid after an incomplete recovery | `OPEN RESETLOGS` sans récupération incomplète | `ALTER DATABASE OPEN` simplement |
+| `ORA-01031` | insufficient privileges | L'utilisateur du système n'est pas dans le groupe `dba` | Se connecter en `oracle` (ne pas élargir `dba` à la légère) |
+| `ORA-01124` ¹ | cannot recover data file *n* - file is in use or recovery | `RECOVER` lancé base **ouverte** | Remettre la base en `MOUNT` |
+| `RMAN-06149` | cannot BACKUP DATABASE in NOARCHIVELOG mode | Sauvegarde d'une base **ouverte** sans journaux archivés | Passer en `ARCHIVELOG` (chapitre 5), ou sauvegarder à froid en `MOUNT` |
+| `RMAN-06172` | no autobackup found | `RESTORE CONTROLFILE FROM AUTOBACKUP` sans `SET DBID` ou mauvais format | `SET DBID`, `SET CONTROLFILE AUTOBACKUP FORMAT … %F` |
+| `RMAN-06026` | no backup … to satisfy the requested SET UNTIL bound | Aucune sauvegarde **antérieure** au SCN demandé | Un SCN plus récent, ou une sauvegarde plus ancienne |
 | `RMAN-06023` | no backup found to restore | Le catalogue ne connaît aucune sauvegarde | `LIST BACKUP` ; `CATALOG START WITH '/backup'` |
-| `RMAN-06053` / `RMAN-06025` | unable to perform media recovery because of missing log | Un journal est absent **et** introuvable dans une sauvegarde | Vérifier que `BACKUP ARCHIVELOG ... DELETE INPUT` a réussi *avant* de supprimer |
+| `RMAN-06053` / `RMAN-06025` | unable to perform media recovery because of missing log | Un journal est absent **et** introuvable dans une sauvegarde | Vérifier que `BACKUP ARCHIVELOG … DELETE INPUT` a réussi *avant* de supprimer |
 | `RMAN-04005` / `RMAN-00554` | error from target database | La connexion à la cible a échoué (privilèges, instance arrêtée) | Lire **la ligne `ORA-` qui suit** |
-| `ORA-00257` | archiver error | La zone d'archivage est pleine | `BACKUP ARCHIVELOG ALL DELETE INPUT` |
+| `ORA-00257` ¹ | archiver error | La zone d'archivage est pleine | `BACKUP ARCHIVELOG ALL DELETE INPUT` |
+| `ORA-16072` | a minimum of one standby database destination is required | Mode de protection synchrone sans destination `SYNC` | Déclarer la destination en `SYNC AFFIRM` |
+| `ORA-16627` | operation disallowed since no standby databases would remain to support protection mode | Mode synchrone demandé avec un membre `ASYNC` | `EDIT DATABASE … SET PROPERTY LogXptMode='SYNC'` |
+| `ORA-03113` | end-of-file on communication channel | La session est coupée (ici, la primaire s'est arrêtée sous `MAXIMUM PROTECTION`) | Réparer la standby ou le lien, redémarrer la primaire |
 
-> 💡 **Lire une erreur RMAN** : ignore l'encadré `RMAN-00571 / RMAN-00569` (c'est le décor). La **dernière** ligne numérotée dit la vraie raison, et très souvent elle est suivie d'un code `ORA-` qui donne la cause côté base.
+¹ *Erreur réelle d'Oracle, décrite ici pour que tu la reconnaisses, mais que le simulateur ne produit pas (il n'a ni zone d'archivage limitée ni `RECOVER` base ouverte refusé).*
 
 ---
 
-## 17. Aide-mémoire
+## 18. Aide-mémoire
 
 **Préparer**
 
@@ -629,7 +1290,7 @@ BACKUP ARCHIVELOG ALL DELETE INPUT;
 LIST BACKUP SUMMARY;     LIST ARCHIVELOG ALL;     LIST INCARNATION;
 REPORT SCHEMA;           REPORT NEED BACKUP;      REPORT OBSOLETE;
 VALIDATE DATABASE;       RESTORE DATABASE VALIDATE;
-CROSSCHECK BACKUP;       DELETE OBSOLETE NOPROMPT;
+CROSSCHECK BACKUP;       CROSSCHECK ARCHIVELOG ALL;       DELETE OBSOLETE NOPROMPT;
 ```
 
 **Restaurer**
@@ -638,9 +1299,28 @@ CROSSCHECK BACKUP;       DELETE OBSOLETE NOPROMPT;
 |---|---|
 | Un datafile, base arrêtée (`MOUNT`) | `RESTORE DATAFILE n; RECOVER DATAFILE n;` puis `ALTER DATABASE OPEN;` |
 | Un tablespace, base ouverte | `ALTER TABLESPACE t OFFLINE IMMEDIATE;` → `RESTORE TABLESPACE t; RECOVER TABLESPACE t;` → `ALTER TABLESPACE t ONLINE;` |
-| Les fichiers de contrôle | `STARTUP NOMOUNT` → `SET DBID n; SET CONTROLFILE AUTOBACKUP FORMAT ...; RESTORE CONTROLFILE FROM AUTOBACKUP;` → `ALTER DATABASE MOUNT;` → `RECOVER DATABASE;` → `ALTER DATABASE OPEN RESETLOGS;` |
+| Les fichiers de contrôle | `STARTUP NOMOUNT` → `SET DBID n; SET CONTROLFILE AUTOBACKUP FORMAT …; RESTORE CONTROLFILE FROM AUTOBACKUP;` → `ALTER DATABASE MOUNT;` → `RECOVER DATABASE;` → `ALTER DATABASE OPEN RESETLOGS;` |
 | Retour à un instant | `RUN { SET UNTIL SCN n; RESTORE DATABASE; RECOVER DATABASE; }` → `ALTER DATABASE OPEN RESETLOGS;` |
-| Sinistre de site | `DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE ...` (en amont) → `ALTER DATABASE FAILOVER TO ...;` → `ALTER DATABASE OPEN;` |
+| Sinistre de site | `DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE …` (en amont) → `ALTER DATABASE FAILOVER TO …;` → `ALTER DATABASE OPEN;` |
+
+**Recouvrement manuel sous SQL\*Plus** (base en `MOUNT`, fichiers restaurés)
+
+```
+RECOVER DATABASE;                      -- complète : ALTER DATABASE OPEN;
+RECOVER DATABASE UNTIL CANCEL;         -- incomplète : ALTER DATABASE OPEN RESETLOGS;
+RECOVER DATABASE UNTIL CHANGE n;       -- jusqu'à un SCN
+```
+
+**Data Guard**
+
+```
+dgmgrl /  ->  CREATE CONFIGURATION 'nom' AS PRIMARY DATABASE IS 'ORCL' CONNECT IDENTIFIER IS orcl;
+              ADD DATABASE 'ORCL_STB' AS CONNECT IDENTIFIER IS hote:1521/ORCL MAINTAINED AS PHYSICAL;
+              ENABLE CONFIGURATION;   SHOW CONFIGURATION;
+              EDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='SYNC';
+              EDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;
+              SWITCHOVER TO 'ORCL_STB';        -- planifiée        FAILOVER TO 'ORCL_STB';  -- urgence
+```
 
 **Les trois réflexes**
 
@@ -650,33 +1330,52 @@ CROSSCHECK BACKUP;       DELETE OBSOLETE NOPROMPT;
 
 ---
 
-## 18. Ce que le simulateur ne fait pas (encore)
+## 19. Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas
 
-Un tutoriel honnête dit où s'arrête son terrain. Voici les écarts mesurés pendant la rédaction ; ceux qui ne sont pas fermés sont consignés dans `TODO.md` :
+Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **sept écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **sept sont fermés** et le tutoriel s'appuie sur leur comportement réel :
+
+| Ce qu'un vrai Oracle fait | Où le voir |
+|---|---|
+| `BACKUP DATABASE` sur une base **ouverte** en `NOARCHIVELOG` est refusé : `RMAN-06149` | chapitre 5 |
+| `df -h` sur un volume NFS donne la taille lue sur le **serveur**, et `touch` met à jour la date d'un fichier distant | chapitre 4 |
+| `root` n'est **pas** administrateur de la base : `ORA-01031` ; seul `oracle` (groupe `dba`) l'est | chapitres 1 et 13 |
+| `RECOVER DATABASE [UNTIL …]` existe sous SQL\*Plus, et une récupération incomplète exige `RESETLOGS` | chapitre 12 |
+| `CROSSCHECK BACKUP` couvre toutes les sauvegardes (journaux compris) ; `CROSSCHECK ARCHIVELOG ALL` contrôle les **fichiers** de journaux | chapitres 8 et 9 |
+| Un journal archivé retiré du disque est signalé par `CROSSCHECK ARCHIVELOG ALL` et marqué `EXPIRED` (`STATUS = 'X'` dans `V$ARCHIVED_LOG`) | exercice 7 |
+| Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | chapitre 14 |
+
+Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| `BACKUP DATABASE` d'une base ouverte en `NOARCHIVELOG` | Refusé : `RMAN-06149` | Accepté |
-| `df -h /backup` | Affiche la taille et l'occupation du volume NFS | Affiche des zéros |
-| `touch` sur un fichier NFS qui existe déjà | Met à jour sa date | Ne change rien |
-| `sqlplus / as sysdba` lancé par **root** | Refusé si root n'est pas dans `dba` | Accepté (tous les labs tournent en root) |
-| `RECOVER DATABASE UNTIL ...` depuis SQL*Plus | Exige ensuite `RESETLOGS` | Seul le `RECOVER` de RMAN le marque |
-| `CROSSCHECK BACKUP` / `CROSSCHECK ARCHIVELOG ALL` | Le premier couvre **toutes** les sauvegardes (journaux compris) ; le second contrôle les **fichiers** de journaux archivés | Le premier saute les sauvegardes de journaux ; le second contrôle ces sauvegardes (« 7 objets » au lieu de 9) |
-| Protection maximale (`MAXIMUM PROTECTION`) et *broker* | Imposée / géré par `DGMGRL` | Le mode est affiché, jamais imposé ; pas de broker |
+| Le broker (`dgmgrl`) | La configuration est **répliquée** sur tous les membres, et le broker surveille et peut basculer seul (*fast-start failover*) | La configuration vit sur la base à laquelle on est connecté ; pas d'observateur |
 | Temps de sauvegarde | Dépend du disque et du réseau | Durées simulées (indicatives) |
 
 ---
 
-## 19. Conclusion
+## 20. Conclusion
 
-Tu as, dans une infrastructure de 35 équipements :
+### Ce que tu sais faire maintenant
 
+Dans une infrastructure de 35 équipements, tu as :
+
+- **compris** ce qu'est une base Oracle (instance, fichiers, journaux, SCN) et **parlé** à la base en SQL\*Plus ;
 - **préparé** une base pour la sauvegarde (`ARCHIVELOG`, `FORCE LOGGING`) et **configuré** RMAN (rétention, auto-sauvegarde, destination réseau) ;
-- **sauvegardé** par niveaux, **planifié** (cron), **journalisé** de façon centrale, **vérifié** (`VALIDATE`, `RESTORE ... VALIDATE`, `CROSSCHECK`) ;
+- **sauvegardé** par niveaux, **planifié** (cron), **journalisé** de façon centrale, **vérifié** (`VALIDATE`, `RESTORE … VALIDATE`, `CROSSCHECK`) ;
 - **réparé** un fichier de données (base arrêtée et base ouverte), **reconstruit** les fichiers de contrôle depuis l'auto-sauvegarde, **remonté le temps** après un `DROP TABLE` ;
 - **contrôlé** qui peut lancer une sauvegarde, et vu que chaque refus laisse une trace ;
-- **monté** un site de reprise à travers un tunnel IPsec, et **basculé** dessus sans perdre une transaction validée.
+- **monté** un site de reprise à travers un tunnel IPsec, choisi un **mode de protection**, et **basculé** dessus sans perdre une transaction validée.
 
-Si tu sais refaire ces six gestes sans regarder le tutoriel — et expliquer pourquoi `RESTORE` précède `RECOVER`, pourquoi le DBID se note à l'avance, et pourquoi un site de reprise ne remplace pas une sauvegarde — tu maîtrises le processus.
+### Auto-évaluation
+
+Tu maîtrises le processus si tu sais, **sans regarder**, répondre à ces cinq questions :
+
+1. Pourquoi `RESTORE` précède-t-il toujours `RECOVER` ?
+2. Pourquoi note-t-on le DBID **à l'avance** ?
+3. Pourquoi un site de reprise **ne remplace pas** une sauvegarde ?
+4. Devant `ORA-01157` + `ORA-01110`, qu'est-ce qui est cassé, et quelles sont les trois commandes de réparation ?
+5. Pourquoi `RESETLOGS` impose-t-il une nouvelle sauvegarde ?
+
+Si l'une d'elles t'arrête, retourne au chapitre indiqué dans l'arbre de décision (chapitre 15).
 
 > 🔁 Le lab est entièrement rejouable : `UPDATE_LABS=1 npx vitest run src/__tests__/unit/labs/ecommerce-lumiere-tutorial.test.ts` refait ce document à partir d'une exécution fraîche.

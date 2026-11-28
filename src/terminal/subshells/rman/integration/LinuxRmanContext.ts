@@ -445,6 +445,15 @@ export class LinuxRmanContext implements IRmanOracleContext {
     });
   }
 
+  recordArchivedLogExpired(path: string): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.archive-log.expired',
+      payload: { deviceId: (this._device as { id?: string }).id ?? '', sid: oracle.instance.config.sid, path },
+    });
+  }
+
   getRecoveryAreaUsedBytes(): number {
     const distant = this.askRemoteScalar(
       'SELECT space_used FROM V$RECOVERY_FILE_DEST', 'SPACE_USED');
@@ -486,6 +495,12 @@ export class LinuxRmanContext implements IRmanOracleContext {
       return lu === 'MOUNTED' ? 'MOUNT' : lu === 'STARTED' ? 'NOMOUNT' : lu;
     }
     return this._oracle?.instance.state ?? 'OPEN';
+  }
+
+  isArchiveLogMode(): boolean {
+    const distant = this.askRemoteScalar('SELECT log_mode FROM V$DATABASE', 'LOG_MODE');
+    if (distant !== null) return String(distant).toUpperCase() === 'ARCHIVELOG';
+    return this._oracle?.instance.archiveLogMode ?? true;
   }
 
   getControlFilePaths(): ReadonlyArray<string> {

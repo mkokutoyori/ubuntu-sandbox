@@ -376,6 +376,9 @@ export class OracleExecutor extends BaseExecutor {
           nonJournalises.set(where.ts!, (nonJournalises.get(where.ts!) ?? 0) + 1);
         }
         instance.appendRedo(journalises, scn);
+        if (instance.commitRedoSynchronously(journalises.map((change) => ({ ...change, scn })), scn) === 'ABORTED') {
+          throw new OracleError(3113, 'end-of-file on communication channel');
+        }
         for (const [ts, blocs] of nonJournalises) {
           instance.recordNonlogged(ts, blocs, 'UNKNOWN');
         }

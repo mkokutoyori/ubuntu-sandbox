@@ -16,6 +16,7 @@ import { oracleSqlConnector } from '@/adapters/RadiusOracleSql';
 import { createSQLPlusSession, getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
 import { installOracleClientHooks } from './linux/oracleClientHooks';
 import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
+import { runDgmgrl } from '@/terminal/commands/DgmgrlCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 import { parseRmanInvocation } from '@/terminal/subshells/rman/RmanInvocation';
 import type { RmanRun } from './linux/LinuxCommandExecutor';
@@ -105,6 +106,7 @@ export class LinuxServer extends LinuxMachine {
       list: (path) => this.executor.vfs.listDirectory(path)?.map((entry) => entry.name) ?? null,
     }, undefined, undefined, { zone: () => this.executor.identity.timezone, nowMs: () => this.executor.simulatedDate().getTime(), groupsOf: (name: string) => this.executor.userMgr.getUserGroups(name).map((group) => group.name) });
     this.radiusd.setSqlConnector(oracleSqlConnector(this.id));
+    this.radiusd.setNameResolver((name) => this.executor.resolvedHost(name));
     this.seedDefaultRadiusdConfig();
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'postfix') return;
@@ -218,7 +220,8 @@ export class LinuxServer extends LinuxMachine {
       handleLsnrctl(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
       return lines.join('\n');
     };
-    this.executor._oracleUtil = (cmd: string, args: string[]) => {
+    this.executor._oracleUtil = (cmd: string, args: string[], stdin?: string) => {
+      if (cmd === 'dgmgrl') return runDgmgrl(this as unknown as HostCapableDevice, args, stdin, this.executor.oracleCaller('dgmgrl'));
       const handler = cmd === 'expdp' ? handleExpdp
         : cmd === 'impdp' ? handleImpdp
         : cmd === 'adrci' ? handleAdrci : null;

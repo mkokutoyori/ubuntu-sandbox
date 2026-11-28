@@ -99,6 +99,7 @@ export interface RuntimeArchivedLogRecord {
   firstTime: number;
   nextTime: number;
   deleted?: boolean;
+  expired?: boolean;
 }
 
 export interface RuntimeBlockCorruptionRecord {

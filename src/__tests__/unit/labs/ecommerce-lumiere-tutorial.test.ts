@@ -16,6 +16,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { __setSuperuserIsOsdba } from '@/network/devices/linux/OracleOsAuthentication';
 import { __setLegacyRouterPortCount, __setInterfacesBootShutdown } from '@/network/devices/inspection/InterfaceStatusView';
+import { __setOpenNoarchivelogBackupAllowed } from '@/terminal/subshells/rman/job/NoarchivelogBackupPolicy';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
 import type { Equipment } from '@/network';
 import { runTutorial } from '@/labs/ecommerceLumiere/tutorial/engine';
@@ -29,6 +30,7 @@ const README_FILE = resolve(process.cwd(), 'labs/ecommerce-lumiere/tutoriel-orac
 beforeEach(() => {
   __setLegacyRouterPortCount(null);
   __setSuperuserIsOsdba(false);
+  __setOpenNoarchivelogBackupAllowed(false);
   __setInterfacesBootShutdown(true);
   resetAllOracleInstances();
   resetCounters();

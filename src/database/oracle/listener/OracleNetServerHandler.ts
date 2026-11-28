@@ -85,6 +85,9 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
     database: OracleDatabase, body: OracleNetShipRedoRequest,
   ): Uint8Array {
     try {
+      if (database.instance.state === 'SHUTDOWN') {
+        return encodeResponse({ status: OracleNetCallStatus.Error, error: 'ORA-01034: ORACLE not available' });
+      }
       const cle = `${body.fromDbUniqueName}:${body.thread}:${body.sequence}`;
       const deja = body.chunkIndex === 0 ? '' : (this.redoEnCours.get(cle) ?? '');
       const assemble = deja + body.body;

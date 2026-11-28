@@ -27,7 +27,7 @@ import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
 import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, encodeEapPacket, verifyEapMd5Response } from './eap';
-import { MICROSOFT_VENDOR_ID } from './dictionary';
+import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, FREERADIUS_PROXY_AUTH_COUNTERS, FREERADIUS_PROXY_ACCT_COUNTERS, FREERADIUS_INTERNAL_COUNTERS, FREERADIUS_STATS_CLIENT_ADDRESS, FREERADIUS_STATS_CLIENT_NUMBER, FREERADIUS_STATS_CLIENT_NETMASK, FREERADIUS_STATS_ERROR, FREERADIUS_STATS_SERVER_ADDRESS, FREERADIUS_STATS_SERVER_PORT, FREERADIUS_STATS_SERVER_OUTSTANDING, FREERADIUS_STATS_SERVER_STATE, type FreeradiusCounter } from './dictionary';
 import {
   ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
   deriveMppeKeys, encryptMppeKey,
@@ -558,6 +558,7 @@ export class RadiusServerAgent {
       username: getAttr(request, 'user-name')?.value ?? null,
       password, nasPort: Number(getAttr(request, 'nas-port')?.value ?? 0),
       callingStationId: getAttr(request, 'calling-station-id')?.value ?? null,
+      request: request.attributes,
       ...(precedingMessage === undefined ? {} : { precedingMessage }),
     };
     this.getBus().publish({ topic: 'radius.auth.decided', payload });
@@ -1009,7 +1010,7 @@ export class RadiusServerAgent {
     if (!this.running || !this.config.enabled) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius' || payload.code !== 'status-server') return;
-    this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies, clients);
+    this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies, clients, true);
   }
 
   private handleStatusServer(
@@ -1017,6 +1018,7 @@ export class RadiusServerAgent {
     replyCode: 'access-accept' | 'accounting-response',
     cache: Map<string, { response: RadiusPacket; sentAt: number }>,
     clients: RadiusClientTable | null = null,
+    statisticsListener = false,
   ): void {
     const senderIp = srcIp.toString();
     const refused = clients === null ? this.clientRefused(senderIp) : clients.find(srcIp, this.transport()) === null;
@@ -1058,7 +1060,7 @@ export class RadiusServerAgent {
     if (decided?.verdict === 'drop' || (decided?.verdict === 'reject' && replyCode === 'accounting-response')) return;
     let response: RadiusPacket = cached?.response ?? {
       type: 'radius', code: decided?.verdict === 'reject' ? 'access-reject' : replyCode, identifier: request.identifier, authenticator: '00'.repeat(16),
-      attributes: [...(decided?.reply ?? []), ...this.proxyStatesOf(request)],
+      attributes: [...(decided?.reply ?? []), ...(statisticsListener ? this.statisticsAttributes(request) : []), ...this.proxyStatesOf(request)],
     };
     if (!cached) {
       response = withMessageAuthenticator(response, request.authenticator, secret);
@@ -1066,6 +1068,123 @@ export class RadiusServerAgent {
       cache.set(dedupKey, { response, sentAt: simulationNowMs() });
     }
     this.sendRadiusFrame(inPort, port, localIp, srcIp, udp.sourcePort, udp.destinationPort, response);
+  }
+
+  private internalStatistics: (() => Readonly<Record<number, number>>) | null = null;
+
+  setInternalStatistics(provider: (() => Readonly<Record<number, number>>) | null): void { this.internalStatistics = provider; }
+
+  private internalAttributes(): RadiusAttribute[] {
+    const values = this.internalStatistics?.() ?? {};
+    return FREERADIUS_INTERNAL_COUNTERS.map(([type]): RadiusAttribute => ({ type: 'vendor-specific', value: values[type] ?? 0, vendor: { id: FREERADIUS_VENDOR_ID, type } }));
+  }
+
+  private homeServerLookup: ((address: string, port: number) => { state: 'alive' | 'zombie' | 'dead' | 'down' | 'unknown'; type: 'auth' | 'acct' | 'auth+acct'; authPort: number; acctPort: number } | null) | null = null;
+
+  setHomeServerLookup(lookup: RadiusServerAgent['homeServerLookup']): void { this.homeServerLookup = lookup; }
+
+  private homeServerAttributes(request: RadiusPacket, flag: number): RadiusAttribute[] {
+    const find = (type: number) => request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === type);
+    const vsa = (type: number, value: string | number): RadiusAttribute => ({ type: 'vendor-specific', value, vendor: { id: FREERADIUS_VENDOR_ID, type } });
+    const error = (message: string): RadiusAttribute[] => [vsa(FREERADIUS_STATS_ERROR, message)];
+    const port = find(FREERADIUS_STATS_SERVER_PORT);
+    if (port === undefined) return error('No home server port supplied');
+    const address = find(FREERADIUS_STATS_SERVER_ADDRESS);
+    if (address === undefined) return error('No home server IP supplied');
+    const home = this.homeServerLookup?.(String(address.value), Number(port.value)) ?? null;
+    if (home === null) return error('Failed to find home server IP');
+    const stateNumber = { alive: 0, zombie: 1, dead: 2, unknown: 3, down: 4 }[home.state];
+    const outstanding = this.homeServerStatistics('auth', String(address.value), home.authPort).outstanding + (home.acctPort === home.authPort ? 0 : this.homeServerStatistics('acct', String(address.value), home.acctPort).outstanding);
+    const sections = [
+      { kind: 'auth' as const, bit: 0x01, serves: home.type !== 'acct', port: home.authPort, counters: FREERADIUS_PROXY_AUTH_COUNTERS, refusal: 'Home server is not auth' },
+      { kind: 'acct' as const, bit: 0x02, serves: home.type !== 'auth', port: home.acctPort, counters: FREERADIUS_PROXY_ACCT_COUNTERS, refusal: 'Home server is not acct' },
+    ].filter(({ bit }) => (flag & bit) !== 0);
+    return [
+      address, port, vsa(FREERADIUS_STATS_SERVER_OUTSTANDING, outstanding), vsa(FREERADIUS_STATS_SERVER_STATE, stateNumber),
+      ...sections.flatMap(({ kind, serves, port: counterPort, counters, refusal }) => {
+        if (!serves) return error(refusal);
+        const { stats } = this.homeServerStatistics(kind, String(address.value), counterPort);
+        return counters.map(([type, , field]): RadiusAttribute => vsa(type, stats[field]));
+      }),
+    ];
+  }
+
+  private listenerLookup: ((address: string, port: number) => boolean) | null = null;
+
+  setListenerLookup(lookup: ((address: string, port: number) => boolean) | null): void { this.listenerLookup = lookup; }
+
+  private serverAttributes(request: RadiusPacket, flag: number): RadiusAttribute[] {
+    const find = (type: number) => request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === type);
+    const error = (message: string): RadiusAttribute[] => [{ type: 'vendor-specific', value: message, vendor: { id: FREERADIUS_VENDOR_ID, type: FREERADIUS_STATS_ERROR } }];
+    const port = find(FREERADIUS_STATS_SERVER_PORT);
+    if (port === undefined) return [];
+    const address = find(FREERADIUS_STATS_SERVER_ADDRESS);
+    if (address === undefined) return error('No listener IP address supplied');
+    if (this.listenerLookup?.(String(address.value), Number(port.value)) !== true) return error('No such listener');
+    const listenerPort = Number(port.value);
+    return [
+      address, port,
+      ...[
+        { kind: 'auth' as const, bit: 0x01, counters: FREERADIUS_AUTH_COUNTERS },
+        { kind: 'acct' as const, bit: 0x02, counters: FREERADIUS_ACCT_COUNTERS },
+      ].filter(({ bit }) => (flag & bit) !== 0).flatMap(({ kind, counters }) => {
+        const stats = this.listenerStatistics(kind, listenerPort);
+        return counters.map(([type, , field]): RadiusAttribute => ({ type: 'vendor-specific', value: stats[field], vendor: { id: FREERADIUS_VENDOR_ID, type } }));
+      }),
+    ];
+  }
+
+  private clientAttributes(request: RadiusPacket, flag: number): RadiusAttribute[] {
+    const find = (type: number) => request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === type);
+    const vsa = (type: number, value: string | number): RadiusAttribute => ({ type: 'vendor-specific', value, vendor: { id: FREERADIUS_VENDOR_ID, type } });
+    const noSuchClient: RadiusAttribute[] = [vsa(FREERADIUS_STATS_ERROR, 'No such client')];
+    const byAddress = find(FREERADIUS_STATS_CLIENT_ADDRESS);
+    const byNumber = find(FREERADIUS_STATS_CLIENT_NUMBER);
+    if (byAddress === undefined && byNumber === undefined) return [];
+    let counted: string;
+    let echo: RadiusAttribute[];
+    if (byAddress !== undefined) {
+      const address = IPAddress.tryParse(String(byAddress.value));
+      if (address === null || this.clientTable.find(address) === null) return noSuchClient;
+      counted = String(byAddress.value);
+      echo = [byAddress];
+    } else {
+      const entry = this.clientTable.list()[Number(byNumber!.value)];
+      if (entry === undefined || !(entry.address instanceof IPAddress)) return noSuchClient;
+      counted = entry.address.toString();
+      echo = [byNumber!, vsa(FREERADIUS_STATS_CLIENT_ADDRESS, counted), ...(entry.prefix === 32 ? [] : [vsa(FREERADIUS_STATS_CLIENT_NETMASK, entry.prefix)])];
+    }
+    const withoutConflicts = (counters: readonly FreeradiusCounter[]): readonly FreeradiusCounter[] => counters.filter(([, , field]) => field !== 'conflicts');
+    const wanted = [
+      ...((flag & 0x01) !== 0 ? [{ kind: 'auth' as const, counters: withoutConflicts(FREERADIUS_AUTH_COUNTERS) }] : []),
+      ...((flag & 0x02) !== 0 ? [{ kind: 'acct' as const, counters: withoutConflicts(FREERADIUS_ACCT_COUNTERS) }] : []),
+    ];
+    return [
+      ...echo,
+      ...wanted.flatMap(({ kind, counters }) => {
+        const stats = this.statistics.get(`${kind}:${counted}`) ?? emptyStats();
+        return counters.map(([type, , field]): RadiusAttribute => vsa(type, stats[field]));
+      }),
+    ];
+  }
+
+  private statisticsAttributes(request: RadiusPacket): RadiusAttribute[] {
+    const asked = request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === 127);
+    const flag = asked === undefined ? 0 : Number(asked.value);
+    const kinds: { kind: 'auth' | 'acct'; bit: number; mask: number; proxied: boolean; counters: readonly FreeradiusCounter[] }[] = [
+      { kind: 'auth', bit: 0x01, mask: 0xe0, proxied: false, counters: FREERADIUS_AUTH_COUNTERS },
+      { kind: 'acct', bit: 0x02, mask: 0xe0, proxied: false, counters: FREERADIUS_ACCT_COUNTERS },
+      { kind: 'auth', bit: 0x04, mask: 0x20, proxied: true, counters: FREERADIUS_PROXY_AUTH_COUNTERS },
+      { kind: 'acct', bit: 0x08, mask: 0x20, proxied: true, counters: FREERADIUS_PROXY_ACCT_COUNTERS },
+    ];
+    const internal = [...((flag & 0x10) !== 0 ? this.internalAttributes() : []), ...((flag & 0x20) !== 0 ? this.clientAttributes(request, flag) : []), ...((flag & 0x40) !== 0 && (flag & 0x03) !== 0 ? this.serverAttributes(request, flag) : []), ...((flag & 0x80) !== 0 && (flag & 0x03) !== 0 ? this.homeServerAttributes(request, flag) : [])];
+    return kinds
+      .filter(({ bit, mask }) => (flag & bit) !== 0 && (flag & mask) === 0)
+      .flatMap(({ kind, proxied, counters }) => {
+        const stats = (proxied ? this.homeStatistics : this.statistics).get(`${kind}:*`) ?? emptyStats();
+        return counters.map(([type, , field]): RadiusAttribute => ({ type: 'vendor-specific', value: stats[field], vendor: { id: FREERADIUS_VENDOR_ID, type } }));
+      })
+      .concat(internal);
   }
 
   private withSessionTimeout(user: RadiusUser, secondsLeft: number): RadiusUser {

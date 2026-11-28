@@ -183,6 +183,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     redoTransport.start();
     oracleRedoTransports.set(deviceId, redoTransport);
+    db.instance.setSynchronousRedoPort({ writeCommit: (changes, scn) => redoTransport.shipCommit(deviceId, changes, scn) });
 
     const managedRecovery = new OracleManagedRecovery(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,

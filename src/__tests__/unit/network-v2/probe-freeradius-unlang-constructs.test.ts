@@ -146,6 +146,6 @@ describe('unlang constructs', () => {
   it('refuses a numeric action, an unknown rcode in the table and map, naming them', async () => {
     expect((await authorizing('', 'alice', 'x', '\t\tfiles {\n\t\t\tok = 2\n\t\t}\n', false)).restarted).toContain('The action "2" for "ok" is not implemented in this simulator');
     expect((await authorizing('', 'alice', 'x', '\t\tfiles {\n\t\t\tmaybe = return\n\t\t}\n', false)).restarted).toContain('Unknown return code "maybe"');
-    expect((await authorizing('\t\tmap &Reply-Message {\n\t\t}\n', 'alice', 'x', '\t\tfiles\n', false)).restarted).toContain('"map" is not implemented in this simulator');
+    expect((await authorizing('\t\tmap &Reply-Message {\n\t\t}\n', 'alice', 'x', '\t\tfiles\n', false)).restarted).toContain('Failed to find "map" as a module or policy.');
   });
 });

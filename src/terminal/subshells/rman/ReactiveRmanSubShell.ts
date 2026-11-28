@@ -226,6 +226,16 @@ export class ReactiveRmanSubShell implements ISubShell {
         // "starting media recovery" — on ne le re-imprime pas.
         break;
       case 'ARCHIVELOG_APPLIED':
+        if (e.restoredFrom !== undefined) {
+          this._push('channel ORA_DISK_1: starting archived log restore to default destination');
+          this._push('channel ORA_DISK_1: restoring archived log');
+          this._push(`archived log thread=${e.thread} sequence=${e.sequence}`);
+          this._push(`channel ORA_DISK_1: reading from backup piece ${e.restoredFrom}`);
+          this._push('channel ORA_DISK_1: restored backup piece 1');
+          this._push('channel ORA_DISK_1: restore complete, elapsed time: 00:00:01');
+          this._push(`archived log file name=${e.path} thread=${e.thread} sequence=${e.sequence}`);
+          break;
+        }
         this._push(
           `archived log for thread ${e.thread} with sequence ${e.sequence} ` +
           `is already on disk as file ${e.path}`,

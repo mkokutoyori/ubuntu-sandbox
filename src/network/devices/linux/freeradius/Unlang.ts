@@ -64,7 +64,6 @@ export type Statement =
   | { kind: 'switch'; text: string; expression: Term; cases: Array<{ value: string | null; body: Statement[] }> }
   | { kind: 'return'; result: ModuleResult }
   | { kind: 'update'; list: AttributeList; assignments: Assignment[] }
-  | { kind: 'map'; processor: string; query: string; entries: Array<{ assignment: Assignment; column: string }>; file: string; line: number }
   | { kind: 'if'; branches: Array<{ keyword: 'if' | 'elsif' | 'else'; text: string; condition: Condition | null; body: Statement[] }> }
   | { kind: 'typed'; name: string; body: Statement[]; file: string; line: number };
 
@@ -272,7 +271,7 @@ function assignmentOf(pair: ConfPair, defaultList: AttributeList, expansions: Re
 
 const NO_EXPANSIONS: ReadonlySet<string> = new Set();
 
-export function parseStatements(section: ConfSection, knownModule: (name: string, file: string, line: number) => string | null, inForeach = false, expansions: ReadonlySet<string> = NO_EXPANSIONS, mapProcessors: ReadonlySet<string> = NO_EXPANSIONS): Statement[] {
+export function parseStatements(section: ConfSection, knownModule: (name: string, file: string, line: number) => string | null, inForeach = false, expansions: ReadonlySet<string> = NO_EXPANSIONS): Statement[] {
   const statements: Statement[] = [];
   let pending: Extract<Statement, { kind: 'if' }> | null = null;
   for (const item of section.items) {
@@ -291,11 +290,11 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       continue;
     }
     if (item.name1 === 'if') {
-      pending = { kind: 'if', branches: [{ keyword: 'if', text: item.name2 ?? '', condition: parseCondition(item.name2 ?? '', item.file, item.line, expansions), body: parseStatements(item, knownModule, inForeach, expansions, mapProcessors) }] };
+      pending = { kind: 'if', branches: [{ keyword: 'if', text: item.name2 ?? '', condition: parseCondition(item.name2 ?? '', item.file, item.line, expansions), body: parseStatements(item, knownModule, inForeach, expansions) }] };
       statements.push(pending);
     } else if (item.name1 === 'elsif' || item.name1 === 'else') {
       if (pending === null) fail(item.file, item.line, `"${item.name1}" without a preceding "if"`);
-      pending.branches.push({ keyword: item.name1, text: item.name2 ?? '', condition: item.name1 === 'else' ? null : parseCondition(item.name2 ?? '', item.file, item.line, expansions), body: parseStatements(item, knownModule, inForeach, expansions, mapProcessors) });
+      pending.branches.push({ keyword: item.name1, text: item.name2 ?? '', condition: item.name1 === 'else' ? null : parseCondition(item.name2 ?? '', item.file, item.line, expansions), body: parseStatements(item, knownModule, inForeach, expansions) });
       if (item.name1 === 'else') pending = null;
     } else if (item.name1 === 'update') {
       pending = null;
@@ -303,19 +302,10 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       if (list === undefined) fail(item.file, item.line, `The attribute list "${item.name2 ?? ''}" in update is not implemented in this simulator`);
       statements.push({ kind: 'update', list, assignments: item.pairs.map((pair) => assignmentOf(pair, list, expansions)) });
     } else if (item.name1 === 'map') {
-      pending = null;
-      const header = /^(\S+)\s+(["'])([\s\S]*)\2$/.exec((item.name2 ?? '').trim());
-      if (header === null) fail(item.file, item.line, 'The unlang construct "map" is not implemented in this simulator');
-      if (!mapProcessors.has(header[1])) fail(item.file, item.line, `Unknown map processor "${header[1]}": map sql takes the name of a loaded sql module`);
-      checkTemplate(header[3], item.file, item.line, expansions);
-      if (item.pairs.length === 0) fail(item.file, item.line, "'map' blocks cannot be empty");
-      statements.push({
-        kind: 'map', processor: header[1], query: header[3], file: item.file, line: item.line,
-        entries: item.pairs.map((pair) => ({ assignment: assignmentOf({ ...pair, value: '' }, 'request', expansions), column: pair.value })),
-      });
+      fail(item.file, item.line, 'Failed to find "map" as a module or policy.');
     } else if (GROUPS.has(item.name1)) {
       pending = null;
-      statements.push({ kind: 'group', keyword: item.name1 as 'group', body: parseStatements(item, knownModule, inForeach, expansions, mapProcessors) });
+      statements.push({ kind: 'group', keyword: item.name1 as 'group', body: parseStatements(item, knownModule, inForeach, expansions) });
     } else if (item.name1 === 'switch') {
       pending = null;
       const text = item.name2 ?? '';
@@ -324,7 +314,7 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       const cases: Array<{ value: string | null; body: Statement[] }> = [];
       for (const child of item.sections) {
         if (child.name1 !== 'case') fail(child.file, child.line, `Unknown section "${child.name1}" in switch`);
-        cases.push({ value: child.name2 === null ? null : child.name2.replace(/^["']|["']$/g, ''), body: parseStatements(child, knownModule, inForeach, expansions, mapProcessors) });
+        cases.push({ value: child.name2 === null ? null : child.name2.replace(/^["']|["']$/g, ''), body: parseStatements(child, knownModule, inForeach, expansions) });
       }
       statements.push({ kind: 'switch', text, expression, cases });
     } else if (item.name1 === 'foreach') {
@@ -333,12 +323,12 @@ export function parseStatements(section: ConfSection, knownModule: (name: string
       if (text === '') fail(item.file, item.line, "You must specify an attribute to loop over in 'foreach'");
       if (item.items.length === 0) fail(item.file, item.line, "'foreach' blocks cannot be empty");
       if (!text.startsWith('&')) fail(item.file, item.line, "MUST use attribute or list reference in 'foreach'");
-      statements.push({ kind: 'foreach', text, operand: parseReference(text, 'request', item.file, item.line), body: parseStatements(item, knownModule, true, expansions, mapProcessors) });
+      statements.push({ kind: 'foreach', text, operand: parseReference(text, 'request', item.file, item.line), body: parseStatements(item, knownModule, true, expansions) });
     } else if (UNSUPPORTED.has(item.name1)) {
       fail(item.file, item.line, `The unlang construct "${item.name1}" is not implemented in this simulator`);
     } else if (item.name1.endsWith('-Type')) {
       pending = null;
-      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule, inForeach, expansions, mapProcessors), file: item.file, line: item.line });
+      statements.push({ kind: 'typed', name: `${item.name1} ${item.name2 ?? ''}`.trim(), body: parseStatements(item, knownModule, inForeach, expansions), file: item.file, line: item.line });
     } else {
       pending = null;
       const resolved = knownModule(item.name1, item.file, item.line);
@@ -371,7 +361,6 @@ export interface ModuleOutcome { result: ModuleResult; messages: string[] }
 
 export interface UnlangHost {
   runModule(name: string, context: UnlangContext): ModuleOutcome;
-  mapRow?(processor: string, template: string, context: UnlangContext): ReadonlyMap<string, string> | 'fail' | null;
 }
 
 function sourceText(assignment: Assignment, context: UnlangContext): string {
@@ -498,25 +487,6 @@ export function run(statements: readonly Statement[], context: UnlangContext, ho
         results.push(result);
         if (inner.stopped) return { result: priorityResult(results), stopped: true };
       } else indent(`} # switch ${statement.text} = ${result}`);
-    } else if (statement.kind === 'map') {
-      indent(`map ${statement.processor} "${statement.query}" {`);
-      const row = host.mapRow === undefined ? 'fail' : host.mapRow(statement.processor, statement.query, context);
-      let created = 0;
-      if (row !== 'fail' && row !== null) {
-        for (const entry of statement.entries) {
-          const value = row.get(entry.column.toLowerCase());
-          if (value === undefined || value === '') continue;
-          const assigned = { ...entry.assignment, value: { kind: 'literal' as const, value } };
-          applyAssignment(context, assigned);
-          created += 1;
-          indent(sourceText(assigned, context), 1);
-        }
-      }
-      const result: ModuleResult = row === 'fail' ? 'fail' : created > 0 ? 'updated' : 'noop';
-      indent(`} # map ${statement.processor} = ${result}`);
-      context.lastResult = result;
-      results.push(result);
-      if (STOPPING.has(result)) return { result: priorityResult(results), stopped: true };
     } else if (statement.kind === 'update') {
       indent(`update ${statement.list} {`);
       for (const assignment of statement.assignments) {

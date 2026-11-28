@@ -1,22 +1,22 @@
 ============================================================
 RMAN debug transcript — rman-pitr-duplicate-phase2
-Generated: 2026-11-27T23:33:20.424Z
+Generated: 2026-11-28T02:06:34.191Z
 Topology:  db-pitr — Oracle PITRDB SHUTDOWN (session should auto-dispose)
 Total commands: 7
 ============================================================
 
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 27-NOV-2026 23:33:20
+  Recovery Manager: Release 19.0.0.0.0 - Production on 28-NOV-2026 02:06:34
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=2391497156)
+  connected to target database: ORCL (DBID=3227143152)
   
 
 
 --- [1] § 2.2 after shutdown — every verb against SHUTDOWN ---
 RMAN [1/7]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=2391497156)
+  connected to target database: ORCL (DBID=3227143152)
 
 RMAN [2/7]> SHOW ALL
   
@@ -74,28 +74,28 @@ RMAN [7/7]> LIST BACKUP
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ --------------------
-  4       Full    9.20M      DISK        00:00:01     27-NOV-2026 23:35:00
-          BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261127T233459
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_27/o1_mf_ncsnf_TAG20261127T233459_h5ywawul_.bkp
-    Control File Included: Ckp SCN: 1000319    Ckp time: 27-NOV-2026 23:35:00
-  5       Full    1.61G      DISK        00:00:33     27-NOV-2026 23:35:33
-          BP Key: 5   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261127T233500
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_27/o1_mf_nnndf_TAG20261127T233500_3dzhsck2_.bkp
+  4       Full    9.20M      DISK        00:00:01     28-NOV-2026 02:08:14
+          BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261128T020813
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_ncsnf_TAG20261128T020813_44s7h8uf_.bkp
+    Control File Included: Ckp SCN: 1000319    Ckp time: 28-NOV-2026 02:08:14
+  5       Full    1.61G      DISK        00:00:33     28-NOV-2026 02:08:47
+          BP Key: 5   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261128T020814
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_TAG20261128T020814_13sgh6yb_.bkp
     List of Datafiles in backup set 5
     File LV Type Ckp SCN    Ckp Time             Name
     ---- -- ---- ---------- -------------------- ------------------------------------------
-       1    Full 1000319    27-NOV-2026 23:35:00 /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1000319    27-NOV-2026 23:35:00 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1000319    27-NOV-2026 23:35:00 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1000319    27-NOV-2026 23:35:00 /u01/app/oracle/oradata/ORCL/users01.dbf
-  6       Full    1.61G      DISK        00:00:33     27-NOV-2026 23:36:06
-          BP Key: 6   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261127T233533
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_27/o1_mf_nnndf_TAG20261127T233533_xq3swliz_.bkp
+       1    Full 1000319    28-NOV-2026 02:08:14 /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1000319    28-NOV-2026 02:08:14 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1000319    28-NOV-2026 02:08:14 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1000319    28-NOV-2026 02:08:14 /u01/app/oracle/oradata/ORCL/users01.dbf
+  6       Full    1.61G      DISK        00:00:33     28-NOV-2026 02:09:20
+          BP Key: 6   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261128T020847
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_TAG20261128T020847_4g1s158t_.bkp
     List of Datafiles in backup set 6
     File LV Type Ckp SCN    Ckp Time             Name
     ---- -- ---- ---------- -------------------- ------------------------------------------
-       1    Full 1000321    27-NOV-2026 23:35:33 /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1000321    27-NOV-2026 23:35:33 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1000321    27-NOV-2026 23:35:33 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1000321    27-NOV-2026 23:35:33 /u01/app/oracle/oradata/ORCL/users01.dbf
+       1    Full 1000321    28-NOV-2026 02:08:47 /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1000321    28-NOV-2026 02:08:47 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1000321    28-NOV-2026 02:08:47 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1000321    28-NOV-2026 02:08:47 /u01/app/oracle/oradata/ORCL/users01.dbf
   

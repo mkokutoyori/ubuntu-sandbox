@@ -81,5 +81,20 @@ describe('Lab Lumiere Boutique', () => {
       useNetworkStore.getState().replaceTopology(result.deviceInstances, result.connections);
       expect(await failedChecks(byName())).toEqual([]);
     }, 300000);
+
+    it.skipIf(!existsSync(LAB_FILE))('keeps the named address objects and the policies that use them on every firewall', async () => {
+      const topology = JSON.parse(readFileSync(LAB_FILE, 'utf8')) as TopologyExport;
+      const result = await importTopology(topology);
+      const firewalls = [...result.deviceInstances.values()].filter((device) => device.getName().startsWith('FGT-'));
+      expect(firewalls).toHaveLength(4);
+      for (const firewall of firewalls) {
+        const addresses = await (firewall as unknown as { executeCommand(command: string): Promise<string> }).executeCommand('show firewall address');
+        expect(addresses, firewall.getName()).toContain('edit "HQ-INSIDE"');
+        expect(addresses, firewall.getName()).toContain('set subnet 10.10.0.0 255.255.0.0');
+        const policies = await (firewall as unknown as { executeCommand(command: string): Promise<string> }).executeCommand('show firewall policy');
+        expect(policies, firewall.getName()).not.toMatch(/set srcaddr "all"\n\s+set dstaddr "all"\n\s+set service "ALL"\n\s+set schedule "always"\n\s+set action accept\n\s+set nat disable/);
+        expect(policies, firewall.getName()).toMatch(/set srcaddr "(HQ|DR|AG\d)-[A-Z]+"/);
+      }
+    }, 300000);
   });
 });

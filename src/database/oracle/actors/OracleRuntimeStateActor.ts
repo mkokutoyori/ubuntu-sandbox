@@ -381,6 +381,14 @@ export class OracleRuntimeStateActor {
         }
       })),
 
+      this.bus.subscribe('oracle.archive-log.expired', scoped<{
+        deviceId: string; path: string;
+      }>((p) => {
+        for (const record of this.state.archivedLogs) {
+          if (record.name === p.path) record.expired = true;
+        }
+      })),
+
       this.bus.subscribe('oracle.service.event', scoped<{
         deviceId: string; name: string; kind: 'started' | 'stopped';
       }>((p) => {

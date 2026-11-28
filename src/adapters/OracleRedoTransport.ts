@@ -15,6 +15,11 @@ import type { HostCapableDevice } from '@/network';
 import { readArchiveDestinations } from '@/database/oracle/dataguard/ArchiveDestination';
 import { OracleNetCallStatus } from '@/network/oracle-net/wire/OracleNetCall';
 import { shipRedoOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
+import { renderRedoStream, type RedoRecord } from '@/database/oracle/storage/RedoStream';
+import type { SynchronousRedoAnswer } from '@/database/oracle/dataguard/SynchronousRedoPort';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+
+const ARCHIVE_DIRECTORY = ORACLE_CONFIG.ARCHIVELOG_DIR;
 
 export interface OracleRedoTransportCtx {
   resolveDevice(deviceId: string): Equipment | null;
@@ -87,6 +92,40 @@ export class OracleRedoTransport {
       }
       instance.recordTransportSuccess(dest.destId, journal.sequence, dest.dbUniqueName ?? dest.target);
     }
+  }
+
+  shipCommit(deviceId: string, changes: readonly RedoRecord[], scn: number): SynchronousRedoAnswer {
+    const db = this.ctx.resolveDatabase(deviceId);
+    const local = this.ctx.resolveDevice(deviceId);
+    if (!db || !local) return { destinations: 0, acknowledged: 0, error: null };
+    const instance = db.instance;
+    const destinations = readArchiveDestinations(instance.getAllParameters())
+      .filter((d) => d.kind === 'SERVICE' && d.state === 'ENABLE' && d.transport === 'SYNC' && d.validRole !== 'STANDBY_ROLE');
+    if (destinations.length === 0) return { destinations: 0, acknowledged: 0, error: null };
+    const corps = renderRedoStream(changes);
+    let acknowledged = 0;
+    let error: string | null = null;
+    for (const dest of destinations) {
+      const ouverture = this.ctx.dial(local as unknown as HostCapableDevice, dest.target);
+      if (!ouverture.ok || !ouverture.session) {
+        error = ouverture.error ?? 'ORA-12154: TNS:could not resolve the connect identifier specified';
+        instance.recordTransportFailure(dest.destId, error);
+        continue;
+      }
+      const reponse = shipRedoOverOracleNet(ouverture.session as never, {
+        thread: 1, sequence: 0, name: `${ARCHIVE_DIRECTORY}/standby_redo_${scn}.srl`, scn, body: corps,
+        fromDbUniqueName: instance.config.sid.toUpperCase(),
+      });
+      ouverture.session.close();
+      if (reponse.status === OracleNetCallStatus.Error) {
+        error = reponse.error;
+        instance.recordTransportFailure(dest.destId, reponse.error);
+        continue;
+      }
+      instance.recordSynchronousTransportSuccess(dest.destId);
+      acknowledged++;
+    }
+    return { destinations: destinations.length, acknowledged, error };
   }
 
   private corpsDuJournal(local: Equipment, path: string): string | null {

@@ -33,12 +33,22 @@ const L1_RMAN = ['RUN {', "  BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'QUOTIDIEN_
 const ARC_RMAN = ['RUN {', "  BACKUP ARCHIVELOG ALL DELETE INPUT TAG 'JOURNAUX';", '}'].join('\n');
 
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
+  sql('zero-clients', 'SELECT customer_id, full_name, city FROM shop.customers WHERE ROWNUM <= 3;', [/Awa Ndiaye/, /Douala/]),
+  sql('zero-instance', 'SELECT instance_name, status FROM v$instance;\nSELECT name, open_mode FROM v$database;', [/ORCL/, /OPEN/]),
+  oracle('zero-processus', PRD, 'ps -ef | grep ora_ | grep -v grep', [/ora_pmon/, /ora_smon/]),
+  oracle('zero-linux', PRD, `whoami\npwd\nid\nls -l ${DATAFILES}`, [/^oracle$/m, /uid=54321\(oracle\)/, /users01\.dbf/]),
+  root('zero-root-refuse', PRD, "whoami\nsqlplus -s / as sysdba <<'E'\nSELECT 1 FROM dual;\nE", [/^root$/m, /ORA-01031/], { forbids: [/1 row selected/] }),
+  sql('zero-sqlplus', "SHOW USER\nSELECT 'bonjour' AS message FROM dual;\nSELECT SYSDATE FROM dual;", [/USER is "SYS"/, /bonjour/]),
+  rman('zero-rman', 'LIST BACKUP SUMMARY;', [/no backup found in the repository/]),
+
   oracle('identite', PRD, 'id\nhostname', [/uid=54321\(oracle\)/, /ora-prd/]),
-  root('montage-sauvegarde', PRD, 'mount -a\nmount | grep backup\nls -ldn /backup', [/10\.10\.30\.20:\/srv\/backup\/rman on \/backup type nfs/, /54321 54321/]),
+  root('montage-sauvegarde', PRD, 'mount -a\nmount | grep backup\nls -ldn /backup\ndf -h /backup', [/10\.10\.30\.20:\/srv\/backup\/rman on \/backup type nfs/, /54321 54321/, /10\.10\.30\.20:\/srv\/backup\/rman\s+\S+\s+\S+\s+\S+\s+\d+% \/backup/]),
+  oracle('test-ecriture-sauvegarde', PRD, "touch /backup/ecriture-test\nstat -c '%n %y' /backup/ecriture-test\nsleep 3\ntouch /backup/ecriture-test\nstat -c '%n %y' /backup/ecriture-test\nrm /backup/ecriture-test", [/ecriture-test/]),
   sql('sante', '@/home/oracle/scripts/health.sql', [/SHOP_DATA/, /SHOP_IDX/, /NOARCHIVELOG/]),
   sql('identite-base', 'SELECT name, dbid, log_mode, open_mode FROM v$database;', [/ORCL\s+\d{6,}\s+NOARCHIVELOG/], { capture: { DBID: /ORCL\s+(\d{6,})\s+NOARCHIVELOG/ } }),
   sql('fichiers', 'SELECT file#, name FROM v$datafile ORDER BY 1;\nSELECT name FROM v$controlfile;\nSELECT group#, members, status FROM v$log;', [/shop_data01\.dbf/, /control01\.ctl/, /control02\.ctl/]),
 
+  rman('noarchivelog-refus', 'BACKUP DATABASE;', [/RMAN-06149: cannot BACKUP DATABASE in NOARCHIVELOG mode/], { forbids: [/piece handle/] }),
   sql('passage-archivelog', '@/home/oracle/scripts/03_archivelog.sql', [/Database log mode\s+Archive Mode/], { head: 4, tail: 9 }),
   sql('verif-archivelog', 'SELECT log_mode, force_logging FROM v$database;', [/ARCHIVELOG\s+YES/]),
 
@@ -69,6 +79,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   sql('donnees-du-jour', "UPDATE shop.orders SET status = 'PAID' WHERE status = 'NEW';\nCOMMIT;\nALTER SYSTEM SWITCH LOGFILE;\nSELECT status, COUNT(*) AS nb FROM shop.orders GROUP BY status ORDER BY 1;", [/PAID/]),
   oracle('niveau-1', PRD, `${SCRIPTS}/rman_job.sh l1\necho "code retour : $?"\ntail -3 ${LOGS}/l1.log`, [/code retour : 0/, /Finished backup/]),
   sql('donnees-apres-niveau-1', 'UPDATE shop.products SET stock = stock - 5 WHERE product_id = 1;\nCOMMIT;\nALTER SYSTEM SWITCH LOGFILE;\nSELECT stock FROM shop.products WHERE product_id = 1;', [/STOCK/, /\b115\b/]),
+  rman('crosscheck-journaux', 'CROSSCHECK ARCHIVELOG ALL;', [/validation succeeded for archived log/, /archived log file name=/], { head: 9, tail: 4 }),
   oracle('sauvegarde-journaux', PRD, `${SCRIPTS}/rman_job.sh arc\necho "code retour : $?"\ntail -3 ${LOGS}/arc.log`, [/code retour : 0/, /Finished backup/]),
   rman('liste-niveaux', 'LIST BACKUP SUMMARY;\nLIST ARCHIVELOG ALL;', [/B\s+0\s+A/, /B\s+1\s+A/, /B\s+A\s+A/, /specification does not match any archived log/]),
   oracle('planification', PRD, `(crontab -l 2>/dev/null; echo "0 2 * * 0 ${SCRIPTS}/rman_job.sh l0"; echo "0 2 * * 1-6 ${SCRIPTS}/rman_job.sh l1"; echo "0 */4 * * * ${SCRIPTS}/rman_job.sh arc") | crontab -\ncrontab -l`, [/rman_job\.sh l0/, /rman_job\.sh l1/, /rman_job\.sh arc/]),
@@ -76,7 +87,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 
   rman('validate', 'VALIDATE DATABASE;', [/validation complete/, /OK/], { head: 9, tail: 4 }),
   rman('restore-validate', 'RESTORE DATABASE VALIDATE;', [/validation complete/], { forbids: [/RMAN-06023/] }),
-  rman('crosscheck', 'CROSSCHECK BACKUP;\nCROSSCHECK ARCHIVELOG ALL;', [/Crosschecked \d+ objects/]),
+  rman('crosscheck', 'CROSSCHECK BACKUP;', [/crosschecked backup piece: found to be 'AVAILABLE'/, /Crosschecked \d+ objects/], { head: 10, tail: 4 }),
   rman('obsolete', 'REPORT OBSOLETE;\nDELETE OBSOLETE NOPROMPT;', [/recovery window of 7 days/, /no obsolete backups found/]),
 
   sql('a-avant', 'SELECT COUNT(*) AS commandes FROM shop.orders;', [/COMMANDES/, /\b12\b/]),
@@ -108,6 +119,10 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   rman('b-incarnations', 'LIST INCARNATION;', [/PARENT/, /CURRENT/]),
   rman('b-sauvegarde-apres', "BACKUP DATABASE PLUS ARCHIVELOG TAG 'APRES_PITR';", [/tag=APRES_PITR/, /Finished backup/]),
 
+  sql('sp-montage', 'SHUTDOWN IMMEDIATE\nSTARTUP MOUNT', [/Database mounted/]),
+  rman('sp-restauration', 'RESTORE DATABASE;', [/Finished restore/], { forbids: [/RMAN-06023/], head: 6, tail: 4 }),
+  sql('sp-recover', "RECOVER DATABASE UNTIL CANCEL;\nALTER DATABASE OPEN;\nALTER DATABASE OPEN RESETLOGS;\nSELECT COUNT(*) AS commandes FROM shop.orders;", [/Media recovery complete\./, /ORA-01589/, /Database altered/, /COMMANDES/]),
+
   root('acces-intrus', PRD, 'useradd -m stagiaire\nsudo -u stagiaire rman target /', [/RMAN-04005/, /ORA-01031/], { forbids: [/connected to target database/] }),
   sql('acces-audit', 'SELECT os_username, returncode FROM dba_audit_trail WHERE returncode = 1031;', [/stagiaire/, /1031/]),
   oracle('journal-alerte', PRD, `grep -i "failed sysdba logon" ${ALERT_LOG} | tail -2`, [/stagiaire/]),
@@ -118,8 +133,11 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   sql('dr-role', 'SELECT database_role, open_mode, log_mode FROM v$database;\nSELECT file#, name FROM v$datafile ORDER BY 1;', [/PHYSICAL STANDBY\s+MOUNTED\s+ARCHIVELOG/, /shop_data01\.dbf/], undefined, STB),
   sql('dr-expedition', "ALTER SYSTEM SET log_archive_dest_2='SERVICE=10.20.30.10:1521/ORCL ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=ORCL_STB' SCOPE=BOTH;\nALTER SYSTEM SET log_archive_dest_state_2=ENABLE SCOPE=BOTH;", [/System altered/]),
   sql('dr-application', 'ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION;', [/Database altered/], undefined, STB),
-  sql('dr-commande', "INSERT INTO shop.orders VALUES (3001, 2, SYSDATE, 'NEW', 42);\nCOMMIT;\nALTER SYSTEM SWITCH LOGFILE;\nSELECT dest_id, status, destination FROM v$archive_dest WHERE dest_id <= 2;", [/10\.20\.30\.10:1521\/ORCL/, /VALID/]),
-  sql('dr-lecture', 'SELECT COUNT(*) AS logs_appliques FROM v$archived_log WHERE applied = \'YES\';\nALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;\nALTER DATABASE OPEN READ ONLY;\nSELECT COUNT(*) AS commande_3001 FROM shop.orders WHERE order_id = 3001;', [/LOGS_APPLIQUES/, /COMMANDE_3001/, /READ ONLY|Database altered/], undefined, STB),
+  oracle('dr-broker', PRD, "dgmgrl / <<'E'\nCREATE CONFIGURATION 'lumiere_dg' AS PRIMARY DATABASE IS 'ORCL' CONNECT IDENTIFIER IS orcl;\nADD DATABASE 'ORCL_STB' AS CONNECT IDENTIFIER IS 10.20.30.10:1521/ORCL MAINTAINED AS PHYSICAL;\nENABLE CONFIGURATION;\nSHOW CONFIGURATION;\nE", [/Configuration "lumiere_dg" created/, /Database "ORCL_STB" added/, /Enabled\./, /SUCCESS/]),
+  oracle('dr-protection', PRD, "dgmgrl / <<'E'\nEDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;\nEDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='SYNC';\nEDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;\nSHOW CONFIGURATION;\nE", [/ORA-16627/, /Succeeded\./, /Protection Mode: MaxAvailability/]),
+  sql('dr-niveau', 'SELECT protection_mode, protection_level FROM v$database;', [/MAXIMUM AVAILABILITY\s+MAXIMUM AVAILABILITY/]),
+  sql('dr-commande', "INSERT INTO shop.orders VALUES (3001, 2, SYSDATE, 'NEW', 42);\nCOMMIT;\nALTER SYSTEM SWITCH LOGFILE;\nINSERT INTO shop.orders VALUES (3002, 3, SYSDATE, 'NEW', 17);\nCOMMIT;\nSELECT dest_id, status, destination FROM v$archive_dest WHERE dest_id <= 2;", [/10\.20\.30\.10:1521\/ORCL/, /VALID/]),
+  sql('dr-lecture', 'SELECT COUNT(*) AS logs_appliques FROM v$archived_log WHERE applied = \'YES\';\nALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;\nALTER DATABASE OPEN READ ONLY;\nSELECT COUNT(*) AS commande_3001 FROM shop.orders WHERE order_id = 3001;\nSELECT COUNT(*) AS commande_3002 FROM shop.orders WHERE order_id = 3002;', [/LOGS_APPLIQUES/, /COMMANDE_3001/, /COMMANDE_3002/, /READ ONLY|Database altered/], undefined, STB),
   sql('dr-sinistre', 'SHUTDOWN ABORT', [/ORACLE instance shut down/]),
-  sql('dr-bascule', 'SHUTDOWN IMMEDIATE\nSTARTUP MOUNT\nALTER DATABASE FAILOVER TO ORCL;\nALTER DATABASE OPEN;\nSELECT database_role, open_mode FROM v$database;\nSELECT COUNT(*) AS commande_3001 FROM shop.orders WHERE order_id = 3001;', [/PRIMARY\s+READ WRITE/, /COMMANDE_3001/], undefined, STB),
+  sql('dr-bascule', 'SHUTDOWN IMMEDIATE\nSTARTUP MOUNT\nALTER DATABASE FAILOVER TO ORCL;\nALTER DATABASE OPEN;\nSELECT database_role, open_mode FROM v$database;\nSELECT COUNT(*) AS commande_3001 FROM shop.orders WHERE order_id = 3001;\nSELECT COUNT(*) AS commande_3002 FROM shop.orders WHERE order_id = 3002;', [/PRIMARY\s+READ WRITE/, /COMMANDE_3001/, /COMMANDE_3002/], undefined, STB),
 ];

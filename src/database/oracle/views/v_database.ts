@@ -40,6 +40,8 @@ registerView({
         { name: 'FLASHBACK_ON', dataType: oracleVarchar2(18) },
         { name: 'CURRENT_SCN', dataType: oracleNumber(20) },
         { name: 'CHECKPOINT_CHANGE#', dataType: oracleNumber(20) },
+        { name: 'PROTECTION_MODE', dataType: oracleVarchar2(20) },
+        { name: 'PROTECTION_LEVEL', dataType: oracleVarchar2(20) },
       ],
       [[
         instance.getDbId(), instance.getActivationId(),
@@ -57,6 +59,7 @@ registerView({
         instance.forceLogging ? 'YES' : 'NO',
         instance.flashbackOn ? 'YES' : 'NO',
         instance.getCurrentScn(), instance.getCheckpointScn(),
+        instance.protectionMode, instance.protectionLevel,
       ]]
     );
   },

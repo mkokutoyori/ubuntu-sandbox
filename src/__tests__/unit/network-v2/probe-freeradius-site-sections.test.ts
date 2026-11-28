@@ -155,7 +155,7 @@ describe('the processing sections of a site', () => {
     const { target } = await lab();
     write(target, SITES, site(target).replace('\tauthorize {\n', '\tauthorize {\n\t\tmap &Reply-Message {\n\t\t}\n'));
     const error = (target.getRadiusd().checkConfig() as { error: string }).error;
-    expect(error).toMatch(/^\/etc\/freeradius\/3\.0\/sites-enabled\/default\[\d+\]: The unlang construct "map" is not implemented in this simulator$/);
+    expect(error).toMatch(/^\/etc\/freeradius\/3\.0\/sites-enabled\/default\[\d+\]: Failed to find "map" as a module or policy.$/);
   });
 
   it('a module the real server has and this one has not is refused naming it; an optional one (-ldap) is skipped', async () => {

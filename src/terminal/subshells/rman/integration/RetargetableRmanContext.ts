@@ -35,6 +35,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {
     return this._current.getInstanceState();
   }
+  isArchiveLogMode(): boolean { return this._current.isArchiveLogMode?.() ?? true; }
   isDatafileOffline(fileNo: number): boolean { return this._current.isDatafileOffline(fileNo); }
   setDatafileNeedsRecovery(fileNo: number, needsRecovery: boolean): void { this._current.setDatafileNeedsRecovery(fileNo, needsRecovery); }
   getRecoveryAreaUsedBytes(): number { return this._current.getRecoveryAreaUsedBytes(); }
@@ -48,6 +49,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   recordBackupPiece(piece: RecordedBackupPiece): void { this._current.recordBackupPiece(piece); }
   recordBackupPieceDeleted(handle: string): void { this._current.recordBackupPieceDeleted(handle); }
   recordArchivedLogDeleted(path: string): void { this._current.recordArchivedLogDeleted(path); }
+  recordArchivedLogExpired(path: string): void { this._current.recordArchivedLogExpired?.(path); }
   recordBlockCorruption(fileNo: number, blocks: number, type: BlockCorruptionType): void {
     this._current.recordBlockCorruption(fileNo, blocks, type);
   }

@@ -1,3 +1,4 @@
+import type { RadiusAttribute } from './types';
 import type { RadiusCode } from './types';
 
 export interface RadiusDeviceRef {
@@ -86,6 +87,7 @@ export interface RadiusAuthDecidedPayload extends RadiusDeviceRef {
   nasPort: number;
   callingStationId: string | number | null;
   precedingMessage?: string;
+  request?: readonly RadiusAttribute[];
 }
 
 export type RadiusDomainEvent =

@@ -9,6 +9,7 @@
 // singletons (Oracle instances, PKI CA registry, AD forest registry, …)
 // stay the responsibility of the tests that actually use them.
 import { __setSuperuserIsOsdba } from '@/network/devices/linux/OracleOsAuthentication';
+import { __setOpenNoarchivelogBackupAllowed } from '@/terminal/subshells/rman/job/NoarchivelogBackupPolicy';
 import { beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/deviceNameCounters';
@@ -24,6 +25,7 @@ import {
 } from '@/network/devices/inspection/InterfaceStatusView';
 
 __setSuperuserIsOsdba(true);
+__setOpenNoarchivelogBackupAllowed(true);
 
 beforeEach(() => {
   resetCounters();
@@ -71,4 +73,5 @@ beforeEach(() => {
   // `__setLegacyRouterPortCount(null)`.
   __setLegacyRouterPortCount(4);
   __setSuperuserIsOsdba(true);
+  __setOpenNoarchivelogBackupAllowed(true);
 });

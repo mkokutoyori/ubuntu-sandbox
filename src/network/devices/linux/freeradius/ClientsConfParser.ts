@@ -35,8 +35,14 @@ function pair(section: ConfSection, name: string): string | undefined {
   return section.pairs.find((candidate) => candidate.name === name)?.value;
 }
 
-function parseAddressSpec(text: string, netmask: number | null): { address: IPAddress | IPv6Address; prefix: number } | null {
+export type ClientNameResolver = (name: string) => string | null;
+
+const HOSTNAME = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$/;
+
+function parseAddressSpec(text: string, netmask: number | null, resolve?: ClientNameResolver): { address: IPAddress | IPv6Address; prefix: number } | null {
   const slash = text.indexOf('/');
+  const named = slash === -1 && IPAddress.tryParse(text) === null && IPv6Address.tryParse(text) === null && HOSTNAME.test(text) ? resolve?.(text) ?? null : null;
+  if (named !== null) return parseAddressSpec(named, netmask);
   const host = slash === -1 ? text : text.slice(0, slash);
   const v6 = IPv6Address.tryParse(host);
   if (v6 !== null) {
@@ -51,7 +57,7 @@ function parseAddressSpec(text: string, netmask: number | null): { address: IPAd
   return Number.isInteger(prefix) && prefix >= 0 && prefix <= 32 ? { address, prefix } : null;
 }
 
-export function readClientSections(sections: readonly ConfSection[], result: ParsedClients): void {
+export function readClientSections(sections: readonly ConfSection[], result: ParsedClients, resolve?: ClientNameResolver): void {
   for (const section of sections) {
     if (section.name1 !== 'client') continue;
     const where = `${section.file}[${section.line}]`;
@@ -62,7 +68,7 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
     let spec: { address: IPAddress | IPv6Address; prefix: number } | null;
     let longname: string;
     if (explicit !== undefined) {
-      spec = parseAddressSpec(explicit, netmask);
+      spec = parseAddressSpec(explicit, netmask, resolve);
       longname = explicit;
       const family = spec === null ? null : spec.address instanceof IPv6Address ? 6 : 4;
       if (spec !== null && ((pair(section, 'ipv4addr') !== undefined && family !== 4) || (pair(section, 'ipv6addr') !== undefined && family !== 6))) spec = null;
@@ -73,7 +79,7 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
     } else {
       result.warnings.push(`${where}: No 'ipaddr' or 'ipv4addr' or 'ipv6addr' field found in client ${name2}. Please fix your configuration`);
       result.warnings.push(`${where}: Support for old-style clients will be removed in a future release`);
-      spec = parseAddressSpec(name2, netmask);
+      spec = parseAddressSpec(name2, netmask, resolve);
       longname = name2;
       if (spec === null) {
         result.errors.push(`${where}: Failed parsing client name "${name2}" as ip address or hostname`);
@@ -128,14 +134,14 @@ export function readClientSections(sections: readonly ConfSection[], result: Par
   }
 }
 
-export function parseClientsConf(source: string, fileName: string, readFile: ConfFileReader = () => null): ParsedClients {
+export function parseClientsConf(source: string, fileName: string, readFile: ConfFileReader = () => null, resolve?: ClientNameResolver): ParsedClients {
   const result: ParsedClients = { clients: [], errors: [], warnings: [] };
   const parsed = parseFreeradiusConf(source, fileName, readFile);
   if ('error' in parsed) {
     result.errors.push(parsed.error);
     return result;
   }
-  readClientSections(parsed.root.sections, result);
+  readClientSections(parsed.root.sections, result, resolve);
   result.listSections = parsed.root.sections.filter((section) => section.name1 === 'clients' && section.name2 !== null);
   if (result.clients.length === 0 && result.errors.length === 0) {
     result.errors.push(`${fileName}: No "client" section found in client file`);

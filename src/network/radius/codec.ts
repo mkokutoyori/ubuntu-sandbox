@@ -60,7 +60,9 @@ function encodeAttribute(a: RadiusAttribute): Uint8Array {
   if (a.type === 'vendor-specific' && a.vendor) return encodeVsaAttribute(a.vendor, a.value);
   const def = RADIUS_DICTIONARY[a.type];
   if (!def) throw new Error(`encodeRadiusPacket: unknown attribute "${a.type}"`);
-  return tlv(def.type, encodeValue(def.valueType, a.value));
+  const body = encodeValue(def.valueType, a.value);
+  if (a.tag !== undefined && (def.valueType === 'tagged-integer' || def.valueType === 'tagged-string')) body[0] = a.tag & 0xff;
+  return tlv(def.type, body);
 }
 
 function encodeVsaAttribute(vendor: { id: number; type: number }, value: string | number): Uint8Array {
@@ -171,7 +173,10 @@ function decodeAttributes(bytes: Uint8Array): RadiusAttribute[] | RadiusDecodeEr
       attrs.push(decodeVsaAttribute(value));
     } else {
       const def = RADIUS_DICTIONARY_BY_TYPE.get(type);
-      if (def) attrs.push({ type: def.name, value: decodeValue(def.valueType, value) });
+      if (def) {
+        const tagged = (def.valueType === 'tagged-integer' || def.valueType === 'tagged-string') && value.length > 0 && value[0] >= 1 && value[0] <= 0x1f;
+        attrs.push({ type: def.name, value: decodeValue(def.valueType, value), ...(tagged ? { tag: value[0] } : {}) });
+      }
       // else: unrecognized attribute type — skip, don't fail the packet.
     }
     offset += length;

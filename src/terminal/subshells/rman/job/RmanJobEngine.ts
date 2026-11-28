@@ -17,6 +17,7 @@
  */
 
 
+import { openNoarchivelogBackupIsAllowed } from './NoarchivelogBackupPolicy';
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
@@ -176,6 +177,11 @@ export class RmanJobEngine implements IRmanJobEngine {
             : incLevel === 1    ? 'datafile-incremental-1'
               : 'datafile-full';
     const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
+
+    if (job.operation === 'BACKUP_DATABASE' && this._ctx.isArchiveLogMode?.() === false
+      && this._ctx.getInstanceState?.() === 'OPEN' && !openNoarchivelogBackupIsAllowed()) {
+      return err({ code: 'ERROR_STACK', message: 'RMAN-06149: cannot BACKUP DATABASE in NOARCHIVELOG mode' });
+    }
 
     const allDatafiles = this._ctx.getDatafiles();
     // Multi-fileNo : params.fileNo peut contenir "4" ou "1,2,3"
@@ -470,9 +476,9 @@ export class RmanJobEngine implements IRmanJobEngine {
     return out;
   }
 
-  private _restoreArchivedLogFromBackup(path: string): boolean {
+  private _restoreArchivedLogFromBackup(path: string): string | null {
     const snap = this._catalog.listAll();
-    if (snap.ok === false) return false;
+    if (snap.ok === false) return null;
     for (const set of snap.value.sets) {
       if (set.type !== 'ARCHIVELOG') continue;
       for (const piece of set.pieces) {
@@ -482,10 +488,10 @@ export class RmanJobEngine implements IRmanJobEngine {
         const body = image?.archivedLogs?.[path];
         if (body === undefined) continue;
         const written = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
-        if (written.ok) return true;
+        if (written.ok) return piece.path;
       }
     }
-    return false;
+    return null;
   }
 
   private _applyArchivedLogs(paths: ReadonlyArray<string>, untilScn?: number): void {
@@ -967,8 +973,14 @@ export class RmanJobEngine implements IRmanJobEngine {
           + ` with sequence 1 and starting SCN of ${this._restoredScn}`,
       });
     }
-    const absent = logs.filter(l =>
-      !this._ctx.vfs.fileExists(l.path) && !this._restoreArchivedLogFromBackup(l.path));
+    const restoredFrom = new Map<string, string>();
+    const absent = logs.filter(l => {
+      if (this._ctx.vfs.fileExists(l.path)) return false;
+      const piece = this._restoreArchivedLogFromBackup(l.path);
+      if (piece === null) return true;
+      restoredFrom.set(l.path, piece);
+      return false;
+    });
     if (absent.length > 0) {
       return err({
         code: 'RMAN_06053',
@@ -984,7 +996,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       const firstScn = log.firstScn > 0 ? log.firstScn : log.sequence;
       this._bus.emit({
         type: 'ARCHIVELOG_APPLIED', jobId: job.id,
-        thread: log.thread, sequence: log.sequence, path: log.path,
+        thread: log.thread, sequence: log.sequence, path: log.path, restoredFrom: restoredFrom.get(log.path),
         firstScn, nextScn: log.nextScn > firstScn ? log.nextScn : firstScn + 1,
       });
     }
@@ -1259,7 +1271,8 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (scope === 'ARCHIVELOG') {
       for (const log of this._archivedLogs()) {
         const present = this._ctx.vfs.fileExists(log.path);
-        if (present) available++; else expired++;
+        if (present) available++;
+        else { expired++; this._ctx.recordArchivedLogExpired?.(log.path); }
         this._bus.emit({
           type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '', kind: 'archived log',
           status: present ? 'AVAILABLE' : 'EXPIRED', path: log.path, thread: log.thread, sequence: log.sequence,

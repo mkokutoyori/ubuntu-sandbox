@@ -217,6 +217,10 @@ export interface OracleArchiveLogDeletedPayload extends OracleDeviceRef {
   path: string;
 }
 
+export interface OracleArchiveLogExpiredPayload extends OracleDeviceRef {
+  path: string;
+}
+
 export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
   fileNo: number;
   blocks: number;
@@ -629,6 +633,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.backup.recorded';                   payload: OracleBackupRecordedPayload }
   | { topic: 'oracle.backup.deleted';                    payload: OracleBackupDeletedPayload }
   | { topic: 'oracle.archive-log.deleted';               payload: OracleArchiveLogDeletedPayload }
+  | { topic: 'oracle.archive-log.expired';               payload: OracleArchiveLogExpiredPayload }
   | { topic: 'oracle.block-corruption.found';            payload: OracleBlockCorruptionFoundPayload }
   | { topic: 'oracle.block-corruption.repaired';         payload: OracleBlockCorruptionRepairedPayload }
   | { topic: 'oracle.backup-corruption.found';           payload: OracleBackupCorruptionFoundPayload }
