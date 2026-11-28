@@ -1,3 +1,4 @@
+import { __setSuperuserIsOsdba } from './network/devices/linux/OracleOsAuthentication';
 import { useNetworkStore } from './store/networkStore';
 import { getFaultRegistry } from './network/faults';
 import { loadAllDevicePlatforms } from './network/devices/platformLoaders';
@@ -9,6 +10,7 @@ function drivenByAutomation(): boolean {
 
 export async function installE2eHandles(): Promise<void> {
   const target = window as unknown as Record<string, unknown>;
+  if (drivenByAutomation()) __setSuperuserIsOsdba(true);
   if (drivenByAutomation() && !platformsStayLazy()) {
     await loadAllDevicePlatforms();
   }

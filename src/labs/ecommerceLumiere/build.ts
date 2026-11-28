@@ -151,6 +151,8 @@ export async function buildLumiere(): Promise<LumiereLab> {
   await publishWebSite(bench, payment, 'Passerelle de paiement (simulee)');
   await bench.writeFile(pcHq, '/etc/netplan/01-lab.yaml', ['network:', '  version: 2', '  ethernets:', '    eth0:', '      dhcp4: true'].join('\n'), '600');
   await bench.shell(pcHq, 'sudo netplan apply', 'sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf');
+  await createOracleOsUser(bench, oraPrd);
+  await createOracleOsUser(bench, oraStb);
   await createOracleOsUser(bench, bkpHq);
   await createOracleOsUser(bench, bkpDr);
   await configureBackupServer(bench, bkpHq, BACKUP_EXPORT, [`${HQ.db.network}/24(rw,sync,no_root_squash)`, `${DR.db.network}/24(ro,sync,no_root_squash)`]);

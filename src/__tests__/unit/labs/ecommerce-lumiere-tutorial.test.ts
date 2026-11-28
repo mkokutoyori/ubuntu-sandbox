@@ -14,6 +14,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { __setSuperuserIsOsdba } from '@/network/devices/linux/OracleOsAuthentication';
 import { __setLegacyRouterPortCount, __setInterfacesBootShutdown } from '@/network/devices/inspection/InterfaceStatusView';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
 import type { Equipment } from '@/network';
@@ -27,6 +28,7 @@ const README_FILE = resolve(process.cwd(), 'labs/ecommerce-lumiere/tutoriel-orac
 
 beforeEach(() => {
   __setLegacyRouterPortCount(null);
+  __setSuperuserIsOsdba(false);
   __setInterfacesBootShutdown(true);
   resetAllOracleInstances();
   resetCounters();

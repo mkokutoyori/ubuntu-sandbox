@@ -69,7 +69,7 @@ export const LUMIERE_CHECKS: readonly LabCheck[] = [
     lesson: 'FreeRADIUS sur LOG-HQ authentifie les administrateurs reseau et renvoie leur niveau de privilege IOS (Cisco-AVPair).',
   },
   {
-    id: 'oracle-shop-schema', device: 'ORA-PRD', shell: 'bash', command: 'sqlplus -s / as sysdba @/home/oracle/scripts/health.sql',
+    id: 'oracle-shop-schema', device: 'ORA-PRD', shell: 'bash', command: 'su - oracle -c "sqlplus -s / as sysdba @/home/oracle/scripts/health.sql"',
     expects: [/SHOP_DATA/, /SHOP_IDX/, /NOARCHIVELOG/, /SHIPPED/],
     lesson: 'La base ORCL du siege porte le schema SHOP (tablespaces SHOP_DATA et SHOP_IDX, 12 commandes) : elle est livree en mode NOARCHIVELOG, ce que le tutoriel corrigera.',
   },
