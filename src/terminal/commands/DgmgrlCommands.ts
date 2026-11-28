@@ -137,12 +137,31 @@ function roleOf(instance: OracleInstance, state: BrokerState, name: string): str
 
 const FSFO_MODE_LABEL = (state: BrokerState): string => (state.protectionMode === 'MAXIMUM PERFORMANCE' ? 'Enabled' : 'Enabled in Zero Data Loss Mode');
 
-function showConfiguration(device: HostCapableDevice, instance: OracleInstance, state: BrokerState): string[] {
+function configurationProperties(state: BrokerState): [string, string][] {
+  return [
+    ['FastStartFailoverThreshold', String(state.fsfo.threshold)],
+    ['OperationTimeout', '30'],
+    ['TraceLevel', 'USER'],
+    ['FastStartFailoverLagLimit', '30'],
+    ['CommunicationTimeout', '180'],
+    ['ObserverReconnect', '0'],
+    ['FastStartFailoverAutoReinstate', 'TRUE'],
+    ['FastStartFailoverPmyShutdown', 'TRUE'],
+    ['BystandersFollowRoleChange', 'ALL'],
+    ['ObserverOverride', 'FALSE'],
+    ['ExternalDestination1', ''],
+    ['ExternalDestination2', ''],
+    ['PrimaryLostWriteAction', 'CONTINUE'],
+    ['ConfigurationWideServiceName', `${state.primaryName}_CFG`],
+  ];
+}
+
+function showConfiguration(device: HostCapableDevice, instance: OracleInstance, state: BrokerState, verbose = false): string[] {
   const needing = [...state.members].some(([, member]) => member.needsReinstate === true);
   const lacking = new Set([...state.members].filter(([name, member]) => member.needsReinstate !== true && standbyLogsOf(device, instance, state, name) === 0).map(([name]) => name));
   const lines = ['', `Configuration - ${state.configurationName.toLowerCase()}`, '', `  Protection Mode: ${PROTECTION_LABEL[instance.databaseRole === 'PRIMARY' ? instance.protectionMode : state.protectionMode]}`, '  Members:'];
   for (const name of [state.primaryName, ...state.members.keys()]) {
-    lines.push(`  ${name} - ${roleLabel(roleOf(instance, state, name))}`);
+    lines.push(`  ${name} - ${verbose && state.fsfo.enabled && name === activeTarget(state) ? '(*) ' : ''}${roleLabel(roleOf(instance, state, name))}`);
     if (state.members.get(name)?.needsReinstate === true) lines.push(`    Error: ${ORACLE_ERRORS.ORA_16661}`);
     if (lacking.has(name)) lines.push(`    Error: ${SRL_MESSAGE}`);
     if (state.fsfo.enabled && state.observers.length === 0 && (name === state.primaryName || state.members.has(name))) lines.push(`    Warning: ${ORACLE_ERRORS.ORA_16819}`);
@@ -151,7 +170,15 @@ function showConfiguration(device: HostCapableDevice, instance: OracleInstance, 
     const dest = readArchiveDestinations(instance.getAllParameters()).find((d) => d.kind === 'SERVICE' && (d.dbUniqueName ?? d.target) === name);
     return dest !== undefined && instance.getTransportState(dest.destId)?.status === 'ERROR';
   });
+  if (verbose) {
+    if (state.fsfo.enabled) lines.push('  (*) Fast-Start Failover target');
+    lines.push('  Properties:', ...configurationProperties(state).map(([property, value]) => `    ${property.padEnd(32)}= '${value}'`));
+  }
   lines.push(state.fsfo.enabled ? `Fast-Start Failover: ${FSFO_MODE_LABEL(state)}` : 'Fast-Start Failover: DISABLED');
+  if (verbose && state.fsfo.enabled) {
+    const summary = showFastStartFailover(instance, state).slice(1);
+    lines.push(...summary.slice(0, summary.indexOf('Configurable Failover Conditions')).filter((line) => !/^ {2}(Protection Mode|Ping Interval|Ping Retry):/.test(line)));
+  }
   const unobserved = state.fsfo.enabled && state.observers.length === 0;
   lines.push('', 'Configuration Status:');
   if (!state.enabled) lines.push('DISABLED');
@@ -332,7 +359,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     instance.dataGuard.removeStandby(name);
     return [`Succeeded.`];
   }
-  if (upper === 'SHOW CONFIGURATION' || upper === 'SHOW CONFIGURATION VERBOSE') return showConfiguration(device, instance, state);
+  if (upper === 'SHOW CONFIGURATION' || upper === 'SHOW CONFIGURATION VERBOSE') return showConfiguration(device, instance, state, upper.endsWith('VERBOSE'));
   const show = /^SHOW\s+DATABASE\s+(?:VERBOSE\s+)?('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (show) return showDatabase(device, instance, state, unquote(show[1]).toUpperCase());
   const edit = /^EDIT\s+DATABASE\s+('[^']*'|"[^"]*"|\S+)\s+SET\s+PROPERTY\s+LogXptMode\s*=\s*('[^']*'|"[^"]*"|\S+)$/i.exec(text);

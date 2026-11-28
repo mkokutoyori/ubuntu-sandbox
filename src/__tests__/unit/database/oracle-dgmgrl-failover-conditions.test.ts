@@ -7,7 +7,9 @@
  * Evalue : une condition numerique est comparee aux lignes ORA-nnnnn que la primaire ecrit dans son journal d'alerte APRES l'activation ; a la sonde suivante l'observateur bascule sans attendre le seuil
  * (`Shutdown Primary: TRUE` : la primaire est arretee). NON evalue, enregistre dans TODO.md : les conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
  *
- * Discrimine par `git stash push -- src/terminal src/database src/adapters` : 3 cas tombent sur 5 ; passent avant comme apres le temoin (une erreur NON listee ne bascule pas) et le cas structurel (une erreur ecrite AVANT l'activation ne compte pas, rien ne bascule dans les deux etats).
+ * SHOW CONFIGURATION VERBOSE (page SHOW CONFIGURATION, exemple 2) : cible FSFO marquee `(*)`, liste `Properties:` puis resume du FSFO ; le mot etait accepte et ignore.
+ *
+ * Discrimine par `git stash push -- src/terminal src/database src/adapters` : 3 des 5 premiers cas tombent sans les conditions, et les 2 derniers (VERBOSE) tombent sans la forme detaillee ; sur 7 ; passent avant comme apres le temoin (une erreur NON listee ne bascule pas) et le cas structurel (une erreur ecrite AVANT l'activation ne compte pas, rien ne bascule dans les deux etats).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
@@ -102,5 +104,28 @@ describe('configurable fast-start failover conditions', () => {
     dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION 240;');
     scheduler.advance(20000);
     expect(roleOf(lab.dr)).not.toContain('PRIMARY');
+  });
+
+  it('SHOW CONFIGURATION VERBOSE adds the properties, the target mark and the fast-start failover summary', () => {
+    configured();
+    dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;', 'EDIT CONFIGURATION SET PROPERTY FastStartFailoverThreshold=90;');
+    const plain = dgmgrl(lab.prod, 'SHOW CONFIGURATION;');
+    const verbose = dgmgrl(lab.prod, 'SHOW CONFIGURATION VERBOSE;');
+    expect(plain).not.toContain('Properties:');
+    expect(verbose).toMatch(/ORCL_STB - \(\*\) Physical standby database/);
+    expect(verbose).toContain('(*) Fast-Start Failover target');
+    expect(verbose).toMatch(/FastStartFailoverThreshold\s+= '90'/);
+    expect(verbose).toMatch(/ConfigurationWideServiceName\s+= 'ORCL_CFG'/);
+    expect(verbose).toMatch(/Threshold:\s+90 seconds/);
+    expect(verbose).toMatch(/Active Target:\s+ORCL_STB/);
+    expect(verbose.indexOf('Properties:')).toBeLessThan(verbose.indexOf('Fast-Start Failover: Enabled'));
+  });
+
+  it('VERBOSE without fast-start failover shows the properties and DISABLED', () => {
+    configured();
+    const verbose = dgmgrl(lab.prod, 'SHOW CONFIGURATION VERBOSE;');
+    expect(verbose).toContain('Properties:');
+    expect(verbose).toContain('Fast-Start Failover: DISABLED');
+    expect(verbose).not.toContain('(*)');
   });
 });
