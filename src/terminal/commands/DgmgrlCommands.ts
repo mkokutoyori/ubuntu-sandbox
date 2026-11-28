@@ -25,22 +25,46 @@ const IDENTITY = { osUser: 'oracle', osGroup: 'dba', hostname: 'primary', termin
 interface BrokerState {
   created: boolean;
   enabled: boolean;
+  configurationName: string;
+  primaryName: string;
+  self: string;
+  protectionMode: ProtectionMode;
   members: Map<string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }>;
 }
 
-const brokers = new Map<string, BrokerState>();
+const CONFIG_PARAMETER = '_dg_broker_config';
+
+const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', self: '', protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
 
 function stateOf(instance: OracleInstance): BrokerState {
-  const key = instance.config.sid.toUpperCase() + ':' + instance.getDbId();
-  let state = brokers.get(key);
-  if (state === undefined) {
-    state = { created: false, enabled: false, members: new Map() };
-    brokers.set(key, state);
-  }
-  return state;
+  const stored = instance.getParameter(CONFIG_PARAMETER);
+  if (stored === undefined || stored === '') return emptyState();
+  const parsed = JSON.parse(stored) as Omit<BrokerState, 'members'> & { members: [string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }][] };
+  return { ...parsed, members: new Map(parsed.members) };
 }
 
-export function __resetBrokers(): void { brokers.clear(); }
+function serialize(state: BrokerState, self: string): string {
+  return JSON.stringify({ ...state, self, members: [...state.members] });
+}
+
+function save(device: HostCapableDevice, instance: OracleInstance, state: BrokerState, formerMembers: ReadonlyMap<string, { identifier: string }>): string[] {
+  state.protectionMode = instance.protectionMode;
+  state.self = state.primaryName;
+  instance.setParameter(CONFIG_PARAMETER, serialize(state, state.primaryName), 'BOTH');
+  const cleared = serialize(emptyState(), '');
+  const failures: string[] = [];
+  const recipients = new Map<string, string>([...formerMembers].map(([name, member]) => [name, member.identifier]));
+  for (const [name, member] of state.members) recipients.set(name, member.identifier);
+  for (const [name, identifier] of recipients) {
+    const sent = remoteExecute(device, identifier, [`ALTER SYSTEM SET "${CONFIG_PARAMETER}"='${state.members.has(name) ? serialize(state, name) : cleared}' SCOPE=BOTH`]);
+    if (sent.ok === false) failures.push(`Error: ${sent.error}`);
+  }
+  return failures;
+}
+
+const MUTATING = /^(CREATE|ADD|ENABLE|DISABLE|REMOVE|EDIT)\b/i;
+
+export function __resetBrokers(): void { /* the configuration lives in each instance's parameters */ }
 
 const unquote = (text: string): string => text.trim().replace(/^['"]|['"]$/g, '');
 
@@ -70,12 +94,14 @@ function roleLabel(role: string): string {
   return role === 'PRIMARY' ? 'Primary database' : 'Physical standby database';
 }
 
+function roleOf(instance: OracleInstance, state: BrokerState, name: string): string {
+  if (instance.databaseRole === 'PRIMARY') return name === state.self ? 'PRIMARY' : 'PHYSICAL STANDBY';
+  return name === state.primaryName && name !== state.self ? 'PRIMARY' : 'PHYSICAL STANDBY';
+}
+
 function showConfiguration(instance: OracleInstance, state: BrokerState): string[] {
-  const dg = instance.dataGuard;
-  const primary = instance.config.sid.toUpperCase();
-  const lines = ['', `Configuration - ${dg.configurationName.toLowerCase()}`, '', `  Protection Mode: ${PROTECTION_LABEL[instance.protectionMode]}`, '  Members:'];
-  lines.push(`  ${primary} - ${roleLabel(instance.databaseRole)}`);
-  for (const name of state.members.keys()) lines.push(`    ${name} - ${roleLabel('PHYSICAL STANDBY')}`);
+  const lines = ['', `Configuration - ${state.configurationName.toLowerCase()}`, '', `  Protection Mode: ${PROTECTION_LABEL[instance.databaseRole === 'PRIMARY' ? instance.protectionMode : state.protectionMode]}`, '  Members:'];
+  for (const name of [state.primaryName, ...state.members.keys()]) lines.push(`  ${name} - ${roleLabel(roleOf(instance, state, name))}`);
   const failing = [...state.members.keys()].some((name) => {
     const dest = readArchiveDestinations(instance.getAllParameters()).find((d) => d.kind === 'SERVICE' && (d.dbUniqueName ?? d.target) === name);
     return dest !== undefined && instance.getTransportState(dest.destId)?.status === 'ERROR';
@@ -88,17 +114,16 @@ function showConfiguration(instance: OracleInstance, state: BrokerState): string
 }
 
 function showDatabase(instance: OracleInstance, state: BrokerState, name: string): string[] {
-  const primary = instance.config.sid.toUpperCase();
   const member = state.members.get(name);
-  if (name !== primary && member === undefined) return [`ORA-16541: member is not enabled`];
-  const role = name === primary ? instance.databaseRole : 'PHYSICAL STANDBY';
+  if (name !== state.primaryName && member === undefined) return [`ORA-16541: member is not enabled`];
+  const role = roleOf(instance, state, name);
   const lines = ['', `Database - ${name}`, '', `  Role:               ${role}`];
   lines.push(`  Intended State:     ${role === 'PRIMARY' ? 'TRANSPORT-ON' : 'APPLY-ON'}`);
   if (role !== 'PRIMARY') {
     lines.push('  Transport Lag:      0 seconds (computed 0 seconds ago)', '  Apply Lag:          0 seconds (computed 0 seconds ago)');
     lines.push(`  Log Transport Mode: ${member?.logXptMode ?? 'ASYNC'}`);
   }
-  lines.push('  Instance(s):', `    ${primary}`, '', 'Database Status:', state.enabled ? 'SUCCESS' : 'DISABLED');
+  lines.push('  Instance(s):', `    ${instance.config.sid.toUpperCase()}`, '', 'Database Status:', state.enabled ? 'SUCCESS' : 'DISABLED');
   return lines;
 }
 
@@ -122,7 +147,9 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     const primary = unquote(create[2]).toUpperCase();
     if (primary !== instance.config.sid.toUpperCase()) return [`Error: ORA-16642: DB_UNIQUE_NAME mismatch`];
     state.created = true;
-    instance.dataGuard.configurationName = unquote(create[1]).toUpperCase();
+    state.configurationName = unquote(create[1]).toUpperCase();
+    state.primaryName = primary;
+    instance.dataGuard.configurationName = state.configurationName;
     return [`Configuration "${unquote(create[1]).toLowerCase()}" created with primary database "${primary}"`];
   }
   if (!/^(CREATE|ADD|ENABLE|DISABLE|REMOVE|SHOW|EDIT|SWITCHOVER|FAILOVER)\b/.test(upper)) return [`DGM-16905: syntax error at or near "${text.split(/\s+/)[0]}"`];
@@ -236,7 +263,14 @@ export function runDgmgrl(device: HostCapableDevice, args: readonly string[], st
   const state = stateOf(instance);
   for (const command of commandsOf(args, stdin)) {
     out.push(`DGMGRL> ${command.replace(/;$/, '')}`);
+    const mutating = MUTATING.test(command.trim());
+    if (mutating && instance.databaseRole !== 'PRIMARY') {
+      out.push('Error: this simulator runs broker changes from the primary database only');
+      continue;
+    }
+    const formerMembers = new Map(state.members);
     out.push(...execute(device, instance, state, command));
+    if (mutating) out.push(...save(device, instance, state, formerMembers));
   }
   return out.join('\n');
 }

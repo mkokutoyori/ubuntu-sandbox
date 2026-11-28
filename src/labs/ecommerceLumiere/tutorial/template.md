@@ -1115,6 +1115,12 @@ Sur `ORA-STB` :
 
 👀 **Lire la sortie.** `Configuration Status: SUCCESS` : tout va bien. S'il y avait une erreur de transport, tu la lirais ici (`ORA-16778`) : c'est la commande de **supervision** d'un environnement Data Guard.
 
+Le broker **copie la configuration sur chaque membre** : tu peux la relire depuis la **standby**, sur `ORA-STB`, et obtenir la même réponse.
+
+{{step:dr-broker-standby}}
+
+👀 **Lire la sortie.** Même configuration, vue de l'autre côté : `ORCL` est la primaire, `ORCL_STB` la standby. Si le site de production brûle, c'est ici que tu retrouves *qui était qui*. Les **changements** (`EDIT`, `ADD`...) se tapent, eux, sur la primaire.
+
 ### 14.6 Les trois modes de protection
 
 🧠 **Comprendre.** Entre la **vitesse** et la **certitude de ne rien perdre**, Data Guard offre trois modes :
@@ -1332,7 +1338,7 @@ dgmgrl /  ->  CREATE CONFIGURATION 'nom' AS PRIMARY DATABASE IS 'ORCL' CONNECT I
 
 ## 19. Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas
 
-Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **sept écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **sept sont fermés** et le tutoriel s'appuie sur leur comportement réel :
+Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **huit écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **huit sont fermés** et le tutoriel s'appuie sur leur comportement réel :
 
 | Ce qu'un vrai Oracle fait | Où le voir |
 |---|---|
@@ -1343,12 +1349,13 @@ Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce 
 | `CROSSCHECK BACKUP` couvre toutes les sauvegardes (journaux compris) ; `CROSSCHECK ARCHIVELOG ALL` contrôle les **fichiers** de journaux | chapitres 8 et 9 |
 | Un journal archivé retiré du disque est signalé par `CROSSCHECK ARCHIVELOG ALL` et marqué `EXPIRED` (`STATUS = 'X'` dans `V$ARCHIVED_LOG`) | exercice 7 |
 | Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | chapitre 14 |
+| La configuration du broker est **répliquée** sur chaque membre : `SHOW CONFIGURATION` la lit aussi sur la standby | chapitre 14 |
 
 Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| Le broker (`dgmgrl`) | La configuration est **répliquée** sur tous les membres, et le broker surveille et peut basculer seul (*fast-start failover*) | La configuration vit sur la base à laquelle on est connecté ; pas d'observateur |
+| Le broker (`dgmgrl`) | Le broker surveille et peut basculer seul (*fast-start failover*, avec un **observateur**), et accepte les changements depuis n'importe quel membre | Pas d'observateur ni de bascule automatique ; les changements (`EDIT`, `ADD`...) se tapent sur la **primaire** (une standby les refuse en le disant) |
 | Temps de sauvegarde | Dépend du disque et du réseau | Durées simulées (indicatives) |
 
 ---
