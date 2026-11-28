@@ -3,7 +3,7 @@
  * l'observateur s'arrete ; `IN BACKGROUND` rend la main tout de suite. Le simulateur lui-meme est synchrone, mais le terminal sait tenir un travail d'avant-plan (ping, journalctl -f, freeradius -X) :
  * le plan de flux `dgmgrl` execute la commande, puis garde le terminal jusqu'a Ctrl-C ou jusqu'a l'arret de l'observateur (STOP OBSERVER). Un `&` ou un tube laisse le shell gerer la tache.
  *
- * Releve AVANT : la commande rendait toujours la main.
+ * Releve AVANT : la commande rendait toujours la main. La page (19c, START OBSERVER) ajoute que dans un script les commandes qui suivent un START OBSERVER d'avant-plan sont ignorees, la session devenant l'observateur : un script ne peut pas bloquer le simulateur, mais il n'execute plus rien apres.
  *
  * Discrimine par `git stash push -- src/terminal src/database src/adapters` ; le temoin IN BACKGROUND (rend la main) passe avant et apres.
  */
@@ -96,5 +96,21 @@ describe('START OBSERVER holds the terminal', () => {
     lab.sql(lab.prod, 'SHUTDOWN ABORT;');
     scheduler.advance(45000);
     expect(roleOf(lab.dr)).toContain('PRIMARY');
+  });
+
+  it('in a script the commands after a foreground START OBSERVER are ignored, as the page says', () => {
+    configured();
+    dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;');
+    const out = dgmgrl(lab.prod, 'START OBSERVER obs1;', 'SHOW OBSERVER;');
+    expect(out).toContain('Observer started');
+    expect(out).not.toContain('DGMGRL> SHOW OBSERVER');
+  });
+
+  it('TEMOIN — after IN BACKGROUND the next commands of the script do run', () => {
+    configured();
+    dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;');
+    const out = dgmgrl(lab.prod, 'START OBSERVER obs1 IN BACKGROUND;', 'SHOW OBSERVER;');
+    expect(out).toContain('Submitted command');
+    expect(out).toContain('DGMGRL> SHOW OBSERVER');
   });
 });

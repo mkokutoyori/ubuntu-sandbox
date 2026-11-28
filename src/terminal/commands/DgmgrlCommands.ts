@@ -607,7 +607,9 @@ export function runDgmgrl(device: HostCapableDevice, args: readonly string[], st
     out.push(`DGMGRL> ${command.replace(/;$/, '')}`);
     const started = START_OBSERVER.exec(command.trim());
     if (started !== null) {
-      out.push(...launchObserverFor(device, instance, remote, started));
+      const launched = launchObserverFor(device, instance, remote, started);
+      out.push(...launched);
+      if (launched.includes('Observer started')) break;
       continue;
     }
     out.push(...(instance !== null ? runBrokerCommand(device, instance, command) : viaDatabase(device, remote!, command)));
