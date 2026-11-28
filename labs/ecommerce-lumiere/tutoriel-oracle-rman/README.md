@@ -151,14 +151,14 @@ ORCL READ WRITE
 
 ```
 [oracle@ora-prd ~]$ ps -ef | grep ora_ | grep -v grep
-oracle        45       1  0 08:26 ?        00:00:00 ora_pmon_orcl
-oracle        46       1  0 08:26 ?        00:00:00 ora_smon_orcl
-oracle        47       1  0 08:26 ?        00:00:00 ora_dbw0_orcl
-oracle        48       1  0 08:26 ?        00:00:00 ora_lgwr_orcl
-oracle        49       1  0 08:26 ?        00:00:00 ora_ckpt_orcl
-oracle        50       1  0 08:26 ?        00:00:00 ora_reco_orcl
-oracle        51       1  0 08:26 ?        00:00:00 ora_mmon_orcl
-oracle        52       1  0 08:26 ?        00:00:00 ora_mmnl_orcl
+oracle        45       1  0 09:01 ?        00:00:00 ora_pmon_orcl
+oracle        46       1  0 09:01 ?        00:00:00 ora_smon_orcl
+oracle        47       1  0 09:01 ?        00:00:00 ora_dbw0_orcl
+oracle        48       1  0 09:01 ?        00:00:00 ora_lgwr_orcl
+oracle        49       1  0 09:01 ?        00:00:00 ora_ckpt_orcl
+oracle        50       1  0 09:01 ?        00:00:00 ora_reco_orcl
+oracle        51       1  0 09:01 ?        00:00:00 ora_mmon_orcl
+oracle        52       1  0 09:01 ?        00:00:00 ora_mmnl_orcl
 ```
 
 `pmon` surveille les sessions, `smon` répare après un arrêt brutal, `dbw` écrit les données sur le disque, `lgwr` écrit le **journal** des modifications, `ckpt` marque les points de contrôle. Tu n'as pas à retenir ces noms : retiens qu'**une instance = des processus** qu'on voit avec `ps`.
@@ -214,16 +214,16 @@ oracle
 uid=54321(oracle) gid=54321(oinstall) groups=54321(oinstall),54322(dba)
 [oracle@ora-prd ~]$ ls -l /u01/app/oracle/oradata/ORCL
 total 40
--rw-r--r-- 1 oracle oinstall 549 Nov 28 08:26 control01.ctl
--rw-r--r-- 1 oracle oinstall 549 Nov 28 08:26 control02.ctl
--rw-r--r-- 1 oracle oinstall  33 Nov 28 08:26 redo01.log
--rw-r--r-- 1 oracle oinstall  33 Nov 28 08:26 redo02.log
--rw-r--r-- 1 oracle oinstall  33 Nov 28 08:26 redo03.log
--rw-r--r-- 1 oracle oinstall  44 Nov 28 08:26 sysaux01.dbf
--rw-r--r-- 1 oracle oinstall  44 Nov 28 08:26 system01.dbf
--rw-r--r-- 1 oracle oinstall  42 Nov 28 08:26 temp01.dbf
--rw-r--r-- 1 oracle oinstall  42 Nov 28 08:26 undotbs01.dbf
--rw-r--r-- 1 oracle oinstall  43 Nov 28 08:26 users01.dbf
+-rw-r--r-- 1 oracle oinstall 549 Nov 28 09:01 control01.ctl
+-rw-r--r-- 1 oracle oinstall 549 Nov 28 09:01 control02.ctl
+-rw-r--r-- 1 oracle oinstall  33 Nov 28 09:01 redo01.log
+-rw-r--r-- 1 oracle oinstall  33 Nov 28 09:01 redo02.log
+-rw-r--r-- 1 oracle oinstall  33 Nov 28 09:01 redo03.log
+-rw-r--r-- 1 oracle oinstall  44 Nov 28 09:01 sysaux01.dbf
+-rw-r--r-- 1 oracle oinstall  44 Nov 28 09:01 system01.dbf
+-rw-r--r-- 1 oracle oinstall  42 Nov 28 09:01 temp01.dbf
+-rw-r--r-- 1 oracle oinstall  42 Nov 28 09:01 undotbs01.dbf
+-rw-r--r-- 1 oracle oinstall  43 Nov 28 09:01 users01.dbf
 ```
 
 👀 **Lire la sortie.** `uid=54321(oracle)` : son numéro. `groups=…(oinstall),…(dba)` : ses groupes. **`dba`** (*database administrators*) est le groupe qui donne le droit de se connecter à la base **comme administrateur, sans mot de passe** (on y revient en 1.4). Plus bas, le contenu du dossier de la base : `.dbf` (données), `.ctl` (contrôle), `redo*.log` (journaux). Les tailles sont minuscules, car le simulateur représente les fichiers : seul leur **rôle** compte.
@@ -303,7 +303,7 @@ Deux chiffres mesurent une bonne stratégie, **fixés par l'entreprise** (pas pa
 
 ```
 RMAN> LIST BACKUP SUMMARY;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 List of Backups
 ===============
@@ -482,7 +482,7 @@ ora-prd
 [root@ora-prd ~]# mount | grep backup
 10.10.30.20:/srv/backup/rman on /backup type nfs (rw,relatime)
 [root@ora-prd ~]# ls -ldn /backup
-drwxrwxr-x 2 54321 54321 4096 Nov 28 08:26 /backup
+drwxrwxr-x 2 54321 54321 4096 Nov 28 09:01 /backup
 [root@ora-prd ~]# df -h /backup
 Filesystem                    Size  Used Avail Use% Mounted on
 10.10.30.20:/srv/backup/rman   48G  8.3M   48G   1% /backup
@@ -501,11 +501,11 @@ Un dernier test, en tant qu'`oracle`, que le volume est bien **accessible en éc
 ```
 [oracle@ora-prd ~]$ touch /backup/ecriture-test
 [oracle@ora-prd ~]$ stat -c '%n %y' /backup/ecriture-test
-/backup/ecriture-test 2026-11-28 08:26:13.000000000 +0000
+/backup/ecriture-test 2026-11-28 09:01:30.000000000 +0000
 [oracle@ora-prd ~]$ sleep 3
 [oracle@ora-prd ~]$ touch /backup/ecriture-test
 [oracle@ora-prd ~]$ stat -c '%n %y' /backup/ecriture-test
-/backup/ecriture-test 2026-11-28 08:26:16.000000000 +0000
+/backup/ecriture-test 2026-11-28 09:01:33.000000000 +0000
 [oracle@ora-prd ~]$ rm /backup/ecriture-test
 ```
 
@@ -569,12 +569,12 @@ Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Pr
 SQL> SELECT name, dbid, log_mode, open_mode FROM v$database;
 NAME       DBID LOG_MODE     OPEN_MODE
 ---- ---------- ------------ ----------
-ORCL 1267145066 NOARCHIVELOG READ WRITE
+ORCL 2216383458 NOARCHIVELOG READ WRITE
 
 1 row selected.
 ```
 
-👀 **Lire la sortie.** `ORCL` est le nom de la base ; le nombre à côté est le DBID : ici `1267145066`.
+👀 **Lire la sortie.** `ORCL` est le nom de la base ; le nombre à côté est le DBID : ici `2216383458`.
 
 ✅ **À retenir.** **Note le DBID avant d'en avoir besoin.** Le jour où tu en auras besoin, la base ne pourra plus te le dire.
 
@@ -639,9 +639,9 @@ Premier réflexe d'un débutant : sauvegarder tout de suite. Essayons, **base ou
 
 ```
 RMAN> BACKUP DATABASE;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting backup at 28-NOV-2026 08:26:16
+Starting backup at 28-NOV-2026 09:01:33
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting full datafile backup set
@@ -651,7 +651,7 @@ channel ORA_DISK_1: backing up database
 RMAN-00571: ===========================================================
 RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
 RMAN-00571: ===========================================================
-RMAN-03002: failure of backup command at 28-NOV-2026 08:26:16
+RMAN-03002: failure of backup command at 28-NOV-2026 09:01:33
 RMAN-06149: cannot BACKUP DATABASE in NOARCHIVELOG mode
 ```
 
@@ -730,7 +730,7 @@ ARCHIVELOG YES
 
 ```
 RMAN> SHOW ALL;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 RMAN configuration parameters for database with db_unique_name ORCL are:
 CONFIGURE RETENTION POLICY TO REDUNDANCY 1;
@@ -760,7 +760,7 @@ RMAN> CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
 RMAN> CONFIGURE CONTROLFILE AUTOBACKUP ON;
 RMAN> CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/backup/cf_%F';
 RMAN> CONFIGURE CHANNEL DEVICE TYPE DISK FORMAT '/backup/%d_%T_%U.bkp';
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 new RMAN configuration parameters are successfully stored
 new RMAN configuration parameters are successfully stored
@@ -780,7 +780,7 @@ On relit pour **vérifier** que la configuration a été prise en compte :
 ```
 RMAN> SHOW RETENTION POLICY;
 RMAN> SHOW CONTROLFILE AUTOBACKUP FORMAT;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF 7 DAYS;
 
@@ -810,35 +810,35 @@ CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/backup/cf_%F';
 
 ```
 RMAN> BACKUP DATABASE PLUS ARCHIVELOG TAG 'PREMIERE';
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting backup at 28-NOV-2026 08:26:16
+Starting backup at 28-NOV-2026 09:01:33
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting full datafile backup set
 channel ORA_DISK_1: specifying datafile(s) in backup set
 channel ORA_DISK_1: backing up database
-piece handle=/backup/ORCL_20261128_01tp7e3s_1_1.bkp tag=PREMIERE
+piece handle=/backup/ORCL_20261128_01tp7fql_1_1.bkp tag=PREMIERE
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:39
-Finished backup at 28-NOV-2026 08:26:55
+Finished backup at 28-NOV-2026 09:02:12
 
-Starting backup at 28-NOV-2026 08:26:55
+Starting backup at 28-NOV-2026 09:02:12
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=101 device type=DISK
 channel ORA_DISK_1: starting archived log backup set
 channel ORA_DISK_1: specifying archived log(s) in backup set
-piece handle=/backup/ORCL_20261128_02tp7e4v_1_1.bkp tag=TAG20261128T082655
+piece handle=/backup/ORCL_20261128_02tp7fro_1_1.bkp tag=TAG20261128T090212
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:39
-Finished backup at 28-NOV-2026 08:27:34
+Finished backup at 28-NOV-2026 09:02:51
 
-Starting backup at 28-NOV-2026 08:27:34
+Starting backup at 28-NOV-2026 09:02:51
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=102 device type=DISK
 channel ORA_DISK_1: starting full datafile backup set
 including current control file in backup set
-piece handle=/backup/cf_c-1267145066-20261128-03 tag=AUTOBACKUP
+piece handle=/backup/cf_c-2216383458-20261128-03 tag=AUTOBACKUP
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-Finished backup at 28-NOV-2026 08:27:35
+Finished backup at 28-NOV-2026 09:02:52
 ```
 
 👀 **Lire la sortie.** Lis-la comme un journal de bord :
@@ -857,15 +857,15 @@ Finished backup at 28-NOV-2026 08:27:35
 RMAN> LIST BACKUP SUMMARY;
 RMAN> REPORT SCHEMA;
 RMAN> REPORT NEED BACKUP;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 List of Backups
 ===============
 Key     TY LV S Device Type Completion Time      #Pieces #Copies Compressed Tag
 ------- -- -- - ----------- -------------------- ------- ------- ---------- ------------------
-1       B  F  A DISK        28-NOV-2026 08:26:55 1       1       NO         PREMIERE
-2       B  A  A DISK        28-NOV-2026 08:27:34 1       1       NO         TAG20261128T082655
-3       B  F  A DISK        28-NOV-2026 08:27:35 1       1       NO         AUTOBACKUP
+1       B  F  A DISK        28-NOV-2026 09:02:12 1       1       NO         PREMIERE
+2       B  A  A DISK        28-NOV-2026 09:02:51 1       1       NO         TAG20261128T090212
+3       B  F  A DISK        28-NOV-2026 09:02:52 1       1       NO         AUTOBACKUP
 
 Report of database schema for database with db_unique_name ORCL
 
@@ -899,9 +899,9 @@ File Days  Name
 ```
 [root@bkp-hq ~]# ls -ln /srv/backup/rman
 total 280
--rw-r--r-- 1 54321 54321   3645 Nov 28 08:26 cf_c-1267145066-20261128-03
--rw-r--r-- 1 54321 54321 276574 Nov 28 08:26 ORCL_20261128_01tp7e3s_1_1.bkp
--rw-r--r-- 1 54321 54321     45 Nov 28 08:26 ORCL_20261128_02tp7e4v_1_1.bkp
+-rw-r--r-- 1 54321 54321   3645 Nov 28 09:01 cf_c-2216383458-20261128-03
+-rw-r--r-- 1 54321 54321 276574 Nov 28 09:01 ORCL_20261128_01tp7fql_1_1.bkp
+-rw-r--r-- 1 54321 54321     45 Nov 28 09:01 ORCL_20261128_02tp7fro_1_1.bkp
 ```
 
 👀 **Lire la sortie.** Les pièces `ORCL_….bkp` et les trois `cf_c-….` sont là, avec le propriétaire **54321 / 54321** : c'est bien `oracle` d'`ORA-PRD` qui les a créées, **à travers le réseau** (NFSv3 sur le port 2049, trames réelles). C'est la raison pour laquelle on sauvegarde en `oracle` et non en `root` : en root, les pièces appartiendraient à `root` sur le serveur de sauvegarde.
@@ -915,9 +915,9 @@ SQL> SELECT handle, status FROM v$backup_piece;
 SQL> SELECT session_key, input_type, status FROM v$rman_backup_job_details;
 HANDLE                                 STATUS
 -------------------------------------- ------
-/backup/ORCL_20261128_01tp7e3s_1_1.bkp A
-/backup/ORCL_20261128_02tp7e4v_1_1.bkp A
-/backup/cf_c-1267145066-20261128-03    A
+/backup/ORCL_20261128_01tp7fql_1_1.bkp A
+/backup/ORCL_20261128_02tp7fro_1_1.bkp A
+/backup/cf_c-2216383458-20261128-03    A
 
 3 rows selected.
 
@@ -991,14 +991,14 @@ X
 [oracle@ora-prd ~]$ chmod 750 /home/oracle/scripts/rman_job.sh
 [oracle@ora-prd ~]$ ls -l /home/oracle/scripts
 total 32
--rw-r--r-- 1 oracle oinstall 1540 Nov 28 08:26 01_schema.sql
--rw-r--r-- 1 oracle oinstall 3018 Nov 28 08:26 02_seed.sql
--rw-r--r-- 1 oracle oinstall  133 Nov 28 08:26 03_archivelog.sql
--rw-r--r-- 1 oracle oinstall   61 Nov 28 08:27 arc.rman
--rw-r--r-- 1 oracle oinstall  314 Nov 28 08:26 health.sql
--rw-r--r-- 1 oracle oinstall   65 Nov 28 08:27 l0.rman
--rw-r--r-- 1 oracle oinstall   66 Nov 28 08:27 l1.rman
--rwxr-x--- 1 oracle oinstall  166 Nov 28 08:27 rman_job.sh
+-rw-r--r-- 1 oracle oinstall 1540 Nov 28 09:01 01_schema.sql
+-rw-r--r-- 1 oracle oinstall 3018 Nov 28 09:01 02_seed.sql
+-rw-r--r-- 1 oracle oinstall  133 Nov 28 09:01 03_archivelog.sql
+-rw-r--r-- 1 oracle oinstall   61 Nov 28 09:02 arc.rman
+-rw-r--r-- 1 oracle oinstall  314 Nov 28 09:01 health.sql
+-rw-r--r-- 1 oracle oinstall   65 Nov 28 09:02 l0.rman
+-rw-r--r-- 1 oracle oinstall   66 Nov 28 09:02 l1.rman
+-rwxr-x--- 1 oracle oinstall  166 Nov 28 09:02 rman_job.sh
 ```
 
 👀 **Lire la sortie.** `rman target / cmdfile=… log=…` exécute un fichier de commandes **sans intervention** ; `$?` (le **code retour**) vaut **0 si tout va bien**. C'est lui que l'ordonnanceur et la supervision regardent.
@@ -1012,9 +1012,9 @@ total 32
 [oracle@ora-prd ~]$ echo "code retour : $?"
 code retour : 0
 [oracle@ora-prd ~]$ tail -4 /home/oracle/logs/l0.log
-piece handle=/backup/cf_c-1267145066-20261128-05 tag=AUTOBACKUP
+piece handle=/backup/cf_c-2216383458-20261128-05 tag=AUTOBACKUP
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-Finished backup at 28-NOV-2026 08:28:15
+Finished backup at 28-NOV-2026 09:03:32
 ```
 
 On modifie ensuite des données (les commandes `NEW` passent en `PAID`) et on **force l'archivage** du journal courant :
@@ -1046,7 +1046,7 @@ Puis le niveau 1, qui est **quasi instantané** par rapport au niveau 0 : il ne 
 code retour : 0
 [oracle@ora-prd ~]$ tail -3 /home/oracle/logs/l1.log
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-Finished backup at 28-NOV-2026 08:28:18
+Finished backup at 28-NOV-2026 09:03:35
 ```
 
 Une dernière modification, **après** le niveau 1 (le stock de la lampe passe de 120 à 115, une vente). Elle ne sera dans **aucune sauvegarde de fichier de données**, seulement dans les journaux. **C'est ce que le chapitre 10 utilisera pour montrer à quoi servent les journaux** :
@@ -1077,9 +1077,9 @@ STOCK
 
 ```
 RMAN> CROSSCHECK ARCHIVELOG ALL;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting crosscheck at 28-NOV-2026 08:28:18
+Starting crosscheck at 28-NOV-2026 09:03:35
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 validation succeeded for archived log
@@ -1087,7 +1087,7 @@ archived log file name=/u01/app/oracle/archivelog/1_1_arc.arc thread=1 sequence=
 validation succeeded for archived log
 archived log file name=/u01/app/oracle/archivelog/1_2_arc.arc thread=1 sequence=2
 Crosschecked 2 objects
-Finished crosscheck at 28-NOV-2026 08:28:18
+Finished crosscheck at 28-NOV-2026 09:03:35
 ```
 
 👀 **Lire la sortie.** `validation succeeded for archived log` suivi de `archived log file name=…` : le fichier est là. (Un fichier absent donnerait `validation failed for archived log`, et le journal serait marqué `EXPIRED`.)
@@ -1100,7 +1100,7 @@ Puis on sauvegarde les journaux **et on supprime ceux qui sont sauvegardés** (`
 code retour : 0
 [oracle@ora-prd ~]$ tail -3 /home/oracle/logs/arc.log
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-Finished backup at 28-NOV-2026 08:28:59
+Finished backup at 28-NOV-2026 09:04:15
 ```
 
 ⚠️ **Piège.** Sans `DELETE INPUT`, la zone d'archivage **se remplit** et la base **se bloque** (`ORA-00257`) quand elle ne peut plus archiver. C'est l'**incident de production le plus banal** d'Oracle.
@@ -1108,21 +1108,21 @@ Finished backup at 28-NOV-2026 08:28:59
 ```
 RMAN> LIST BACKUP SUMMARY;
 RMAN> LIST ARCHIVELOG ALL;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 List of Backups
 ===============
 Key     TY LV S Device Type Completion Time      #Pieces #Copies Compressed Tag
 ------- -- -- - ----------- -------------------- ------- ------- ---------- ------------------
-1       B  F  A DISK        28-NOV-2026 08:26:55 1       1       NO         PREMIERE
-2       B  A  A DISK        28-NOV-2026 08:27:34 1       1       NO         TAG20261128T082655
-3       B  F  A DISK        28-NOV-2026 08:27:35 1       1       NO         AUTOBACKUP
-4       B  0  A DISK        28-NOV-2026 08:28:14 1       1       NO         DIMANCHE_L0
-5       B  F  A DISK        28-NOV-2026 08:28:15 1       1       NO         AUTOBACKUP
-6       B  1  A DISK        28-NOV-2026 08:28:17 1       1       NO         QUOTIDIEN_L1
-7       B  F  A DISK        28-NOV-2026 08:28:18 1       1       NO         AUTOBACKUP
-8       B  A  A DISK        28-NOV-2026 08:28:58 1       1       NO         JOURNAUX
-9       B  F  A DISK        28-NOV-2026 08:28:59 1       1       NO         AUTOBACKUP
+1       B  F  A DISK        28-NOV-2026 09:02:12 1       1       NO         PREMIERE
+2       B  A  A DISK        28-NOV-2026 09:02:51 1       1       NO         TAG20261128T090212
+3       B  F  A DISK        28-NOV-2026 09:02:52 1       1       NO         AUTOBACKUP
+4       B  0  A DISK        28-NOV-2026 09:03:31 1       1       NO         DIMANCHE_L0
+5       B  F  A DISK        28-NOV-2026 09:03:32 1       1       NO         AUTOBACKUP
+6       B  1  A DISK        28-NOV-2026 09:03:34 1       1       NO         QUOTIDIEN_L1
+7       B  F  A DISK        28-NOV-2026 09:03:35 1       1       NO         AUTOBACKUP
+8       B  A  A DISK        28-NOV-2026 09:04:14 1       1       NO         JOURNAUX
+9       B  F  A DISK        28-NOV-2026 09:04:15 1       1       NO         AUTOBACKUP
 
 specification does not match any archived log in the repository
 ```
@@ -1153,9 +1153,9 @@ specification does not match any archived log in the repository
 
 ```
 [root@log-hq ~]# grep rman-backup /var/log/syslog
-Nov 28 08:28:15 ora-prd rman-backup: job=l0 code=0
-Nov 28 08:28:18 ora-prd rman-backup: job=l1 code=0
-Nov 28 08:28:59 ora-prd rman-backup: job=arc code=0
+Nov 28 09:03:32 ora-prd rman-backup: job=l0 code=0
+Nov 28 09:03:35 ora-prd rman-backup: job=l1 code=0
+Nov 28 09:04:15 ora-prd rman-backup: job=arc code=0
 ```
 
 👀 **Lire la sortie.** `ora-prd` : la machine émettrice. `job=l0 code=0` : quel travail, avec quel résultat. **C'est la trace centrale de la chaîne de sauvegarde** : une supervision n'a qu'à chercher `code=` différent de `0`. Le lab configure cet envoi (`*.* @10.10.10.40:514`) sur toutes les machines Oracle, sauvegarde et web.
@@ -1188,9 +1188,9 @@ Nov 28 08:28:59 ora-prd rman-backup: job=arc code=0
 
 ```
 RMAN> VALIDATE DATABASE;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting validate at 28-NOV-2026 08:28:59
+Starting validate at 28-NOV-2026 09:04:15
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting validation of database
@@ -1201,30 +1201,30 @@ List of Datafiles
 6    OK     0              12799        12800           1000334
 File Name: /u01/app/oracle/oradata/ORCL/shop_idx01.dbf
 channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-Finished validate at 28-NOV-2026 08:28:59
+Finished validate at 28-NOV-2026 09:04:15
 ```
 
 **2. RMAN pourrait-il restaurer ?** Il lit **toutes les pièces nécessaires** et vérifie qu'elles sont lisibles et cohérentes, sans rien écrire :
 
 ```
 RMAN> RESTORE DATABASE VALIDATE;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting restore at 28-NOV-2026 08:28:59
+Starting restore at 28-NOV-2026 09:04:15
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting datafile backup set restore
-channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_01tp7e3s_1_1.bkp
-channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_02tp7e4v_1_1.bkp
-channel ORA_DISK_1: reading from backup piece /backup/cf_c-1267145066-20261128-03
-channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_04tp7e5z_1_1.bkp
-channel ORA_DISK_1: reading from backup piece /backup/cf_c-1267145066-20261128-05
-channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_06tp7e73_1_1.bkp
-channel ORA_DISK_1: reading from backup piece /backup/cf_c-1267145066-20261128-07
-channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_08tp7e76_1_1.bkp
-channel ORA_DISK_1: reading from backup piece /backup/cf_c-1267145066-20261128-09
+channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_01tp7fql_1_1.bkp
+channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_02tp7fro_1_1.bkp
+channel ORA_DISK_1: reading from backup piece /backup/cf_c-2216383458-20261128-03
+channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_04tp7fss_1_1.bkp
+channel ORA_DISK_1: reading from backup piece /backup/cf_c-2216383458-20261128-05
+channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_06tp7ftw_1_1.bkp
+channel ORA_DISK_1: reading from backup piece /backup/cf_c-2216383458-20261128-07
+channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_08tp7ftz_1_1.bkp
+channel ORA_DISK_1: reading from backup piece /backup/cf_c-2216383458-20261128-09
 channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-Finished restore at 28-NOV-2026 08:28:59
+Finished restore at 28-NOV-2026 09:04:16
 ```
 
 C'est **le test à mettre dans ta supervision**.
@@ -1233,21 +1233,21 @@ C'est **le test à mettre dans ta supervision**.
 
 ```
 RMAN> CROSSCHECK BACKUP;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting crosscheck at 28-NOV-2026 08:28:59
+Starting crosscheck at 28-NOV-2026 09:04:16
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 crosschecked backup piece: found to be 'AVAILABLE'
-backup piece handle=/backup/ORCL_20261128_01tp7e3s_1_1.bkp RECID=1 STAMP=1227860815
+backup piece handle=/backup/ORCL_20261128_01tp7fql_1_1.bkp RECID=1 STAMP=1227862932
 crosschecked backup piece: found to be 'AVAILABLE'
-backup piece handle=/backup/ORCL_20261128_02tp7e4v_1_1.bkp RECID=2 STAMP=1227860854
+backup piece handle=/backup/ORCL_20261128_02tp7fro_1_1.bkp RECID=2 STAMP=1227862971
 crosschecked backup piece: found to be 'AVAILABLE'
 [... 11 lignes omises ...]
 crosschecked backup piece: found to be 'AVAILABLE'
-backup piece handle=/backup/cf_c-1267145066-20261128-09 RECID=9 STAMP=1227860939
+backup piece handle=/backup/cf_c-2216383458-20261128-09 RECID=9 STAMP=1227863055
 Crosschecked 9 objects
-Finished crosscheck at 28-NOV-2026 08:28:59
+Finished crosscheck at 28-NOV-2026 09:04:16
 ```
 
 👀 **Lire la sortie.** `CROSSCHECK BACKUP` compare **toutes les sauvegardes** que RMAN connaît — fichiers de données **et** journaux — avec ce qu'il y a vraiment sur le disque : une pièce effacée à la main passerait en `EXPIRED`. (Le `CROSSCHECK ARCHIVELOG ALL` du chapitre 8 contrôle autre chose : les **fichiers** de journaux.)
@@ -1257,7 +1257,7 @@ Enfin, la **durée de vie** : la politique de rétention décide ce qui est **ob
 ```
 RMAN> REPORT OBSOLETE;
 RMAN> DELETE OBSOLETE NOPROMPT;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 RMAN retention policy will be applied to the command
 RMAN retention policy is set to recovery window of 7 days
@@ -1266,13 +1266,13 @@ Type                 Key    Completion Time    Filename/Handle
 -------------------- ------ ------------------ --------------------
 no obsolete backups found
 
-Starting delete at 28-NOV-2026 08:28:59
+Starting delete at 28-NOV-2026 09:04:16
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 RMAN retention policy will be applied to the command
 using channel ORA_DISK_1
 no obsolete backups found
-Finished delete at 28-NOV-2026 08:28:59
+Finished delete at 28-NOV-2026 09:04:16
 ```
 
 `REPORT OBSOLETE` liste ce que la fenêtre de 7 jours permet de supprimer ; `DELETE OBSOLETE` le supprime. Tout est « récent » ici : rien n'est obsolète.
@@ -1375,17 +1375,17 @@ L'**ouverture** échoue seulement parce qu'un fichier manque. Et c'est exactemen
 ```
 RMAN> RESTORE DATAFILE 5;
 RMAN> RECOVER DATAFILE 5;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting restore at 28-NOV-2026 08:28:59
+Starting restore at 28-NOV-2026 09:04:16
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting datafile 5 restore
 channel ORA_DISK_1: restoring datafile 00005 to /u01/app/oracle/oradata/ORCL/shop_data01.dbf
 channel ORA_DISK_1: restore complete, elapsed time: 00:00:04
-Finished restore at 28-NOV-2026 08:29:03
+Finished restore at 28-NOV-2026 09:04:20
 
-Starting recover at 28-NOV-2026 08:29:03
+Starting recover at 28-NOV-2026 09:04:20
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=101 device type=DISK
 starting media recovery
@@ -1393,19 +1393,19 @@ recovering datafile 5
 channel ORA_DISK_1: starting archived log restore to default destination
 channel ORA_DISK_1: restoring archived log
 archived log thread=1 sequence=1
-channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_08tp7e76_1_1.bkp
+channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_08tp7ftz_1_1.bkp
 channel ORA_DISK_1: restored backup piece 1
 channel ORA_DISK_1: restore complete, elapsed time: 00:00:01
 archived log file name=/u01/app/oracle/archivelog/1_1_arc.arc thread=1 sequence=1
 channel ORA_DISK_1: starting archived log restore to default destination
 channel ORA_DISK_1: restoring archived log
 archived log thread=1 sequence=2
-channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_08tp7e76_1_1.bkp
+channel ORA_DISK_1: reading from backup piece /backup/ORCL_20261128_08tp7ftz_1_1.bkp
 channel ORA_DISK_1: restored backup piece 1
 channel ORA_DISK_1: restore complete, elapsed time: 00:00:01
 archived log file name=/u01/app/oracle/archivelog/1_2_arc.arc thread=1 sequence=2
 media recovery complete, elapsed time: 00:00:01
-Finished recover at 28-NOV-2026 08:29:04
+Finished recover at 28-NOV-2026 09:04:21
 ```
 
 👀 **Lire la sortie.** `restoring datafile 00005` : le fichier est recopié. `starting archived log restore` / `reading from backup piece` : les journaux avaient été supprimés du disque après leur sauvegarde, RMAN les **ressort de la sauvegarde** ; `media recovery complete` : les journaux sont rejoués. Aucune ligne `RMAN-06054` (journal manquant) : la chaîne est complète.
@@ -1472,17 +1472,17 @@ ORA-01110: data file 5: '/u01/app/oracle/oradata/ORCL/shop_data01.dbf'
 ```
 RMAN> RESTORE TABLESPACE shop_data;
 RMAN> RECOVER TABLESPACE shop_data;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting restore at 28-NOV-2026 08:29:04
+Starting restore at 28-NOV-2026 09:04:21
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting tablespace SHOP_DATA restore
 channel ORA_DISK_1: restoring datafile 00005 to /u01/app/oracle/oradata/ORCL/shop_data01.dbf
 channel ORA_DISK_1: restore complete, elapsed time: 00:00:04
-Finished restore at 28-NOV-2026 08:29:08
+Finished restore at 28-NOV-2026 09:04:25
 
-Starting recover at 28-NOV-2026 08:29:08
+Starting recover at 28-NOV-2026 09:04:25
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=101 device type=DISK
 starting media recovery
@@ -1490,7 +1490,7 @@ recovering tablespace SHOP_DATA
 archived log for thread 1 with sequence 1 is already on disk as file /u01/app/oracle/archivelog/1_1_arc.arc
 archived log for thread 1 with sequence 2 is already on disk as file /u01/app/oracle/archivelog/1_2_arc.arc
 media recovery complete, elapsed time: 00:00:01
-Finished recover at 28-NOV-2026 08:29:09
+Finished recover at 28-NOV-2026 09:04:26
 ```
 
 ```
@@ -1544,7 +1544,7 @@ SQL> SELECT dbid FROM v$database;
 SQL> SELECT name FROM v$controlfile;
       DBID
 ----------
-1267145066
+2216383458
 
 1 row selected.
 
@@ -1594,24 +1594,24 @@ ORA-00205: error in identifying control file, check alert log for more info
 🔧 **Manipuler.**
 
 ```
-RMAN> SET DBID 1267145066;
+RMAN> SET DBID 2216383458;
 RMAN> SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '/backup/cf_%F';
 RMAN> RESTORE CONTROLFILE FROM AUTOBACKUP;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 executing command: SET DBID
 executing command: SET CONTROLFILE AUTOBACKUP FORMAT
 
-Starting restore at 28-NOV-2026 08:29:09
+Starting restore at 28-NOV-2026 09:04:26
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 
 channel ORA_DISK_1: looking for AUTOBACKUP on day: 20261128
-channel ORA_DISK_1: AUTOBACKUP found: /backup/cf_c-1267145066-20261128-09
-channel ORA_DISK_1: restoring control file from AUTOBACKUP /backup/cf_c-1267145066-20261128-09
+channel ORA_DISK_1: AUTOBACKUP found: /backup/cf_c-2216383458-20261128-09
+channel ORA_DISK_1: restoring control file from AUTOBACKUP /backup/cf_c-2216383458-20261128-09
 channel ORA_DISK_1: control file restore from AUTOBACKUP complete
 output file name=/u01/app/oracle/oradata/ORCL/control01.ctl
-Finished restore at 28-NOV-2026 08:29:09
+Finished restore at 28-NOV-2026 09:04:26
 ```
 
 👀 **Lire la sortie.** `AUTOBACKUP found: /backup/cf_c-<DBID>-<date>-<n>` : RMAN a trouvé **la plus récente**. Puis `control file restore from AUTOBACKUP complete` et `output file name=…/control01.ctl` : le fichier de contrôle est refait à sa place (le second est recréé à partir du premier).
@@ -1636,16 +1636,16 @@ ORCL ARCHIVELOG
 
 ```
 RMAN> RECOVER DATABASE;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting recover at 28-NOV-2026 08:29:09
+Starting recover at 28-NOV-2026 09:04:26
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 starting media recovery
 archived log for thread 1 with sequence 1 is already on disk as file /u01/app/oracle/archivelog/1_1_arc.arc
 archived log for thread 1 with sequence 2 is already on disk as file /u01/app/oracle/archivelog/1_2_arc.arc
 media recovery complete, elapsed time: 00:00:01
-Finished recover at 28-NOV-2026 08:29:10
+Finished recover at 28-NOV-2026 09:04:27
 ```
 
 ### L'ouverture : `RESETLOGS`
@@ -1677,42 +1677,42 @@ COMMANDES
 ```
 RMAN> LIST INCARNATION;
 RMAN> BACKUP DATABASE PLUS ARCHIVELOG TAG 'POST_RESETLOGS';
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 List of Database Incarnations
 =============================
 DB Key  Inc Key DB Name  DB ID            STATUS  Reset SCN  Reset Time
 ------- ------- -------- ---------------- ------- ---------- ----------
-1       1       ORCL     1267145066       PARENT  1          2026-11-28
-1       2       ORCL     1267145066       CURRENT 1000338    2026-11-28
+1       1       ORCL     2216383458       PARENT  1          2026-11-28
+1       2       ORCL     2216383458       CURRENT 1000338    2026-11-28
 
-Starting backup at 28-NOV-2026 08:29:10
+Starting backup at 28-NOV-2026 09:04:27
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting full datafile backup set
 channel ORA_DISK_1: specifying datafile(s) in backup set
 channel ORA_DISK_1: backing up database
-piece handle=/backup/ORCL_20261128_0atp7e8m_1_1.bkp tag=POST_RESETLOGS
+piece handle=/backup/ORCL_20261128_0atp7fvf_1_1.bkp tag=POST_RESETLOGS
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:39
-Finished backup at 28-NOV-2026 08:29:49
+Finished backup at 28-NOV-2026 09:05:06
 
-Starting backup at 28-NOV-2026 08:29:49
+Starting backup at 28-NOV-2026 09:05:06
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=101 device type=DISK
 channel ORA_DISK_1: starting archived log backup set
 channel ORA_DISK_1: specifying archived log(s) in backup set
-piece handle=/backup/ORCL_20261128_0btp7e9p_1_1.bkp tag=TAG20261128T082949
+piece handle=/backup/ORCL_20261128_0btp7fwi_1_1.bkp tag=TAG20261128T090506
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:39
-Finished backup at 28-NOV-2026 08:30:28
+Finished backup at 28-NOV-2026 09:05:45
 
-Starting backup at 28-NOV-2026 08:30:28
+Starting backup at 28-NOV-2026 09:05:45
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=102 device type=DISK
 channel ORA_DISK_1: starting full datafile backup set
 including current control file in backup set
-piece handle=/backup/cf_c-1267145066-20261128-12 tag=AUTOBACKUP
+piece handle=/backup/cf_c-2216383458-20261128-12 tag=AUTOBACKUP
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-Finished backup at 28-NOV-2026 08:30:29
+Finished backup at 28-NOV-2026 09:05:46
 ```
 
 👀 **Lire la sortie.** `LIST INCARNATION` montre l'incarnation d'origine (`PARENT`) et la nouvelle (`CURRENT`).
@@ -1821,11 +1821,11 @@ RMAN>   SET UNTIL SCN 1000344;
 RMAN>   RESTORE DATABASE;
 RMAN>   RECOVER DATABASE;
 RMAN> }
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 executing command: SET until clause
 
-Starting restore at 28-NOV-2026 08:30:29
+Starting restore at 28-NOV-2026 09:05:46
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting datafile backup set restore
@@ -1836,7 +1836,7 @@ archived log for thread 1 with sequence 2 is already on disk as file /u01/app/or
 archived log for thread 1 with sequence 3 is already on disk as file /u01/app/oracle/archivelog/1_3_arc.arc
 archived log for thread 1 with sequence 4 is already on disk as file /u01/app/oracle/archivelog/1_4_arc.arc
 media recovery complete, elapsed time: 00:00:01
-Finished recover at 28-NOV-2026 08:31:09
+Finished recover at 28-NOV-2026 09:06:26
 ```
 
 👀 **Lire la sortie.** `SET UNTIL SCN 1000344` **borne** le travail : RMAN choisit la sauvegarde la plus récente **antérieure** à ce SCN, la restaure, puis ne rejoue les journaux **que jusqu'à ce SCN**. Les modifications d'après — dont le `DROP TABLE` — sont **ignorées**.
@@ -1876,48 +1876,48 @@ COMMANDES
 
 ```
 RMAN> LIST INCARNATION;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 List of Database Incarnations
 =============================
 DB Key  Inc Key DB Name  DB ID            STATUS  Reset SCN  Reset Time
 ------- ------- -------- ---------------- ------- ---------- ----------
-1       1       ORCL     1267145066       PARENT  1          2026-11-28
-1       2       ORCL     1267145066       PARENT  1000338    2026-11-28
-1       3       ORCL     1267145066       CURRENT 1000348    2026-11-28
+1       1       ORCL     2216383458       PARENT  1          2026-11-28
+1       2       ORCL     2216383458       PARENT  1000338    2026-11-28
+1       3       ORCL     2216383458       CURRENT 1000348    2026-11-28
 ```
 
 ```
 RMAN> BACKUP DATABASE PLUS ARCHIVELOG TAG 'APRES_PITR';
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting backup at 28-NOV-2026 08:31:09
+Starting backup at 28-NOV-2026 09:06:26
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting full datafile backup set
 channel ORA_DISK_1: specifying datafile(s) in backup set
 channel ORA_DISK_1: backing up database
-piece handle=/backup/ORCL_20261128_0dtp7ebx_1_1.bkp tag=APRES_PITR
+piece handle=/backup/ORCL_20261128_0dtp7fyq_1_1.bkp tag=APRES_PITR
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:39
-Finished backup at 28-NOV-2026 08:31:48
+Finished backup at 28-NOV-2026 09:07:05
 
-Starting backup at 28-NOV-2026 08:31:48
+Starting backup at 28-NOV-2026 09:07:05
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=101 device type=DISK
 channel ORA_DISK_1: starting archived log backup set
 channel ORA_DISK_1: specifying archived log(s) in backup set
-piece handle=/backup/ORCL_20261128_0etp7ed0_1_1.bkp tag=TAG20261128T083148
+piece handle=/backup/ORCL_20261128_0etp7fzt_1_1.bkp tag=TAG20261128T090705
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:39
-Finished backup at 28-NOV-2026 08:32:27
+Finished backup at 28-NOV-2026 09:07:44
 
-Starting backup at 28-NOV-2026 08:32:27
+Starting backup at 28-NOV-2026 09:07:44
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=102 device type=DISK
 channel ORA_DISK_1: starting full datafile backup set
 including current control file in backup set
-piece handle=/backup/cf_c-1267145066-20261128-15 tag=AUTOBACKUP
+piece handle=/backup/cf_c-2216383458-20261128-15 tag=AUTOBACKUP
 channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-Finished backup at 28-NOV-2026 08:32:28
+Finished backup at 28-NOV-2026 09:07:45
 ```
 
 ⚠️ **Piège : ce que tu as perdu.** En revenant au SCN `1000344`, tu perds tout ce qui est arrivé **après** — y compris des commandes légitimes passées entre-temps. Un retour dans le temps de **toute** la base est un instrument lourd ; en production on lui préfère souvent *Flashback Table* ou une restauration dans une **base auxiliaire** pour ne récupérer que la table. Ces techniques sortent du cadre de ce tutoriel.
@@ -1947,9 +1947,9 @@ Database mounted.
 
 ```
 RMAN> RESTORE DATABASE;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
-Starting restore at 28-NOV-2026 08:32:28
+Starting restore at 28-NOV-2026 09:07:45
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 channel ORA_DISK_1: starting datafile backup set restore
@@ -1957,7 +1957,7 @@ channel ORA_DISK_1: starting datafile backup set restore
 channel ORA_DISK_1: restore complete, elapsed time: 00:00:04
 channel ORA_DISK_1: restoring datafile 00006 to /u01/app/oracle/oradata/ORCL/shop_idx01.dbf
 channel ORA_DISK_1: restore complete, elapsed time: 00:00:02
-Finished restore at 28-NOV-2026 08:33:07
+Finished restore at 28-NOV-2026 09:08:24
 ```
 
 ```
@@ -2041,8 +2041,8 @@ stagiaire         1031
 
 ```
 [oracle@ora-prd ~]$ grep -i "failed sysdba logon" /u01/app/oracle/diag/rdbms/orcl/ORCL/trace/alert_ORCL.log | tail -2
-2026-11-28 08:26:13: Failed SYSDBA logon: os_user=root not in dba group (ORA-01031)
-2026-11-28 08:33:08: Failed SYSDBA logon: os_user=stagiaire not in dba group (ORA-01031)
+2026-11-28 09:01:30: Failed SYSDBA logon: os_user=root not in dba group (ORA-01031)
+2026-11-28 09:08:25: Failed SYSDBA logon: os_user=stagiaire not in dba group (ORA-01031)
 ```
 
 👀 **Lire la sortie.** `stagiaire` est l'utilisateur système qui a essayé ; `1031` le code d'erreur. Un contrôle de sécurité efficace commence là : **chaque refus laisse une trace**, et la trace va au serveur de journaux (chapitre 8.6).
@@ -2118,11 +2118,11 @@ Redo Buffers                8388608 bytes
 ```
 RMAN> CONNECT AUXILIARY sys/oracle@10.20.30.10:1521/ORCL;
 RMAN> DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE DORECOVER NOFILENAMECHECK;
-connected to target database: ORCL (DBID=1267145066)
+connected to target database: ORCL (DBID=2216383458)
 
 connected to auxiliary database: ORCL
 
-Starting Duplicate Db at 28-NOV-2026 08:33:08
+Starting Duplicate Db at 28-NOV-2026 09:08:25
 allocated channel: ORA_DISK_1
 channel ORA_DISK_1: SID=100 device type=DISK
 contents of Memory Script:
@@ -2136,7 +2136,7 @@ channel ORA_DISK_1: restoring datafile 00006 to /u01/app/oracle/oradata/ORCL/sho
 channel ORA_DISK_1: restore complete, elapsed time: 00:00:02
 sql statement: alter database mount standby database
 recover clone database
-Finished Duplicate Db at 28-NOV-2026 08:33:48
+Finished Duplicate Db at 28-NOV-2026 09:09:05
 ```
 
 👀 **Lire la sortie.** `DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE` : *« fais-moi une standby de cette base, en lisant directement les fichiers de la base **ouverte** »*, sans sauvegarde intermédiaire. `DORECOVER` rejoue les journaux disponibles ; `NOFILENAMECHECK` autorise les mêmes noms de fichiers des deux côtés. Les octets des six fichiers de données ont **réellement traversé** le tunnel.
@@ -2187,6 +2187,40 @@ System altered.
 SQL> ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION;
 Database altered.
 ```
+
+### 14.4 bis — Préparer la réception : les *standby redo logs*
+
+🧠 **Comprendre.** Quand la production envoie son redo en direct (modes `SYNC` et `ASYNC`), la standby a besoin d'un endroit où le **recevoir au fil de l'eau** : des **journaux de réception** (*standby redo logs*, SRL), distincts des journaux en ligne. Sans eux, le broker refuse de dire que tout va bien : il signale `ORA-16789: standby redo logs configured incorrectly`. On en crée un groupe sur **chaque** base (la primaire en aura besoin le jour où elle deviendra standby à son tour), de la même taille que les journaux en ligne.
+
+🔧 **Manipuler.** Sur la production :
+
+```
+SQL> ALTER DATABASE ADD STANDBY LOGFILE GROUP 11 ('/u01/app/oracle/oradata/ORCL/srl11.log') SIZE 50M;
+SQL> SELECT group#, thread#, bytes, status FROM v$standby_log;
+Database altered.
+
+GROUP# THREAD#    BYTES STATUS
+------ ------- -------- ----------
+    11       1 52428800 UNASSIGNED
+
+1 row selected.
+```
+
+Et sur la standby :
+
+```
+SQL> ALTER DATABASE ADD STANDBY LOGFILE GROUP 11 ('/u01/app/oracle/oradata/ORCL/srl11.log') SIZE 50M;
+SQL> SELECT group#, thread#, bytes, status FROM v$standby_log;
+Database altered.
+
+GROUP# THREAD#    BYTES STATUS
+------ ------- -------- ----------
+    11       1 52428800 UNASSIGNED
+
+1 row selected.
+```
+
+👀 **Lire la sortie.** `Database altered.` : le groupe 11 existe, avec son fichier (`srl11.log`) sur le disque. `V$STANDBY_LOG` le montre `UNASSIGNED` : il n'est pas encore affecté à une primaire (dans le simulateur il le restera, car la réception du redo n'écrit pas encore dedans ; la liste des limites, chapitre 19, le dit).
 
 ### 14.5 Le broker : la même chose, gérée pour toi
 
@@ -2679,7 +2713,7 @@ dgmgrl /  ->  CREATE CONFIGURATION 'nom' AS PRIMARY DATABASE IS 'ORCL' CONNECT I
 
 ## 19. Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas
 
-Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **dix écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **dix sont fermés** et le tutoriel s'appuie sur leur comportement réel :
+Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **onze écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **onze sont fermés** et le tutoriel s'appuie sur leur comportement réel :
 
 | Ce qu'un vrai Oracle fait | Où le voir |
 |---|---|
@@ -2690,6 +2724,7 @@ Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce 
 | `CROSSCHECK BACKUP` couvre toutes les sauvegardes (journaux compris) ; `CROSSCHECK ARCHIVELOG ALL` contrôle les **fichiers** de journaux | chapitres 8 et 9 |
 | Un journal archivé retiré du disque est signalé par `CROSSCHECK ARCHIVELOG ALL` et marqué `EXPIRED` (`STATUS = 'X'` dans `V$ARCHIVED_LOG`) | exercice 7 |
 | Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | chapitre 14 |
+| Les **standby redo logs** existent (`ALTER DATABASE ADD STANDBY LOGFILE`, `V$STANDBY_LOG`, un fichier par membre) et le broker les exige : `ORA-16789` sans eux, et le *fast-start failover* ne s'active pas | chapitre 14.4 bis |
 | La configuration du broker est **répliquée** sur chaque membre : `SHOW CONFIGURATION` la lit aussi sur la standby | chapitre 14 |
 | Un changement tapé sur une standby, ou dans une session `dgmgrl` distante, est **routé vers la primaire** par le broker | chapitre 14.5 |
 | Le **fast-start failover** : `ENABLE FAST_START FAILOVER`, un **observateur** (`START OBSERVER`) qui sonde la primaire et bascule seul au bout du seuil | chapitre 14.6 bis (armement et observation rejoués) et test `oracle-dgmgrl-observer` (déclenchement) |

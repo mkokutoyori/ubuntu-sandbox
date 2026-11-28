@@ -362,6 +362,13 @@ export interface OracleDatafileAddedPayload extends OracleDeviceRef {
   autoextend: boolean;
 }
 
+export interface OracleStandbyLogChangedPayload extends OracleDeviceRef {
+  group: number;
+  members: readonly string[];
+  sizeBytes: number;
+  dropped: boolean;
+}
+
 export interface OracleTablespaceStatusChangedPayload extends OracleDeviceRef {
   name: string;
   oldStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
@@ -661,6 +668,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
   | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
   | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
+  | { topic: 'oracle.redo.standby-log-changed';          payload: OracleStandbyLogChangedPayload }
   | { topic: 'oracle.storage.checkpoint-completed';      payload: OracleCheckpointCompletedPayload }
   | { topic: 'oracle.storage.tablespace-encrypted';      payload: OracleTablespaceEncryptedPayload }
   | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }

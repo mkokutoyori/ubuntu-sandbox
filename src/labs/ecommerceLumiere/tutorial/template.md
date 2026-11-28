@@ -1105,6 +1105,20 @@ Sur `ORA-STB` :
 
 {{step:dr-application}}
 
+### 14.4 bis — Préparer la réception : les *standby redo logs*
+
+🧠 **Comprendre.** Quand la production envoie son redo en direct (modes `SYNC` et `ASYNC`), la standby a besoin d'un endroit où le **recevoir au fil de l'eau** : des **journaux de réception** (*standby redo logs*, SRL), distincts des journaux en ligne. Sans eux, le broker refuse de dire que tout va bien : il signale `ORA-16789: standby redo logs configured incorrectly`. On en crée un groupe sur **chaque** base (la primaire en aura besoin le jour où elle deviendra standby à son tour), de la même taille que les journaux en ligne.
+
+🔧 **Manipuler.** Sur la production :
+
+{{step:dr-journaux-standby-prd}}
+
+Et sur la standby :
+
+{{step:dr-journaux-standby-stb}}
+
+👀 **Lire la sortie.** `Database altered.` : le groupe 11 existe, avec son fichier (`srl11.log`) sur le disque. `V$STANDBY_LOG` le montre `UNASSIGNED` : il n'est pas encore affecté à une primaire (dans le simulateur il le restera, car la réception du redo n'écrit pas encore dedans ; la liste des limites, chapitre 19, le dit).
+
 ### 14.5 Le broker : la même chose, gérée pour toi
 
 🧠 **Comprendre.** Ces deux commandes, le **Data Guard Broker** les exécute à ta place. Son interface est un programme, **`dgmgrl`**, qui garde une **configuration** : *qui est la primaire, quelles sont les standbys, comment les journaux circulent*. `CREATE CONFIGURATION` la nomme, `ADD DATABASE` déclare la standby **par son identifiant de connexion**, `ENABLE CONFIGURATION` l'active (le broker pose la destination d'archivage et démarre l'application sur la standby par une session Oracle Net).
@@ -1354,7 +1368,7 @@ dgmgrl /  ->  CREATE CONFIGURATION 'nom' AS PRIMARY DATABASE IS 'ORCL' CONNECT I
 
 ## 19. Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas
 
-Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **dix écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **dix sont fermés** et le tutoriel s'appuie sur leur comportement réel :
+Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **onze écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **onze sont fermés** et le tutoriel s'appuie sur leur comportement réel :
 
 | Ce qu'un vrai Oracle fait | Où le voir |
 |---|---|
@@ -1365,6 +1379,7 @@ Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce 
 | `CROSSCHECK BACKUP` couvre toutes les sauvegardes (journaux compris) ; `CROSSCHECK ARCHIVELOG ALL` contrôle les **fichiers** de journaux | chapitres 8 et 9 |
 | Un journal archivé retiré du disque est signalé par `CROSSCHECK ARCHIVELOG ALL` et marqué `EXPIRED` (`STATUS = 'X'` dans `V$ARCHIVED_LOG`) | exercice 7 |
 | Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | chapitre 14 |
+| Les **standby redo logs** existent (`ALTER DATABASE ADD STANDBY LOGFILE`, `V$STANDBY_LOG`, un fichier par membre) et le broker les exige : `ORA-16789` sans eux, et le *fast-start failover* ne s'active pas | chapitre 14.4 bis |
 | La configuration du broker est **répliquée** sur chaque membre : `SHOW CONFIGURATION` la lit aussi sur la standby | chapitre 14 |
 | Un changement tapé sur une standby, ou dans une session `dgmgrl` distante, est **routé vers la primaire** par le broker | chapitre 14.5 |
 | Le **fast-start failover** : `ENABLE FAST_START FAILOVER`, un **observateur** (`START OBSERVER`) qui sonde la primaire et bascule seul au bout du seuil | chapitre 14.6 bis (armement et observation rejoués) et test `oracle-dgmgrl-observer` (déclenchement) |

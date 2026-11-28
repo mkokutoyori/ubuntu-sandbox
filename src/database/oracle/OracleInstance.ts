@@ -98,6 +98,13 @@ export interface SGAInfo {
   largePool: string;
 }
 
+export interface StandbyLogGroup {
+  group: number;
+  thread: number;
+  members: string[];
+  bytes: number;
+}
+
 export class OracleInstance {
   readonly config: OracleDatabaseConfig;
   private _state: InstanceState = 'SHUTDOWN';
@@ -1316,6 +1323,38 @@ export class OracleInstance {
 
   getRedoLogGroups(): RedoLogGroup[] {
     return [...this._redoLogGroups];
+  }
+
+  private _standbyLogs: StandbyLogGroup[] = [];
+
+  getStandbyLogs(): readonly StandbyLogGroup[] {
+    return this._standbyLogs;
+  }
+
+  addStandbyLog(thread: number, group: number | null, members: readonly string[], sizeBytes: number): string {
+    const number = group ?? Math.max(0, ...this._standbyLogs.map((g) => g.group), ...this._redoLogGroups.map((g) => g.group)) + 1;
+    if (this._standbyLogs.some((g) => g.group === number) || this._redoLogGroups.some((g) => g.group === number)) {
+      return `ORA-01184: logfile group ${number} already exists`;
+    }
+    this._standbyLogs.push({ group: number, thread, members: [...members], bytes: sizeBytes });
+    this.getBus().publish({
+      topic: 'oracle.redo.standby-log-changed',
+      payload: { ...this.ref(), group: number, members: [...members], sizeBytes, dropped: false },
+    });
+    this.logAlert(`alter database add standby logfile group ${number}`);
+    return 'Database altered.';
+  }
+
+  dropStandbyLog(group: number): string {
+    const found = this._standbyLogs.find((g) => g.group === group);
+    if (found === undefined) return `ORA-01185: logfile group number ${group} is invalid`;
+    this._standbyLogs = this._standbyLogs.filter((g) => g.group !== group);
+    this.getBus().publish({
+      topic: 'oracle.redo.standby-log-changed',
+      payload: { ...this.ref(), group, members: found.members, sizeBytes: found.bytes, dropped: true },
+    });
+    this.logAlert(`alter database drop standby logfile group ${group}`);
+    return 'Database altered.';
   }
 
   // ── Parameters ───────────────────────────────────────────────────

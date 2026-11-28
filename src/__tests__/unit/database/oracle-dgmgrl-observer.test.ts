@@ -23,7 +23,7 @@ import { resetAllOracleInstances } from '@/terminal/commands/database';
 import { __resetBrokers } from '@/terminal/commands/DgmgrlCommands';
 import { BackupKey, DeviceCatalogRegistry } from '@/terminal/subshells/rman';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
-import { buildRmanLab, type RmanLab } from '../../support/rmanLab';
+import { addStandbyRedoLogs, buildRmanLab, type RmanLab } from '../../support/rmanLab';
 
 let lab: RmanLab;
 let scheduler: VirtualTimeScheduler;
@@ -46,6 +46,7 @@ const dgmgrl = (device: Parameters<RmanLab['sh']>[0], ...commands: string[]): st
   lab.sh(device, `dgmgrl / <<'EOF'\n${commands.join('\n')}\nEOF`);
 
 const configured = (sync = true): void => {
+  addStandbyRedoLogs(lab);
   dgmgrl(lab.prod, "CREATE CONFIGURATION 'lumiere_dg' AS PRIMARY DATABASE IS 'ORCL' CONNECT IDENTIFIER IS orcl;", `ADD DATABASE 'ORCL_STB' AS CONNECT IDENTIFIER IS ${lab.drIp}:1521/ORCL MAINTAINED AS PHYSICAL;`, 'ENABLE CONFIGURATION;');
   if (sync) dgmgrl(lab.prod, "EDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='SYNC';", 'EDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;');
 };
