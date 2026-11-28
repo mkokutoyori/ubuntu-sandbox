@@ -925,10 +925,15 @@ export class RadiusdService {
     if (!logged) return;
     const cli = payload.callingStationId === null ? '' : ` cli ${payload.callingStationId}`;
     const user = payload.username === null ? '<no User-Name attribute>' : String(payload.username);
-    const line = (message: string, withPassword: boolean): void => this.writeLogLine('Auth', `(${payload.number}) ${message}: `
-      + `[${user}${withPassword ? `/${payload.password}` : ''}] (from client ${payload.clientShortname} port ${payload.nasPort}${cli})`);
-    if (payload.precedingMessage !== undefined) line(payload.precedingMessage, log.authGoodpass);
-    line(payload.accepted ? 'Login OK' : 'Login incorrect', payload.accepted ? log.authGoodpass : log.authBadpass);
+    const context = this.newRequestContext(String(payload.username ?? ''), payload.request ?? [], null, this.wallClock.nowMs());
+    const extraFor = (goodpass: boolean): string => {
+      const template = goodpass ? log.msgGoodpass : log.msgBadpass;
+      return template === null ? '' : ` ${expandForContext(template, context, (value) => value)}`;
+    };
+    const line = (message: string, goodpass: boolean): void => this.writeLogLine('Auth', `(${payload.number}) ${message}: `
+      + `[${user}${(goodpass ? log.authGoodpass : log.authBadpass) ? `/${payload.password}` : ''}] (from client ${payload.clientShortname} port ${payload.nasPort}${cli})${extraFor(goodpass)}`);
+    if (payload.precedingMessage !== undefined) line(payload.precedingMessage, true);
+    line(payload.accepted ? 'Login OK' : 'Login incorrect', payload.accepted);
   }
 
   private writeLogLine(level: string, message: string): void {

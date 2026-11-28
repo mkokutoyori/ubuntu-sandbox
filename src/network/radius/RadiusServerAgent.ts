@@ -558,6 +558,7 @@ export class RadiusServerAgent {
       username: getAttr(request, 'user-name')?.value ?? null,
       password, nasPort: Number(getAttr(request, 'nas-port')?.value ?? 0),
       callingStationId: getAttr(request, 'calling-station-id')?.value ?? null,
+      request: request.attributes,
       ...(precedingMessage === undefined ? {} : { precedingMessage }),
     };
     this.getBus().publish({ topic: 'radius.auth.decided', payload });

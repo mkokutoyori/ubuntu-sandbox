@@ -10,6 +10,8 @@ export interface RadiusdLogConfig {
   authBadpass: boolean;
   authGoodpass: boolean;
   msgDenied: string;
+  msgGoodpass: string | null;
+  msgBadpass: string | null;
   detail: DetailSettings | null;
 }
 
@@ -22,7 +24,7 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
   const config: RadiusdLogConfig = {
     destination: 'files', file: DEFAULT_RADIUS_LOG_FILE,
     auth: false, authAccept: false, authReject: false, authBadpass: false, authGoodpass: false,
-    msgDenied: DEFAULT_MSG_DENIED, detail: null,
+    msgDenied: DEFAULT_MSG_DENIED, msgGoodpass: null, msgBadpass: null, detail: null,
   };
   const section = root.sections.find((candidate) => candidate.name1 === 'log');
   if (!section) return withDetail(root, config);
@@ -40,6 +42,10 @@ export function readRadiusdLogConfig(root: ConfSection): RadiusdLogConfig | { er
       config.destination = pair.value as RadiusdLogConfig['destination'];
     } else if (pair.name === 'msg_denied') {
       config.msgDenied = pair.value;
+    } else if (pair.name === 'msg_goodpass') {
+      config.msgGoodpass = pair.value;
+    } else if (pair.name === 'msg_badpass') {
+      config.msgBadpass = pair.value;
     } else if (pair.name === 'file') {
       config.file = pair.value;
     }
