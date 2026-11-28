@@ -1388,7 +1388,7 @@ Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| Le broker : mode **Potential Data Loss** (`MaxPerformance` avec une limite de retard), réinstallation automatique de l'ancienne primaire par l'observateur (*auto-reinstate*), observateurs multiples avec bascule du maître | Fonctionnent | Le *fast-start failover* en mode **Zero Data Loss** est réel (voir le chapitre 14.6 bis) ; les autres modes ne sont pas implémentés, l'ancienne primaire se réinstalle à la main avec `REINSTATE DATABASE` (Flashback Database, puis conversion en standby) mais pas automatiquement, et `START OBSERVER` rend la main au lieu de bloquer |
+| Le broker : mode **Potential Data Loss** (`MaxPerformance` avec une limite de retard), observateurs multiples avec bascule du maître | Fonctionnent | Le *fast-start failover* en mode **Zero Data Loss** est réel (voir le chapitre 14.6 bis) ; les autres modes ne sont pas implémentés, l'ancienne primaire se réinstalle avec `REINSTATE DATABASE` (Flashback Database, puis conversion en standby) ou seule, par l'observateur, et `START OBSERVER` rend la main au lieu de bloquer |
 | Temps de sauvegarde et de restauration | Dépend du disque, du réseau et de la charge | Une **seule règle** : taille du fichier ÷ **50 Mo/s** (minimum 1 s), la même pour `BACKUP`, `RESTORE` et `RECOVER`, et l'horloge de la machine avance d'autant. Le débit est un **modèle**, pas une mesure de disque : compare les durées entre elles, pas à ta production |
 
 ---

@@ -265,20 +265,24 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   }
   if (!/^(CREATE|ADD|ENABLE|DISABLE|REMOVE|SHOW|EDIT|SWITCHOVER|FAILOVER|STOP|REGISTER|OBSERVER|EXPORT|REINSTATE)\b/.test(upper)) return [`DGM-16905: syntax error at or near "${text.split(/\s+/)[0]}"`];
   if (upper.startsWith('CREATE ')) return [`DGM-16905: syntax error`];
-  const failover = /^FAILOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
+  const failover = /^(OBSERVER\s+)?FAILOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (failover) {
-    const target = unquote(failover[1]).toUpperCase();
+    const fastStart = failover[1] !== undefined;
+    const target = unquote(failover[2]).toUpperCase();
     if (instance.databaseRole !== 'PHYSICAL STANDBY') return [`Error: ${ORACLE_ERRORS.ORA_16652}`];
     const answer = instance.failover();
     if (answer !== 'Database altered.') return ['Performing failover NOW, please wait...', `Error: ${answer}`];
     if (state.created) {
       state.members.delete(target);
-      state.members.set(state.primaryName, { identifier: state.primaryIdentifier, logXptMode: 'ASYNC', needsReinstate: true });
+      const lostPrimary = state.primaryName;
+      state.members.set(lostPrimary, { identifier: state.primaryIdentifier, logXptMode: fastStart ? 'SYNC' : 'ASYNC', needsReinstate: true });
       state.primaryName = target;
       state.primaryIdentifier = `${primaryIpv4(device) ?? 'localhost'}:1521/${instance.config.sid.toUpperCase()}`;
       state.divergenceScn = instance.getCurrentScn();
+      instance.dataGuard.protectionMode = state.protectionMode;
       state.self = target;
-      state.fsfo.enabled = false;
+      state.fsfo.enabled = fastStart && state.fsfo.enabled;
+      if (state.fsfo.enabled) state.fsfo.target = lostPrimary;
       instance.setParameter(CONFIG_PARAMETER, serialize(state, target), 'BOTH');
     }
     return ['Performing failover NOW, please wait...', `Failover succeeded, new primary is "${target}"`];
@@ -495,7 +499,7 @@ function viaDatabase(device: HostCapableDevice, identifier: string, command: str
 
 export function runBrokerCommand(device: HostCapableDevice, instance: OracleInstance, command: string): string[] {
   const state = stateOf(instance);
-  const mutating = MUTATING.test(command.trim());
+  const mutating = MUTATING.test(command.trim()) && !/^OBSERVER\s+FAILOVER\b/i.test(command.trim());
   if (mutating && instance.databaseRole !== 'PRIMARY') {
     if (!state.created || state.primaryIdentifier === '') return [`${ORACLE_ERRORS.ORA_16532}`];
     return viaDatabase(device, state.primaryIdentifier, command);

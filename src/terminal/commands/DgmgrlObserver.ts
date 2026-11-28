@@ -4,7 +4,7 @@ export const OBSERVER_PING_INTERVAL_MS = 3000;
 
 export interface ObserverConfigView {
   fsfo: { enabled: boolean; threshold: number; target: string | null };
-  members: [string, { identifier: string }][];
+  members: [string, { identifier: string; needsReinstate?: boolean }][];
 }
 
 export interface ObserverPorts {
@@ -20,10 +20,12 @@ export function stopObserver(deviceId: string, name: string): void {
   running.delete(`${deviceId}|${name}`);
 }
 
-export function startObserver(deviceId: string, name: string, primaryIdentifier: string, ports: ObserverPorts): void {
+export function startObserver(deviceId: string, name: string, initialPrimaryIdentifier: string, ports: ObserverPorts): void {
   stopObserver(deviceId, name);
   const scheduler = getDefaultScheduler();
+  let primaryIdentifier = initialPrimaryIdentifier;
   let unreachableMs = 0;
+  const reinstating = new Set<string>();
   let lastTargetPing = scheduler.now();
   let view: ObserverConfigView | null = null;
   const parse = (lines: string[] | null): ObserverConfigView | null => {
@@ -37,15 +39,24 @@ export function startObserver(deviceId: string, name: string, primaryIdentifier:
       view = parse(ports.ask(primaryIdentifier, 'EXPORT CONFIGURATION')) ?? view;
       const target = view?.members.find(([name]) => name === view?.fsfo.target) ?? view?.members[0];
       if (target !== undefined && ports.ask(target[1].identifier, 'EXPORT CONFIGURATION') !== null) lastTargetPing = scheduler.now();
+      for (const [lost, member] of view?.members ?? []) {
+        if (member.needsReinstate !== true) { reinstating.delete(lost); continue; }
+        if (ports.ask(member.identifier, 'EXPORT CONFIGURATION') === null) { reinstating.delete(lost); continue; }
+        if (reinstating.has(lost)) continue;
+        reinstating.add(lost);
+        ports.ask(primaryIdentifier, `REINSTATE DATABASE '${lost}'`);
+      }
       return;
     }
     unreachableMs += OBSERVER_PING_INTERVAL_MS;
     if (view === null || !view.fsfo.enabled || unreachableMs < view.fsfo.threshold * 1000) return;
     const target = view.members.find(([name]) => name === view?.fsfo.target) ?? view.members[0];
     if (target === undefined || ports.ask(target[1].identifier, 'EXPORT CONFIGURATION') === null) return;
-    ports.ask(target[1].identifier, `FAILOVER TO '${target[0]}'`);
+    ports.ask(target[1].identifier, `OBSERVER FAILOVER TO '${target[0]}'`);
     ports.sql(target[1].identifier, 'ALTER DATABASE OPEN');
-    stopObserver(deviceId, name);
+    primaryIdentifier = target[1].identifier;
+    unreachableMs = 0;
+    view = null;
   };
   running.set(`${deviceId}|${name}`, scheduler.setInterval(tick, OBSERVER_PING_INTERVAL_MS));
   tick();
