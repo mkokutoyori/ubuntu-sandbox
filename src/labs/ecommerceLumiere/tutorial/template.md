@@ -1388,7 +1388,7 @@ Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| Le broker : observateurs multiples avec bascule du maître | Fonctionnent | Le *fast-start failover* en mode **Zero Data Loss** est réel (voir le chapitre 14.6 bis) ; les autres modes ne sont pas implémentés, l'ancienne primaire se réinstalle avec `REINSTATE DATABASE` (Flashback Database, puis conversion en standby) ou seule, par l'observateur, et `START OBSERVER` tient le terminal comme la vraie commande (Ctrl-C ou `STOP OBSERVER` le libère), sauf dans un script |
+| Le broker : observateurs multiples avec bascule du maître | Fonctionnent | Le *fast-start failover* est réel dans ses deux modes, **Zero Data Loss** et **Potential Data Loss** (retard de transport mesuré, `FastStartFailoverLagLimit`), avec ses conditions de bascule (`ENABLE FAST_START FAILOVER CONDITION`, `ORA-240` et les cinq conditions de santé) et la réinstallation de l'ancienne primaire (`REINSTATE DATABASE`, ou seule par l'observateur). `START OBSERVER` tient le terminal comme la vraie commande (Ctrl-C ou `STOP OBSERVER` le libère), et dans un script les commandes qui le suivent sont ignorées, comme dans la page de référence. Plusieurs observateurs peuvent être enregistrés (trois au plus, `ORA-16647` au-delà), mais l'élection d'un observateur maître parmi eux n'est pas modélisée : chacun sonde |
 | Temps de sauvegarde et de restauration | Dépend du disque, du réseau et de la charge | Une **seule règle** : taille du fichier ÷ **50 Mo/s** (minimum 1 s), la même pour `BACKUP`, `RESTORE` et `RECOVER`, et l'horloge de la machine avance d'autant. Le débit est un **modèle**, pas une mesure de disque : compare les durées entre elles, pas à ta production |
 
 ---
