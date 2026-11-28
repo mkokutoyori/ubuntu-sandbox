@@ -168,9 +168,9 @@ describe('unlang: update and if', () => {
     expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The attribute list "coa" in update is not implemented in this simulator$/);
   });
 
-  it('map is still refused naming it', async () => {
+  it('map is not a module in 3.x, refused as such', async () => {
     const { target } = await lab();
     write(target, SITES, inAuthorize(['\t\tmap &Reply-Message {', '\t\t}'])(site(target)));
-    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/The unlang construct "map" is not implemented in this simulator$/);
+    expect((target.getRadiusd().checkConfig() as { error: string }).error).toMatch(/Failed to find "map" as a module or policy.$/);
   });
 });
