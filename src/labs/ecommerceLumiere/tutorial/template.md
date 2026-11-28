@@ -12,7 +12,7 @@
 0. [Les bases — pour partir vraiment de zéro](#0-les-bases--pour-partir-vraiment-de-zéro)
 1. [L'entreprise et son problème](#1-lentreprise-et-son-problème)
 2. [L'infrastructure du lab](#2-linfrastructure-du-lab)
-3. [Cinq notions à avoir en tête](#3-cinq-notions-à-avoir-en-tête)
+3. [Les cinq notions à retenir](#3-les-cinq-notions-à-retenir)
 4. [Étape 1 — Reconnaissance : qu'est-ce qu'on protège ?](#4-étape-1--reconnaissance--quest-ce-quon-protège-)
 5. [Étape 2 — Passer la base en ARCHIVELOG](#5-étape-2--passer-la-base-en-archivelog)
 6. [Étape 3 — Configurer RMAN une bonne fois pour toutes](#6-étape-3--configurer-rman-une-bonne-fois-pour-toutes)
@@ -27,7 +27,7 @@
 15. [Exercices](#15-exercices)
 16. [Les erreurs que tu rencontreras](#16-les-erreurs-que-tu-rencontreras)
 17. [Aide-mémoire](#17-aide-mémoire)
-18. [Ce que le simulateur ne fait pas (encore)](#18-ce-que-le-simulateur-ne-fait-pas-encore)
+18. [Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas](#18-ce-que-le-simulateur-fait-comme-oracle--et-ce-quil-ne-fait-pas)
 19. [Conclusion](#19-conclusion)
 
 ---
@@ -279,9 +279,9 @@ Le fichier d'export est « une machine qui tournait et qui redémarre » : adres
 
 ---
 
-## 3. Cinq notions à avoir en tête
+## 3. Les cinq notions à retenir
 
-Pas de cours complet ici, seulement ce qu'il faut pour lire les sorties.
+La partie 0 a posé les bases ; voici, en cinq lignes, ce qui servira à lire **toutes** les sorties qui suivent.
 
 | Notion | Ce que c'est | Pourquoi ça compte |
 |---|---|---|
@@ -759,15 +759,41 @@ On dit à la production d'envoyer ses journaux vers la standby (`log_archive_des
 
 {{step:dr-application}}
 
+### 14.4 bis Le broker : la même chose, gérée pour toi
+
+Les deux commandes précédentes sont celles que le **Data Guard Broker** exécute à ta place. Son interface est un programme, **`dgmgrl`**, qui garde une **configuration** : *qui est la primaire, quelles sont les standbys, comment les journaux circulent*. `CREATE CONFIGURATION` la nomme, `ADD DATABASE` déclare la standby **par son identifiant de connexion**, `ENABLE CONFIGURATION` l'active (le broker pose la destination d'archivage, et démarre l'application sur la standby par une session Oracle Net) :
+
+{{step:dr-broker}}
+
+`Configuration Status: SUCCESS` : tout va bien. S'il y avait une erreur de transport, tu la lirais ici (`ORA-16778`) : c'est la commande de **supervision** d'un environnement Data Guard.
+
+### 14.4 ter Les trois modes de protection
+
+Entre la **vitesse** et la **certitude de ne rien perdre**, Data Guard offre trois modes :
+
+| Mode | Comment le redo part | Si la standby ne répond plus | Perte de données possible |
+|---|---|---|---|
+| `MAXIMUM PERFORMANCE` (défaut) | **Asynchrone** : à l'archivage du journal | La production continue | Les dernières transactions |
+| `MAXIMUM AVAILABILITY` | **Synchrone** : chaque `COMMIT` attend l'accusé de réception de la standby | La production **continue** et repasse en asynchrone (`RESYNCHRONIZATION`), puis revient | Aucune tant que la standby répond |
+| `MAXIMUM PROTECTION` | Synchrone, **obligatoire** | La production **s'arrête** (`ORA-03113`) plutôt que de valider sans copie | **Jamais** |
+
+Le broker ne laisse activer un mode synchrone que si un membre est lui-même **synchrone** (`LogXptMode='SYNC'`) : `ORA-16627` sinon. On passe la standby en `SYNC`, puis la configuration en `MaxAvailability` :
+
+{{step:dr-protection}}
+
+{{step:dr-niveau}}
+
+`PROTECTION_MODE` est le mode **demandé**, `PROTECTION_LEVEL` celui qui est **effectivement tenu** à cet instant (il passerait à `RESYNCHRONIZATION` si la standby se taisait, et à `UNPROTECTED` sans destination synchrone). `MAXIMUM PROTECTION` se règle de la même façon, mais base **montée** (`ORA-01126` sinon) : la production **s'arrêterait** à la première validation sans accusé de la standby.
+
 ### 14.5 Une commande tombe, elle arrive de l'autre côté
 
 {{step:dr-commande}}
 
-Le deuxième `SELECT` montre la destination 2 (`10.20.30.10:1521/ORCL`) à l'état `VALID`. Maintenant, lisons côté standby (qu'on ouvre en **lecture seule** après avoir arrêté l'application) :
+Deux commandes validées : la `3001`, suivie d'un **changement de journal**, et la `3002`, validée **sans** changement de journal. Le dernier `SELECT` montre la destination 2 (`10.20.30.10:1521/ORCL`) à l'état `VALID`. Maintenant, lisons côté standby (qu'on ouvre en **lecture seule** après avoir arrêté l'application) :
 
 {{step:dr-lecture}}
 
-`APPLIED = 'YES'` : les journaux sont appliqués. La commande `3001`, passée sur la production **il y a quelques secondes**, est lisible sur le site de reprise : le RPO est de zéro pour ce scénario.
+`APPLIED = 'YES'` : les journaux sont appliqués. La commande `3001` est là parce que son journal a été archivé et expédié. La commande `3002`, elle, **n'a pas eu de journal archivé** : elle est lisible quand même, parce qu'en mode synchrone son `COMMIT` a **envoyé son redo à la standby avant de rendre la main**. C'est ce qui fait un RPO **réellement nul**.
 
 ### 14.6 Le sinistre et la bascule
 
@@ -779,9 +805,7 @@ Sur le site de reprise, on **promeut** la standby :
 
 {{step:dr-bascule}}
 
-`ALTER DATABASE FAILOVER TO ORCL` fait de la standby la **base primaire**, ouverte en `READ WRITE`. La commande `3001` est là : **aucune transaction validée n'a été perdue**. Il ne reste qu'à pointer les frontaux web (`WEB-DR`) sur cette base.
-
-> ⚠️ **Ce que ce scénario ne couvre pas** : la **protection de bout en bout** (`MAXIMUM PROTECTION`, `MAXIMUM AVAILABILITY`) n'est pas appliquée par le simulateur (le mode est stocké et affiché, jamais imposé) et il n'y a pas de *Data Guard Broker* (`DGMGRL`). La standby, elle, est réelle : octets, journaux, rôle et bascule.
+`ALTER DATABASE FAILOVER TO ORCL` fait de la standby la **base primaire**, ouverte en `READ WRITE`. Les commandes `3001` et `3002` sont là : **aucune transaction validée n'a été perdue**. (Avec le broker, la même opération se tape `FAILOVER TO 'ORCL_STB'` dans `dgmgrl`, connecté à la standby ; la bascule **programmée** depuis la production, elle, est `SWITCHOVER TO 'ORCL_STB'`.) Il ne reste qu'à pointer les frontaux web (`WEB-DR`) sur cette base.
 
 ---
 
@@ -889,7 +913,7 @@ RECOVER DATABASE UNTIL CHANGE n;       -- jusqu'à un SCN
 
 ## 18. Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas
 
-Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **sept écarts** entre le simulateur et un vrai Oracle ont été mesurés ; cinq sont **fermés** et le tutoriel s'appuie sur leur comportement réel :
+Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **sept écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **six sont fermés** et le tutoriel s'appuie sur leur comportement réel :
 
 | Ce qu'un vrai Oracle fait | Où le voir |
 |---|---|
@@ -898,12 +922,13 @@ Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce 
 | `root` n'est **pas** administrateur de la base : `ORA-01031` ; seul `oracle` (groupe `dba`) l'est | parties 0.3 et 13 |
 | `RECOVER DATABASE [UNTIL ...]` existe sous SQL\*Plus, et une récupération incomplète exige `RESETLOGS` | section 12.6 |
 | `CROSSCHECK BACKUP` couvre toutes les sauvegardes (journaux compris) ; `CROSSCHECK ARCHIVELOG ALL` contrôle les **fichiers** de journaux | sections 8.3 et 9 |
+| Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | section 14.4 bis et ter |
 
 Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| Protection maximale (`MAXIMUM PROTECTION`) et *broker* | Imposée par le transport synchrone / gérée par `DGMGRL` | Le mode est affiché, jamais imposé ; pas de broker |
+| Le broker (`dgmgrl`) | La configuration est **répliquée** sur tous les membres, et le broker surveille et peut basculer seul (*fast-start failover*) | La configuration vit sur la base à laquelle on est connecté ; pas d'observateur |
 | Temps de sauvegarde | Dépend du disque et du réseau | Durées simulées (indicatives) |
 | Un journal archivé retiré du disque | Marqué `EXPIRED` dans le fichier de contrôle | Signalé par `CROSSCHECK` (`validation failed`), sans être marqué |
 
