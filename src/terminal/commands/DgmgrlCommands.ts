@@ -58,7 +58,8 @@ function raisedCondition(instance: OracleInstance, state: BrokerState): boolean 
   const log = instance.getAlertLog();
   const from = alertCursors.get(instance) ?? log.length;
   alertCursors.set(instance, log.length);
-  return log.slice(from).some((line) => [...line.matchAll(/ORA-0*(\d+)/g)].some((found) => state.fsfo.errors.includes(Number(found[1]))));
+  const stuck = state.fsfo.health['Stuck Archiver'] && instance.archiverStuck;
+  return stuck || log.slice(from).some((line) => [...line.matchAll(/ORA-0*(\d+)/g)].some((found) => state.fsfo.errors.includes(Number(found[1]))));
 }
 
 const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', divergenceScn: 0, self: '', fsfo: { enabled: false, threshold: 30, target: null, errors: [], health: { ...DEFAULT_HEALTH_CONDITIONS }, lagLimit: 30 }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });

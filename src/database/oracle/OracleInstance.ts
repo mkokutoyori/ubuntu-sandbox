@@ -534,6 +534,12 @@ export class OracleInstance {
     return this._transportState.get(destId);
   }
 
+  private _archiverStuck = false;
+
+  get archiverStuck(): boolean { return this._archiverStuck; }
+
+  setArchiverStuck(stuck: boolean): void { this._archiverStuck = stuck; }
+
   private _unshippedSince = new Map<number, number>();
 
   noteUnshippedRedo(destId: number, nowMs: number): void {

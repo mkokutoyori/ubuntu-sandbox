@@ -26,7 +26,7 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
-import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { ORACLE_CONFIG, ORACLE_ERRORS, oracleError } from '@/database/oracle/OracleConfig';
 import { hostNowMs } from '@/database/oracle/time/OracleHostClock';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { renderDatafileImage, parseDatafileImage } from '@/database/oracle/storage/DatafileImage';
@@ -97,13 +97,12 @@ function appendAsOracle(dev: FsEquipment, path: string, content: string): boolea
   return dev.appendSystemFile(path, content);
 }
 
-function writeAsOracle(dev: FsEquipment, path: string, content: string): void {
+function writeAsOracle(dev: FsEquipment, path: string, content: string): boolean {
   if (!dev.installSystemFile) {
     dev.writeFileFromEditor(path, content);
-    return;
+    return true;
   }
-  if (path.startsWith('/u01')) dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
-  else dev.installSystemFile(path, content);
+  return path.startsWith('/u01') ? dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID) : dev.installSystemFile(path, content);
 }
 
 export class OracleFilesystemSync {
@@ -371,13 +370,21 @@ export class OracleFilesystemSync {
         if ((e.payload.origin ?? 'SWITCH') !== 'SWITCH') return;
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        writeAsOracle(dev,
+        const written = writeAsOracle(dev,
           e.payload.path,
           renderBackupPieceImage(
             `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
             { datafiles: this.segmentImages(e.payload.deviceId), scn: e.payload.scn },
           ) + renderRedoStream(e.payload.redo as readonly RedoRecord[]),
         );
+        const instance = this.ctx.resolveDatabase(e.payload.deviceId)?.instance;
+        if (instance === undefined) return;
+        if (written) instance.setArchiverStuck(false);
+        else {
+          instance.setArchiverStuck(true);
+          instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_19504, e.payload.path));
+          instance.logAlertEvent(ORACLE_ERRORS.ORA_00257);
+        }
       }),
 
       this.bus.subscribe('oracle.storage.tablespace-dropped', (e) => {

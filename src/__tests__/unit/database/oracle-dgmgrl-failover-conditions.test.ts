@@ -5,7 +5,7 @@
  * transcript public). Les pages ne donnent ni le texte de sortie de ENABLE/DISABLE CONDITION (le simulateur dit `Succeeded.`) ni le code d'une condition deja posee : les deux commandes sont idempotentes.
  *
  * Evalue : une condition numerique est comparee aux lignes ORA-nnnnn que la primaire ecrit dans son journal d'alerte APRES l'activation ; a la sonde suivante l'observateur bascule sans attendre le seuil
- * (`Shutdown Primary: TRUE` : la primaire est arretee). NON evalue, enregistre dans TODO.md : les conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
+ * (`Shutdown Primary: TRUE` : la primaire est arretee). Evalue aussi : `Stuck Archiver` (le journal archive ne peut pas s'ecrire, disque plein : ORA-19504 puis ORA-00257, titres des pages d'erreur). NON evalue, enregistre dans TODO.md : les autres conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
  *
  * SHOW CONFIGURATION VERBOSE (page SHOW CONFIGURATION, exemple 2) : cible FSFO marquee `(*)`, liste `Properties:` puis resume du FSFO ; le mot etait accepte et ignore.
  *
@@ -127,5 +127,28 @@ describe('configurable fast-start failover conditions', () => {
     expect(verbose).toContain('Properties:');
     expect(verbose).toContain('Fast-Start Failover: DISABLED');
     expect(verbose).not.toContain('(*)');
+  });
+
+  const fillProdDisk = (): void => {
+    const vfs = (lab.prod as unknown as { executor: { vfs: { setCapacityBytes(n: number): void; usedBytes(): number } } }).executor.vfs;
+    vfs.setCapacityBytes(vfs.usedBytes() + 10);
+  };
+
+  it('Stuck Archiver: a full archive disk writes the archiver errors and fails over once the condition is enabled', () => {
+    observed();
+    dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION "Stuck Archiver";');
+    fillProdDisk();
+    lab.sql(lab.prod, 'ALTER SYSTEM SWITCH LOGFILE;');
+    expect(getOracleDatabase(lab.prod.getId()).instance.getAlertLog().join('\n')).toMatch(/ORA-19504: failed to create file[\s\S]*ORA-00257: Archiver error/);
+    scheduler.advance(6000);
+    expect(roleOf(lab.dr)).toContain('PRIMARY');
+  });
+
+  it('a full archive disk alone, with the condition off (the default), does not fail over', () => {
+    observed();
+    fillProdDisk();
+    lab.sql(lab.prod, 'ALTER SYSTEM SWITCH LOGFILE;');
+    scheduler.advance(20000);
+    expect(roleOf(lab.dr)).not.toContain('PRIMARY');
   });
 });
