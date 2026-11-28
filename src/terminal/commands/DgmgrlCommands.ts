@@ -5,7 +5,7 @@ import { StandbyDatabase, type ProtectionMode } from '@/database/oracle/dataguar
 import { readArchiveDestinations } from '@/database/oracle/dataguard/ArchiveDestination';
 import { OracleNetCallStatus } from '@/network/oracle-net/wire/OracleNetCall';
 import { executeOverOracleNet, logonOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
-import { resolveOracleConnectTarget } from './oracleNet';
+import { primaryIpv4, resolveOracleConnectTarget } from './oracleNet';
 import { createSQLPlusSession, getOracleDatabase } from './database';
 
 const PROTECTION_WORDS: Readonly<Record<string, ProtectionMode>> = {
@@ -160,6 +160,12 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     if (instance.databaseRole !== 'PHYSICAL STANDBY') return ['Error: ORA-16652: Fast-Start Failover target standby not found'];
     const answer = instance.failover();
     if (answer !== 'Database altered.') return ['Performing failover NOW, please wait...', `Error: ${answer}`];
+    if (state.created) {
+      state.members.delete(target);
+      state.primaryName = target;
+      state.self = target;
+      instance.setParameter(CONFIG_PARAMETER, serialize(state, target), 'BOTH');
+    }
     return ['Performing failover NOW, please wait...', `Failover succeeded, new primary is "${target}"`];
   }
   if (!state.created) return ['ORA-16532: Oracle Data Guard broker configuration does not exist'];
@@ -227,9 +233,22 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   if (switchover) {
     const target = unquote(switchover[1]).toUpperCase();
     if (!state.members.has(target)) return [`Error: ORA-16642: DB_UNIQUE_NAME mismatch`];
+    const targetMember = state.members.get(target)!;
     const answer = instance.requestSwitchover(target);
     if (answer !== 'Database altered.') return ['Performing switchover NOW, please wait...', `Error: ${answer}`];
-    return ['Performing switchover NOW, please wait...', `New primary database "${target}" is opening...`, `Switchover succeeded, new primary is "${target}"`];
+    const former = state.primaryName;
+    state.members.delete(target);
+    state.members.set(former, { identifier: `${primaryIpv4(device) ?? 'localhost'}:1521/${instance.config.sid.toUpperCase()}`, logXptMode: 'ASYNC' });
+    state.primaryName = target;
+    state.self = former;
+    instance.setParameter(CONFIG_PARAMETER, serialize(state, former), 'BOTH');
+    const failures: string[] = [];
+    const recipients = [[target, targetMember.identifier], ...[...state.members].filter(([name]) => name !== former).map(([name, member]) => [name, member.identifier])];
+    for (const [name, identifier] of recipients) {
+      const sent = remoteExecute(device, identifier, [`ALTER SYSTEM SET "${CONFIG_PARAMETER}"='${serialize(state, name)}' SCOPE=BOTH`]);
+      if (sent.ok === false) failures.push(`Error: ${sent.error}`);
+    }
+    return ['Performing switchover NOW, please wait...', ...failures, `New primary database "${target}" is opening...`, `Switchover succeeded, new primary is "${target}"`];
   }
   return [`DGM-16905: syntax error at or near "${text.split(/\s+/)[0]}"`];
 }

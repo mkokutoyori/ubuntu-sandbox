@@ -10,7 +10,10 @@
  * (`_dg_broker_config`), et la primaire l'ecrit sur chaque membre par un `ALTER SYSTEM SET` sur une session Oracle Net : des trames reelles, pas un appel a l'objet du pair.
  * Les changements (CREATE, ADD, EDIT...) ne se tapent que sur la primaire dans le simulateur : sur une standby ils sont refuses en le disant (un vrai broker les route vers la primaire).
  *
- * Discrimine par `git stash push -- src/terminal` : 4 des 6 cas tombent. Deux passent des deux cotes et sont nommes : le TEMOIN (la primaire garde sa configuration) et l'effacement
+ * Apres un SWITCHOVER ou un FAILOVER la configuration suit : la liste des membres bascule (l'ancienne primaire devient membre, la nouvelle sort de la liste), sur les deux membres pour le switchover ;
+ * le FAILOVER, tape sur la standby quand la primaire est perdue, ne peut atteindre personne : seule la copie locale est ajustee, l'ancienne primaire sort de la liste (pas de REINSTATE).
+ *
+ * Discrimine par `git stash push -- src/terminal` : 4 des 6 premiers cas tombent (mesure faite avant les cas de bascule, 3 de plus ci-dessous qui tombent aussi). Deux passent des deux cotes et sont nommes : le TEMOIN (la primaire garde sa configuration) et l'effacement
  * sur la standby, vrai avant parce que la standby n'avait aucune configuration (il garde que le correctif n'invente pas de configuration residuelle).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -80,5 +83,31 @@ describe('replication of the broker configuration', () => {
     configured();
     expect(dgmgrl(lab.dr, "EDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='SYNC';")).toContain('from the primary database only');
     expect(dgmgrl(lab.prod, "SHOW DATABASE 'ORCL_STB';")).toContain('Log Transport Mode: ASYNC');
+  });
+
+  it('after a SWITCHOVER both members list the new primary and the former one as a member', () => {
+    configured();
+    dgmgrl(lab.prod, "SWITCHOVER TO 'ORCL_STB';");
+    for (const device of [lab.prod, lab.dr]) {
+      const out = dgmgrl(device, 'SHOW CONFIGURATION;');
+      expect(out).toMatch(/ORCL_STB - Primary database/);
+      expect(out).toMatch(/ORCL - Physical standby database/);
+    }
+  });
+
+  it('the new primary can change the configuration and the former primary receives it', () => {
+    configured();
+    dgmgrl(lab.prod, "SWITCHOVER TO 'ORCL_STB';");
+    dgmgrl(lab.dr, "EDIT DATABASE 'ORCL' SET PROPERTY LogXptMode='SYNC';");
+    expect(dgmgrl(lab.prod, "SHOW DATABASE 'ORCL';")).toContain('Log Transport Mode: SYNC');
+  });
+
+  it('after a FAILOVER the promoted standby lists itself as the primary and drops the lost one', () => {
+    configured();
+    lab.sql(lab.prod, 'SHUTDOWN ABORT;');
+    dgmgrl(lab.dr, "FAILOVER TO 'ORCL_STB';");
+    const out = dgmgrl(lab.dr, 'SHOW CONFIGURATION;');
+    expect(out).toMatch(/ORCL_STB - Primary database/);
+    expect(out).not.toMatch(/ORCL - /);
   });
 });
