@@ -29,7 +29,7 @@ registerView({
         new Date(l.firstTime),
         'YES',
         l.deleted ? 'YES' : 'NO',
-        l.deleted ? 'D' : 'A',
+        l.deleted ? 'D' : l.expired ? 'X' : 'A',
         // RuntimeArchivedLogRecord doesn't track a real file size — use the
         // simulator's fixed default redo log size (50MB), matching a
         // typical Oracle deployment's `size 50m` redo log clause.

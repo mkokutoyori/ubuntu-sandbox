@@ -1265,7 +1265,8 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (scope === 'ARCHIVELOG') {
       for (const log of this._archivedLogs()) {
         const present = this._ctx.vfs.fileExists(log.path);
-        if (present) available++; else expired++;
+        if (present) available++;
+        else { expired++; this._ctx.recordArchivedLogExpired?.(log.path); }
         this._bus.emit({
           type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '', kind: 'archived log',
           status: present ? 'AVAILABLE' : 'EXPIRED', path: log.path, thread: log.thread, sequence: log.sequence,

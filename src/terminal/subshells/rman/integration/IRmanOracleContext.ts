@@ -117,6 +117,7 @@ export interface IRmanOracleContext {
   recordBackupPiece?(piece: RecordedBackupPiece): void;
   recordBackupPieceDeleted?(handle: string): void;
   recordArchivedLogDeleted?(path: string): void;
+  recordArchivedLogExpired?(path: string): void;
   recordBlockCorruption?(fileNo: number, blocks: number, type: BlockCorruptionType): void;
   getBlockCorruptions?(): ReadonlyArray<{ fileNo: number; blocks: number }>;
   clearBlockCorruption?(fileNo: number): void;

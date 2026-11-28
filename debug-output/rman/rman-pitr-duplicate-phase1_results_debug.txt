@@ -1,22 +1,22 @@
 ============================================================
 RMAN debug transcript — rman-pitr-duplicate-phase1
-Generated: 2026-11-28T01:49:06.122Z
+Generated: 2026-11-28T02:06:34.019Z
 Topology:  LinuxServer db-pitr — Oracle PITRDB OPEN baseline
 Total commands: 17
 ============================================================
 
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 28-NOV-2026 01:49:06
+  Recovery Manager: Release 19.0.0.0.0 - Production on 28-NOV-2026 02:06:34
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=3205927354)
+  connected to target database: ORCL (DBID=3227143152)
   
 
 
 --- [1] § 1.1 baseline OPEN ---
 RMAN [1/17]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=3205927354)
+  connected to target database: ORCL (DBID=3227143152)
 
 RMAN [2/17]> REPORT SCHEMA
   
@@ -60,52 +60,52 @@ RMAN [3/17]> SHOW ALL
 
 RMAN [4/17]> BACKUP DATABASE
   
-  Starting backup at 28-NOV-2026 01:49:06
+  Starting backup at 28-NOV-2026 02:06:34
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_TAG20261128T014906_syjzfmjw_.bkp tag=TAG20261128T014906
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_TAG20261128T020634_08mq2zqt_.bkp tag=TAG20261128T020634
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 28-NOV-2026 01:49:39
+  Finished backup at 28-NOV-2026 02:07:07
   
 
 RMAN [5/17]> BACKUP DATABASE TAG 'BL_OPEN_001'
   
-  Starting backup at 28-NOV-2026 01:49:39
+  Starting backup at 28-NOV-2026 02:07:07
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_BL_OPEN_001_5enjcatb_.bkp tag=BL_OPEN_001
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_BL_OPEN_001_szanec7v_.bkp tag=BL_OPEN_001
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 28-NOV-2026 01:50:12
+  Finished backup at 28-NOV-2026 02:07:40
   
 
 RMAN [6/17]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 28-NOV-2026 01:50:12
+  Starting backup at 28-NOV-2026 02:07:40
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_annnn_TAG20261128T015012_g5nh18le_.bkp tag=TAG20261128T015012
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_annnn_TAG20261128T020740_iuawdiy6_.bkp tag=TAG20261128T020740
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 28-NOV-2026 01:50:45
+  Finished backup at 28-NOV-2026 02:08:13
   
 
 RMAN [7/17]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 28-NOV-2026 01:50:45
+  Starting backup at 28-NOV-2026 02:08:13
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_ncsnf_TAG20261128T015045_r6dfkye7_.bkp tag=TAG20261128T015045
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_ncsnf_TAG20261128T020813_44s7h8uf_.bkp tag=TAG20261128T020813
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 28-NOV-2026 01:50:46
+  Finished backup at 28-NOV-2026 02:08:14
   
 
 RMAN [8/17]> LIST BACKUP SUMMARY
@@ -114,16 +114,16 @@ RMAN [8/17]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time      #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- -------------------- ------- ------- ---------- ------------------
-  2       B  F  A DISK        28-NOV-2026 01:50:12 1       1       NO         BL_OPEN_001
-  3       B  A  A DISK        28-NOV-2026 01:50:45 1       1       NO         TAG20261128T015012
-  4       B  F  A DISK        28-NOV-2026 01:50:46 1       1       NO         TAG20261128T015045
+  2       B  F  A DISK        28-NOV-2026 02:07:40 1       1       NO         BL_OPEN_001
+  3       B  A  A DISK        28-NOV-2026 02:08:13 1       1       NO         TAG20261128T020740
+  4       B  F  A DISK        28-NOV-2026 02:08:14 1       1       NO         TAG20261128T020813
   
 
 
 --- [9] § 1.2 RESTORE against OPEN (should fail) ---
 RMAN [9/17]> RESTORE DATABASE
   
-  Starting restore at 28-NOV-2026 01:50:46
+  Starting restore at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -131,12 +131,12 @@ RMAN [9/17]> RESTORE DATABASE
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of restore command at 28-NOV-2026 01:50:46
+  RMAN-03002: failure of restore command at 28-NOV-2026 02:08:14
   RMAN-06403: database must be mounted (not open)
 
 RMAN [10/17]> RESTORE TABLESPACE USERS
   
-  Starting restore at 28-NOV-2026 01:50:46
+  Starting restore at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=105 device type=DISK
   channel ORA_DISK_1: starting tablespace USERS restore
@@ -144,14 +144,14 @@ RMAN [10/17]> RESTORE TABLESPACE USERS
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of restore command at 28-NOV-2026 01:50:46
+  RMAN-03002: failure of restore command at 28-NOV-2026 02:08:14
   RMAN-03002: failure of restore command
   ORA-19870: error while restoring backup piece
   ORA-19573: cannot obtain exclusive enqueue for datafile 4
 
 RMAN [11/17]> RESTORE DATAFILE 1
   
-  Starting restore at 28-NOV-2026 01:50:46
+  Starting restore at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=106 device type=DISK
   channel ORA_DISK_1: starting datafile 1 restore
@@ -159,14 +159,14 @@ RMAN [11/17]> RESTORE DATAFILE 1
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of restore command at 28-NOV-2026 01:50:46
+  RMAN-03002: failure of restore command at 28-NOV-2026 02:08:14
   RMAN-03002: failure of restore command
   ORA-19870: error while restoring backup piece
   ORA-19573: cannot obtain exclusive enqueue for datafile 1
 
 RMAN [12/17]> RESTORE DATAFILE 4
   
-  Starting restore at 28-NOV-2026 01:50:46
+  Starting restore at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=107 device type=DISK
   channel ORA_DISK_1: starting datafile 4 restore
@@ -174,14 +174,14 @@ RMAN [12/17]> RESTORE DATAFILE 4
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of restore command at 28-NOV-2026 01:50:46
+  RMAN-03002: failure of restore command at 28-NOV-2026 02:08:14
   RMAN-03002: failure of restore command
   ORA-19870: error while restoring backup piece
   ORA-19573: cannot obtain exclusive enqueue for datafile 4
 
 RMAN [13/17]> RESTORE DATABASE FROM TAG 'BL_OPEN_001'
   
-  Starting restore at 28-NOV-2026 01:50:46
+  Starting restore at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=108 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -189,12 +189,12 @@ RMAN [13/17]> RESTORE DATABASE FROM TAG 'BL_OPEN_001'
   RMAN-00571: ===========================================================
   RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
   RMAN-00571: ===========================================================
-  RMAN-03002: failure of restore command at 28-NOV-2026 01:50:46
+  RMAN-03002: failure of restore command at 28-NOV-2026 02:08:14
   RMAN-06403: database must be mounted (not open)
 
 RMAN [14/17]> RESTORE DATABASE PREVIEW
   
-  Starting restore at 28-NOV-2026 01:50:46
+  Starting restore at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=109 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -204,48 +204,48 @@ RMAN [14/17]> RESTORE DATABASE PREVIEW
   
   BS Key  Type    LV Size       Device Type Elapsed Time Completion Time
   ------- ------- -- ---------- ----------- ------------ --------------------
-  2       Full       1.61G      DISK        00:00:33     28-NOV-2026 01:50:12
+  2       Full       1.61G      DISK        00:00:33     28-NOV-2026 02:07:40
           BP Key: 2   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: BL_OPEN_001
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_BL_OPEN_001_5enjcatb_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_BL_OPEN_001_szanec7v_.bkp
     List of Datafiles in backup set 2
     File LV Type Ckp SCN    Ckp Time             Name
     ---- -- ---- ---------- -------------------- ------------------------------------------
-       1    Full 1000317    28-NOV-2026 01:49:39 /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1000317    28-NOV-2026 01:49:39 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1000317    28-NOV-2026 01:49:39 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1000317    28-NOV-2026 01:49:39 /u01/app/oracle/oradata/ORCL/users01.dbf
-  3       ArchLog    1.61G      DISK        00:00:33     28-NOV-2026 01:50:45
-          BP Key: 3   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261128T015012
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_annnn_TAG20261128T015012_g5nh18le_.bkp
+       1    Full 1000317    28-NOV-2026 02:07:07 /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1000317    28-NOV-2026 02:07:07 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1000317    28-NOV-2026 02:07:07 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1000317    28-NOV-2026 02:07:07 /u01/app/oracle/oradata/ORCL/users01.dbf
+  3       ArchLog    1.61G      DISK        00:00:33     28-NOV-2026 02:08:13
+          BP Key: 3   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261128T020740
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_annnn_TAG20261128T020740_iuawdiy6_.bkp
     List of Datafiles in backup set 3
     File LV Type Ckp SCN    Ckp Time             Name
     ---- -- ---- ---------- -------------------- ------------------------------------------
-       1    Full 1000318    28-NOV-2026 01:50:12 /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1000318    28-NOV-2026 01:50:12 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1000318    28-NOV-2026 01:50:12 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1000318    28-NOV-2026 01:50:12 /u01/app/oracle/oradata/ORCL/users01.dbf
-  4       Full       9.20M      DISK        00:00:01     28-NOV-2026 01:50:46
-          BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261128T015045
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_ncsnf_TAG20261128T015045_r6dfkye7_.bkp
-    Control File Included: Ckp SCN: 1000319    Ckp time: 28-NOV-2026 01:50:46
+       1    Full 1000318    28-NOV-2026 02:07:40 /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1000318    28-NOV-2026 02:07:40 /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1000318    28-NOV-2026 02:07:40 /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1000318    28-NOV-2026 02:07:40 /u01/app/oracle/oradata/ORCL/users01.dbf
+  4       Full       9.20M      DISK        00:00:01     28-NOV-2026 02:08:14
+          BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20261128T020813
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_ncsnf_TAG20261128T020813_44s7h8uf_.bkp
+    Control File Included: Ckp SCN: 1000319    Ckp time: 28-NOV-2026 02:08:14
   
   recovery will be done up to SCN 1000317
   Media recovery start SCN is 1000317
   Recovery must be done beyond SCN 1000319 to clear datafile fuzziness
-  Finished restore at 28-NOV-2026 01:50:46
+  Finished restore at 28-NOV-2026 02:08:14
   
 
 RMAN [15/17]> RESTORE DATABASE VALIDATE
   
-  Starting restore at 28-NOV-2026 01:50:46
+  Starting restore at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=110 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
-  channel ORA_DISK_1: reading from backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_BL_OPEN_001_5enjcatb_.bkp
-  channel ORA_DISK_1: reading from backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_annnn_TAG20261128T015012_g5nh18le_.bkp
-  channel ORA_DISK_1: reading from backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_ncsnf_TAG20261128T015045_r6dfkye7_.bkp
+  channel ORA_DISK_1: reading from backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_BL_OPEN_001_szanec7v_.bkp
+  channel ORA_DISK_1: reading from backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_annnn_TAG20261128T020740_iuawdiy6_.bkp
+  channel ORA_DISK_1: reading from backup piece /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_ncsnf_TAG20261128T020813_44s7h8uf_.bkp
   channel ORA_DISK_1: validation complete, elapsed time: 00:00:01
-  Finished restore at 28-NOV-2026 01:50:46
+  Finished restore at 28-NOV-2026 02:08:14
   
 
 
@@ -272,13 +272,13 @@ RMAN [16/17]> SHOW ALL
 
 RMAN [17/17]> BACKUP DATABASE
   
-  Starting backup at 28-NOV-2026 01:50:46
+  Starting backup at 28-NOV-2026 02:08:14
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=111 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_TAG20261128T015046_o0t2ksdk_.bkp tag=TAG20261128T015046
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_11_28/o1_mf_nnndf_TAG20261128T020814_13sgh6yb_.bkp tag=TAG20261128T020814
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 28-NOV-2026 01:51:19
+  Finished backup at 28-NOV-2026 02:08:47
   

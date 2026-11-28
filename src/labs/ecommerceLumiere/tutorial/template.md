@@ -824,7 +824,7 @@ Chacun se fait dans le lab rouvert (importe `topology.json` pour repartir d'un �
 4. **Perte d'un fichier d'index.** Détruis `shop_idx01.dbf` (fichier 6), redémarre en `MOUNT`, restaure-le et récupère-le. Combien de commandes RMAN faut-il ? *Indice : c'est le scénario A pour un autre numéro de fichier.* <details><summary>Corrigé</summary>Deux : `RESTORE DATAFILE 6;` puis `RECOVER DATAFILE 6;`, suivies de `ALTER DATABASE OPEN;` côté SQL\*Plus.</details>
 5. **Le niveau 1 sert-il à quelque chose ?** Après un niveau 0 et un niveau 1, restaure `SHOP_DATA`. Dans la sortie de `RESTORE`, quelles pièces RMAN lit-il ? *Indice : `LIST BACKUP SUMMARY` et la colonne `LV`.* <details><summary>Corrigé</summary>Le niveau 0 puis le niveau 1 : RMAN part de la référence et applique ce qui a changé ensuite.</details>
 6. **Une pièce disparaît.** Supprime à la main (`rm` sur `BKP-HQ`) la pièce du niveau 0, puis lance `CROSSCHECK BACKUP`. Que passe-t-il à son statut ? Que répond `RESTORE DATABASE VALIDATE` ? *Indice : `EXPIRED`, puis `DELETE EXPIRED BACKUP`.* <details><summary>Corrigé</summary>La pièce passe `EXPIRED` ; `RESTORE DATABASE VALIDATE` échoue faute de pièce ; `DELETE EXPIRED BACKUP` nettoie le catalogue — et il faut refaire un niveau 0.</details>
-7. **Un journal archivé disparaît.** Supprime un fichier `.arc` du disque, lance `CROSSCHECK ARCHIVELOG ALL`. Que lis-tu ? <details><summary>Corrigé</summary>`validation failed for archived log` suivi du nom du fichier absent : c'est le contrôle des **fichiers** de journaux, distinct de celui des sauvegardes.</details>
+7. **Un journal archivé disparaît.** Supprime un fichier `.arc` du disque, lance `CROSSCHECK ARCHIVELOG ALL`. Que lis-tu ? <details><summary>Corrigé</summary>`validation failed for archived log` suivi du nom du fichier absent : c'est le contrôle des **fichiers** de journaux, distinct de celui des sauvegardes. Le journal est alors marqué `EXPIRED` : `SELECT status FROM v$archived_log` donne `X`.</details>
 8. **Retour à une heure plutôt qu'à un SCN.** Refais le scénario C avec `SET UNTIL TIME` au lieu de `SET UNTIL SCN`. *Indice : l'heure se lit dans `SELECT SYSDATE FROM dual` ; le format dépend de `NLS_DATE_FORMAT`.*
 9. **Qui a lancé cette sauvegarde ?** Donne à `stagiaire` le groupe `dba` (`usermod -aG dba stagiaire`) et fais-lui lancer `rman target /`. Qu'est-ce qui a changé ? Et dans les journaux de `LOG-HQ` ? *Indice : il faut ouvrir une nouvelle session pour que les groupes soient pris en compte.*
 10. **Repartir à zéro.** Après la bascule du scénario D, que faudrait-il faire pour que le siège reconstruit redevienne un site de secours de `ORA-STB` ? *Indice : c'est le même `DUPLICATE`, dans l'autre sens.*
@@ -913,7 +913,7 @@ RECOVER DATABASE UNTIL CHANGE n;       -- jusqu'à un SCN
 
 ## 18. Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas
 
-Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **sept écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **six sont fermés** et le tutoriel s'appuie sur leur comportement réel :
+Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **sept écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **sept sont fermés** et le tutoriel s'appuie sur leur comportement réel :
 
 | Ce qu'un vrai Oracle fait | Où le voir |
 |---|---|
@@ -922,6 +922,7 @@ Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce 
 | `root` n'est **pas** administrateur de la base : `ORA-01031` ; seul `oracle` (groupe `dba`) l'est | parties 0.3 et 13 |
 | `RECOVER DATABASE [UNTIL ...]` existe sous SQL\*Plus, et une récupération incomplète exige `RESETLOGS` | section 12.6 |
 | `CROSSCHECK BACKUP` couvre toutes les sauvegardes (journaux compris) ; `CROSSCHECK ARCHIVELOG ALL` contrôle les **fichiers** de journaux | sections 8.3 et 9 |
+| Un journal archivé retiré du disque est signalé par `CROSSCHECK ARCHIVELOG ALL` (`validation failed`) et marqué `EXPIRED` (`STATUS = 'X'` dans `V$ARCHIVED_LOG`) | exercice 7 |
 | Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | section 14.4 bis et ter |
 
 Ce qui reste hors du terrain :
@@ -930,7 +931,6 @@ Ce qui reste hors du terrain :
 |---|---|---|
 | Le broker (`dgmgrl`) | La configuration est **répliquée** sur tous les membres, et le broker surveille et peut basculer seul (*fast-start failover*) | La configuration vit sur la base à laquelle on est connecté ; pas d'observateur |
 | Temps de sauvegarde | Dépend du disque et du réseau | Durées simulées (indicatives) |
-| Un journal archivé retiré du disque | Marqué `EXPIRED` dans le fichier de contrôle | Signalé par `CROSSCHECK` (`validation failed`), sans être marqué |
 
 ---
 

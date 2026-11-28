@@ -445,6 +445,15 @@ export class LinuxRmanContext implements IRmanOracleContext {
     });
   }
 
+  recordArchivedLogExpired(path: string): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.archive-log.expired',
+      payload: { deviceId: (this._device as { id?: string }).id ?? '', sid: oracle.instance.config.sid, path },
+    });
+  }
+
   getRecoveryAreaUsedBytes(): number {
     const distant = this.askRemoteScalar(
       'SELECT space_used FROM V$RECOVERY_FILE_DEST', 'SPACE_USED');

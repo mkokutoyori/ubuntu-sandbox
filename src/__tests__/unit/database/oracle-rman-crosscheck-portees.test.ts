@@ -11,7 +11,7 @@
  * be 'AVAILABLE'` ; ARCHIVELOG controle les journaux archives inscrits dans le fichier de controle et rend `validation succeeded for archived log` puis
  * `archived log file name=...`, ou `validation failed for archived log` quand le fichier a disparu.
  *
- * Discrimine par `git stash push -- src/terminal` : 3 des 4 cas tombent. Le TEMOIN (CROSSCHECK BACKUP voit les pieces de la sauvegarde de la base) passe des deux cotes.
+ * Discrimine par `git stash push -- src/terminal` : 3 des 4 premiers cas tombent. Le marquage EXPIRED d'un journal absent (STATUS = X) a ete ajoute ensuite : 1 cas sur 5 tombe avant ce second correctif. Le TEMOIN (CROSSCHECK BACKUP voit les pieces de la sauvegarde de la base) passe des deux cotes.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
@@ -76,5 +76,14 @@ describe('les deux portees de CROSSCHECK', () => {
     const out = rman('CROSSCHECK ARCHIVELOG ALL;');
     expect(out).toContain('validation failed for archived log');
     expect(out).toContain(victim);
+  });
+
+  it('le journal absent est marque EXPIRED (STATUS = X) dans V$ARCHIVED_LOG, les autres restent disponibles', () => {
+    twoKindsOfBackup();
+    const victim = lab.sh(lab.prod, `find ${ARC_DIR} -name "*.arc" | head -1`).trim();
+    lab.sh(lab.prod, `rm ${victim}`);
+    rman('CROSSCHECK ARCHIVELOG ALL;');
+    expect(sql(`SELECT status FROM v$archived_log WHERE name = '${victim}';`)).toMatch(/^\s*X\s*$/m);
+    expect(sql(`SELECT COUNT(*) AS n FROM v$archived_log WHERE name <> '${victim}' AND status = 'A';`)).toMatch(/^\s*[1-9]\d*\s*$/m);
   });
 });

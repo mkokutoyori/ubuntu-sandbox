@@ -49,6 +49,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   recordBackupPiece(piece: RecordedBackupPiece): void { this._current.recordBackupPiece(piece); }
   recordBackupPieceDeleted(handle: string): void { this._current.recordBackupPieceDeleted(handle); }
   recordArchivedLogDeleted(path: string): void { this._current.recordArchivedLogDeleted(path); }
+  recordArchivedLogExpired(path: string): void { this._current.recordArchivedLogExpired?.(path); }
   recordBlockCorruption(fileNo: number, blocks: number, type: BlockCorruptionType): void {
     this._current.recordBlockCorruption(fileNo, blocks, type);
   }
