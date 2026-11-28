@@ -15,10 +15,27 @@ export interface ObserverPorts {
 
 const running = new Map<string, TimerHandle>();
 
+const whenStopped = new Map<string, Set<() => void>>();
+
+const observersOf = (deviceId: string): string[] => [...running.keys()].filter((key) => key.startsWith(`${deviceId}|`)).map((key) => key.slice(deviceId.length + 1));
+
 export function stopObserver(deviceId: string, name: string): void {
   const handle = running.get(`${deviceId}|${name}`);
   if (handle !== undefined) getDefaultScheduler().clear(handle);
   running.delete(`${deviceId}|${name}`);
+  if (observersOf(deviceId).length > 0) return;
+  const waiting = whenStopped.get(deviceId);
+  whenStopped.delete(deviceId);
+  waiting?.forEach((notify) => notify());
+}
+
+export function stopObserversOf(deviceId: string): void {
+  observersOf(deviceId).forEach((name) => stopObserver(deviceId, name));
+}
+
+export function untilObserversStop(deviceId: string, notify: () => void): void {
+  if (observersOf(deviceId).length === 0) { notify(); return; }
+  whenStopped.set(deviceId, (whenStopped.get(deviceId) ?? new Set()).add(notify));
 }
 
 export function startObserver(deviceId: string, name: string, initialPrimaryIdentifier: string, ports: ObserverPorts): void {
