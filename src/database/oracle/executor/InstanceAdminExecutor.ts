@@ -39,6 +39,10 @@ export interface InstanceAdminDeps {
   killSession?(sid: number, serial: number, immediate: boolean): boolean | null;
 }
 
+import { decodeBrokerCommand } from '../dataguard/BrokerCommandCodec';
+
+export const BROKER_COMMAND_PARAMETER = '_dg_broker_command';
+
 export class InstanceAdminExecutor {
   constructor(private readonly deps: InstanceAdminDeps) {}
 
@@ -67,6 +71,9 @@ export class InstanceAdminExecutor {
       const scope = stmt.scope as 'MEMORY' | 'SPFILE' | 'BOTH' | undefined;
       if (isStaticParameter(stmt.parameter) && scope !== 'SPFILE') {
         throw new OracleError(2095, 'specified initialization parameter cannot be modified');
+      }
+      if (stmt.parameter.replace(/"/g, '').toLowerCase() === BROKER_COMMAND_PARAMETER) {
+        return emptyResult(this.instance.requestBrokerCommand(decodeBrokerCommand(stmt.value)));
       }
       this.instance.setParameter(stmt.parameter, stmt.value, scope);
       return emptyResult('System altered.');

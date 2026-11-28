@@ -6,6 +6,9 @@ import { readArchiveDestinations } from '@/database/oracle/dataguard/ArchiveDest
 import { OracleNetCallStatus } from '@/network/oracle-net/wire/OracleNetCall';
 import { executeOverOracleNet, logonOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
 import { primaryIpv4, resolveOracleConnectTarget } from './oracleNet';
+import { registerBrokerCommandRunner } from '@/adapters/OracleBrokerDmon';
+import { BROKER_COMMAND_PARAMETER } from '@/database/oracle/executor/InstanceAdminExecutor';
+import { encodeBrokerCommand } from '@/database/oracle/dataguard/BrokerCommandCodec';
 import { createSQLPlusSession, getOracleDatabase } from './database';
 
 const PROTECTION_WORDS: Readonly<Record<string, ProtectionMode>> = {
@@ -27,6 +30,7 @@ interface BrokerState {
   enabled: boolean;
   configurationName: string;
   primaryName: string;
+  primaryIdentifier: string;
   self: string;
   protectionMode: ProtectionMode;
   members: Map<string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }>;
@@ -34,7 +38,7 @@ interface BrokerState {
 
 const CONFIG_PARAMETER = '_dg_broker_config';
 
-const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', self: '', protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
+const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', self: '', protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
 
 function stateOf(instance: OracleInstance): BrokerState {
   const stored = instance.getParameter(CONFIG_PARAMETER);
@@ -149,6 +153,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     state.created = true;
     state.configurationName = unquote(create[1]).toUpperCase();
     state.primaryName = primary;
+    state.primaryIdentifier = `${primaryIpv4(device) ?? 'localhost'}:1521/${instance.config.sid.toUpperCase()}`;
     instance.dataGuard.configurationName = state.configurationName;
     return [`Configuration "${unquote(create[1]).toLowerCase()}" created with primary database "${primary}"`];
   }
@@ -259,6 +264,26 @@ function commandsOf(args: readonly string[], stdin: string | undefined): string[
   return [...fromArgs, ...fromStdin];
 }
 
+function viaDatabase(device: HostCapableDevice, identifier: string, command: string): string[] {
+  const sent = remoteExecute(device, identifier, [`ALTER SYSTEM SET "${BROKER_COMMAND_PARAMETER}"='${encodeBrokerCommand(command)}'`]);
+  return sent.ok === true ? sent.outputs[0].split('\n') : [`Error: ${sent.error}`];
+}
+
+export function runBrokerCommand(device: HostCapableDevice, instance: OracleInstance, command: string): string[] {
+  const state = stateOf(instance);
+  const mutating = MUTATING.test(command.trim());
+  if (mutating && instance.databaseRole !== 'PRIMARY') {
+    if (!state.created || state.primaryIdentifier === '') return ['ORA-16532: Oracle Data Guard broker configuration does not exist'];
+    return viaDatabase(device, state.primaryIdentifier, command);
+  }
+  const formerMembers = new Map(state.members);
+  const lines = execute(device, instance, state, command);
+  if (mutating) lines.push(...save(device, instance, state, formerMembers));
+  return lines;
+}
+
+registerBrokerCommandRunner((device, database, command) => runBrokerCommand(device, database.instance, command).join('\n'));
+
 export function runDgmgrl(device: HostCapableDevice, args: readonly string[], stdin: string | undefined, osContext: OsSecurityContext): string {
   const options = args.filter((a) => a.startsWith('-'));
   const silent = options.includes('-silent');
@@ -267,8 +292,8 @@ export function runDgmgrl(device: HostCapableDevice, args: readonly string[], st
   if (!silent) {
     out.push('', 'DGMGRL for Linux: Release 19.0.0.0.0 - Production', '', 'Copyright (c) 1982, 2019, Oracle and/or its affiliates.  All rights reserved.', '', 'Welcome to DGMGRL, type "help" for information.');
   }
-  const database = getOracleDatabase(device.getId());
   const bequeath = connection === '/' || connection.startsWith('/@');
+  const remote = bequeath || !connection.includes('@') ? null : connection.slice(connection.indexOf('@') + 1);
   if (bequeath) {
     const probe = createSQLPlusSession(device.getId(), ['/', 'as', 'sysdba'], osContext);
     if (probe.loginOutput.some((line) => /ORA-01031/.test(line))) {
@@ -277,19 +302,12 @@ export function runDgmgrl(device: HostCapableDevice, args: readonly string[], st
     }
     probe.session.disconnect();
   }
-  const instance = database.instance;
-  out.push(`Connected to "${instance.config.sid.toUpperCase()}"`, 'Connected as SYSDBA.');
-  const state = stateOf(instance);
+  const instance = remote === null ? getOracleDatabase(device.getId()).instance : null;
+  const connectedTo = instance !== null ? instance.config.sid.toUpperCase() : (remote!.split('/').pop() ?? '').toUpperCase();
+  out.push(`Connected to "${connectedTo}"`, 'Connected as SYSDBA.');
   for (const command of commandsOf(args, stdin)) {
     out.push(`DGMGRL> ${command.replace(/;$/, '')}`);
-    const mutating = MUTATING.test(command.trim());
-    if (mutating && instance.databaseRole !== 'PRIMARY') {
-      out.push('Error: this simulator runs broker changes from the primary database only');
-      continue;
-    }
-    const formerMembers = new Map(state.members);
-    out.push(...execute(device, instance, state, command));
-    if (mutating) out.push(...save(device, instance, state, formerMembers));
+    out.push(...(instance !== null ? runBrokerCommand(device, instance, command) : viaDatabase(device, remote!, command)));
   }
   return out.join('\n');
 }

@@ -18,6 +18,7 @@ import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { wireSqlPlusSession } from './sqlPlusWiring';
 import { OracleRedoTransport } from '@/adapters/OracleRedoTransport';
 import { OracleManagedRecovery } from '@/adapters/OracleManagedRecovery';
+import { OracleBrokerDmon } from '@/adapters/OracleBrokerDmon';
 import { OracleRoleTransition } from '@/adapters/OracleRoleTransition';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
@@ -51,6 +52,7 @@ const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 const oracleRedoTransports: Map<string, OracleRedoTransport> = new Map();
 const oracleManagedRecoveries: Map<string, OracleManagedRecovery> = new Map();
 const oracleRoleTransitions: Map<string, OracleRoleTransition> = new Map();
+const oracleBrokerDmons: Map<string, OracleBrokerDmon> = new Map();
 /** Per-device systemd sync adapter — wires oracle bus events to LinuxServiceManager. */
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 /** Per-device audit→syslog adapter — routes audit records to /var/log when AUDIT_SYSLOG_LEVEL is set. */
@@ -203,6 +205,13 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     roleTransition.start();
     oracleRoleTransitions.set(deviceId, roleTransition);
+
+    const brokerDmon = new OracleBrokerDmon(oracleBusFor(deviceId), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+    });
+    brokerDmon.start();
+    oracleBrokerDmons.set(deviceId, brokerDmon);
 
     const systemd = new OracleSystemdSync(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
@@ -504,6 +513,8 @@ export function removeOracleDatabase(deviceId: string): void {
   oracleManagedRecoveries.delete(deviceId);
   oracleRoleTransitions.get(deviceId)?.stop();
   oracleRoleTransitions.delete(deviceId);
+  oracleBrokerDmons.get(deviceId)?.stop();
+  oracleBrokerDmons.delete(deviceId);
   oracleSystemdSyncs.get(deviceId)?.stop();
   oracleSystemdSyncs.delete(deviceId);
   oracleAuditSyslogSyncs.get(deviceId)?.stop();
@@ -548,6 +559,8 @@ export function resetAllOracleInstances(): void {
   oracleManagedRecoveries.clear();
   for (const r of oracleRoleTransitions.values()) r.stop();
   oracleRoleTransitions.clear();
+  for (const d of oracleBrokerDmons.values()) d.stop();
+  oracleBrokerDmons.clear();
   oracleFsSyncs.clear();
   for (const sync of oracleSystemdSyncs.values()) sync.stop();
   oracleSystemdSyncs.clear();

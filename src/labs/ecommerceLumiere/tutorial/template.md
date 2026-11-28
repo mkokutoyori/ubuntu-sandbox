@@ -1119,7 +1119,7 @@ Le broker **copie la configuration sur chaque membre** : tu peux la relire depui
 
 {{step:dr-broker-standby}}
 
-👀 **Lire la sortie.** Même configuration, vue de l'autre côté : `ORCL` est la primaire, `ORCL_STB` la standby. Si le site de production brûle, c'est ici que tu retrouves *qui était qui*. Les **changements** (`EDIT`, `ADD`...) se tapent, eux, sur la primaire.
+👀 **Lire la sortie.** Même configuration, vue de l'autre côté : `ORCL` est la primaire, `ORCL_STB` la standby. Si le site de production brûle, c'est ici que tu retrouves *qui était qui*. Un **changement** (`EDIT`, `ADD`...) tapé ici est **routé vers la primaire** par le broker, qui l'applique et le replique.
 
 ### 14.6 Les trois modes de protection
 
@@ -1355,7 +1355,7 @@ Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| Le broker (`dgmgrl`) | Le broker surveille et peut basculer seul (*fast-start failover*, avec un **observateur**), et accepte les changements depuis n'importe quel membre | Pas d'observateur ni de bascule automatique (la documentation du broker n'est pas accessible d'ici : ni la forme de `SHOW FAST_START FAILOVER`, ni les codes d'erreur ne sont sourçables, donc rien n'est inventé) ; la bascule se tape à la main (`FAILOVER`, `SWITCHOVER`) ; les changements (`EDIT`, `ADD`...) se tapent sur la **primaire** (une standby les refuse en le disant) |
+| Le broker (`dgmgrl`) | Le broker surveille et peut basculer seul (*fast-start failover*, avec un **observateur**), et accepte les changements depuis n'importe quel membre | Pas d'observateur ni de bascule automatique (la documentation du broker n'est pas accessible d'ici : ni la forme de `SHOW FAST_START FAILOVER`, ni les codes d'erreur ne sont sourçables, donc rien n'est inventé) ; la bascule se tape à la main (`FAILOVER`, `SWITCHOVER`) |
 | Temps de sauvegarde et de restauration | Dépend du disque, du réseau et de la charge | Une **seule règle** : taille du fichier ÷ **50 Mo/s** (minimum 1 s), la même pour `BACKUP`, `RESTORE` et `RECOVER`, et l'horloge de la machine avance d'autant. Le débit est un **modèle**, pas une mesure de disque : compare les durées entre elles, pas à ta production |
 
 ---

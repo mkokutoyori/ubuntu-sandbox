@@ -676,6 +676,15 @@ export class OracleInstance {
     return verdict;
   }
 
+  requestBrokerCommand(command: string): string {
+    let output = '';
+    this.getBus().publish({
+      topic: 'oracle.dataguard.broker-command-requested',
+      payload: { ...this.ref(), command, accept: (text: string) => { output = text; } },
+    });
+    return output;
+  }
+
   /**
    * FAILOVER — la standby prend le role SANS demander a l'ancien
    * primaire, qui est presume perdu. C'est la difference avec un

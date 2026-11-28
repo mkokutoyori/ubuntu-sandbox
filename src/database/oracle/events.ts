@@ -232,6 +232,11 @@ export interface OracleDataGuardSwitchoverRequestedPayload extends OracleDeviceR
   accept(issue: string): void;
 }
 
+export interface OracleBrokerCommandRequestedPayload extends OracleDeviceRef {
+  command: string;
+  accept(output: string): void;
+}
+
 export interface OracleStandbyManagedRecoveryChangedPayload extends OracleDeviceRef {
   active: boolean;
 }
@@ -641,6 +646,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.standby.datafile-received';          payload: OracleStandbyDatafileReceivedPayload }
   | { topic: 'oracle.standby.managed-recovery-changed';  payload: OracleStandbyManagedRecoveryChangedPayload }
   | { topic: 'oracle.dataguard.switchover-requested';    payload: OracleDataGuardSwitchoverRequestedPayload }
+  | { topic: 'oracle.dataguard.broker-command-requested'; payload: OracleBrokerCommandRequestedPayload }
   | { topic: 'oracle.nonlogged-block.recorded';          payload: OracleNonloggedBlockRecordedPayload }
   | { topic: 'oracle.nonlogged-block.cleared';           payload: OracleNonloggedBlockClearedPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }
