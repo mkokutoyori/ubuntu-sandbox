@@ -7,9 +7,10 @@
  * Flag 0x80 with a home server address and port returns outstanding requests, the state (Idle until the server has answered or been probed) and the proxy counters of the kinds asked, or
  * "Failed to find home server IP" / "No home server port supplied" / "Home server is not acct"; the times of life and death, the EMA window and the last packet times are not served. Flag 0x40 with FreeRADIUS-Stats-Server-IP-Address and -Port returns the counters of that listener (the ones `radmin stats socket` reads) after echoing both,
  * or "No such listener" / "No listener IP address supplied" in FreeRADIUS-Stats-Error. Flag 0x20 with FreeRADIUS-Stats-Client-IP-Address returns that client's own counters (client_authvp / client_acctvp: no conflicts counter) after an echo of the
- * address, or FreeRADIUS-Stats-Error "No such client"; lookup by client number and the netmask echo are not served. Flag 0x10 (internal) returns the start and HUP times, the five queue lengths and PPS (zero: no queue is modelled) and the thread counts radmin `stats threads` prints. Flags 4 and 8 return the proxy counters (the home servers' global store), masked out by 0x20 as stats.c does.
+ * address, or FreeRADIUS-Stats-Error "No such client"; FreeRADIUS-Stats-Client-Number selects the nth client of the table (client_findbynumber) and echoes its address and, below /32, its
+ * netmask. IPv6 clients are not served. Flag 0x10 (internal) returns the start and HUP times, the five queue lengths and PPS (zero: no queue is modelled) and the thread counts radmin `stats threads` prints. Flags 4 and 8 return the proxy counters (the home servers' global store), masked out by 0x20 as stats.c does.
  *
- * Discriminated with git stash on src/network against the tree before any statistics: 14 of 17 fall (4 for the Authentication/Accounting counters, 1 for the proxy mask, 1 for the internal mask, 2 for the client mask, 4 for the home-server mask, the last five measured separately
+ * Discriminated with git stash on src/network against the tree before any statistics: 16 of 19 fall (4 for the Authentication/Accounting counters, 1 for the proxy mask, 1 for the internal mask, 2 for the client mask, 2 for the client number, 4 for the home-server mask, the last seven measured separately
  * against the version without them). Two pass either way and are named: the witness (a Status-Server without the attribute is answered with no counter) and the 0x20 mask case, a
  * non-regression that is vacuously true until a counter is served.
  */
@@ -185,5 +186,21 @@ describe('Status-Server statistics', () => {
   it('a home server mask without a port says so', async () => {
     const { target } = await lab(HOME);
     expect(await withHome(target, '129', 'FreeRADIUS-Stats-Server-IP-Address = 10.0.0.3\\n')).toContain('FreeRADIUS-Stats-Error = "No home server port supplied"');
+  });
+
+  const byNumber = (target: LinuxServer, number: number) =>
+    target.executeCommand(`printf 'Message-Authenticator = 0x00\\nFreeRADIUS-Statistics-Type = 33\\nFreeRADIUS-Stats-Client-Number = ${number}\\n' | radclient -x 127.0.0.1:18121 status adminsecret`);
+
+  it('a client number selects the client, echoes its address and returns its counters', async () => {
+    const { target } = await lab();
+    const out = await byNumber(target, 0);
+    expect(out).toContain('FreeRADIUS-Stats-Client-Number = 0');
+    expect(out).toMatch(/FreeRADIUS-Stats-Client-IP-Address = 10\.0\.0\.1/);
+    expect(out).toMatch(/FreeRADIUS-Total-Access-Requests = 2\b/);
+  });
+
+  it('a number past the last client gets "No such client"', async () => {
+    const { target } = await lab();
+    expect(await byNumber(target, 99)).toContain('FreeRADIUS-Stats-Error = "No such client"');
   });
 });

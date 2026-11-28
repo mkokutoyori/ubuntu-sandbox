@@ -27,7 +27,7 @@ import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
 import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, encodeEapPacket, verifyEapMd5Response } from './eap';
-import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, FREERADIUS_PROXY_AUTH_COUNTERS, FREERADIUS_PROXY_ACCT_COUNTERS, FREERADIUS_INTERNAL_COUNTERS, FREERADIUS_STATS_CLIENT_ADDRESS, FREERADIUS_STATS_ERROR, FREERADIUS_STATS_SERVER_ADDRESS, FREERADIUS_STATS_SERVER_PORT, FREERADIUS_STATS_SERVER_OUTSTANDING, FREERADIUS_STATS_SERVER_STATE, type FreeradiusCounter } from './dictionary';
+import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, FREERADIUS_PROXY_AUTH_COUNTERS, FREERADIUS_PROXY_ACCT_COUNTERS, FREERADIUS_INTERNAL_COUNTERS, FREERADIUS_STATS_CLIENT_ADDRESS, FREERADIUS_STATS_CLIENT_NUMBER, FREERADIUS_STATS_CLIENT_NETMASK, FREERADIUS_STATS_ERROR, FREERADIUS_STATS_SERVER_ADDRESS, FREERADIUS_STATS_SERVER_PORT, FREERADIUS_STATS_SERVER_OUTSTANDING, FREERADIUS_STATS_SERVER_STATE, type FreeradiusCounter } from './dictionary';
 import {
   ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
   deriveMppeKeys, encryptMppeKey,
@@ -1134,21 +1134,35 @@ export class RadiusServerAgent {
   }
 
   private clientAttributes(request: RadiusPacket, flag: number): RadiusAttribute[] {
-    const asked = request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === FREERADIUS_STATS_CLIENT_ADDRESS);
-    if (asked === undefined) return [];
-    const address = IPAddress.tryParse(String(asked.value));
-    const known = address !== null && this.clientTable.find(address) !== null;
-    if (!known) return [{ type: 'vendor-specific', value: 'No such client', vendor: { id: FREERADIUS_VENDOR_ID, type: FREERADIUS_STATS_ERROR } }];
+    const find = (type: number) => request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === type);
+    const vsa = (type: number, value: string | number): RadiusAttribute => ({ type: 'vendor-specific', value, vendor: { id: FREERADIUS_VENDOR_ID, type } });
+    const noSuchClient: RadiusAttribute[] = [vsa(FREERADIUS_STATS_ERROR, 'No such client')];
+    const byAddress = find(FREERADIUS_STATS_CLIENT_ADDRESS);
+    const byNumber = find(FREERADIUS_STATS_CLIENT_NUMBER);
+    if (byAddress === undefined && byNumber === undefined) return [];
+    let counted: string;
+    let echo: RadiusAttribute[];
+    if (byAddress !== undefined) {
+      const address = IPAddress.tryParse(String(byAddress.value));
+      if (address === null || this.clientTable.find(address) === null) return noSuchClient;
+      counted = String(byAddress.value);
+      echo = [byAddress];
+    } else {
+      const entry = this.clientTable.list()[Number(byNumber!.value)];
+      if (entry === undefined || !(entry.address instanceof IPAddress)) return noSuchClient;
+      counted = entry.address.toString();
+      echo = [byNumber!, vsa(FREERADIUS_STATS_CLIENT_ADDRESS, counted), ...(entry.prefix === 32 ? [] : [vsa(FREERADIUS_STATS_CLIENT_NETMASK, entry.prefix)])];
+    }
     const withoutConflicts = (counters: readonly FreeradiusCounter[]): readonly FreeradiusCounter[] => counters.filter(([, , field]) => field !== 'conflicts');
     const wanted = [
       ...((flag & 0x01) !== 0 ? [{ kind: 'auth' as const, counters: withoutConflicts(FREERADIUS_AUTH_COUNTERS) }] : []),
       ...((flag & 0x02) !== 0 ? [{ kind: 'acct' as const, counters: withoutConflicts(FREERADIUS_ACCT_COUNTERS) }] : []),
     ];
     return [
-      asked,
+      ...echo,
       ...wanted.flatMap(({ kind, counters }) => {
-        const stats = this.statistics.get(`${kind}:${String(asked.value)}`) ?? emptyStats();
-        return counters.map(([type, , field]): RadiusAttribute => ({ type: 'vendor-specific', value: stats[field], vendor: { id: FREERADIUS_VENDOR_ID, type } }));
+        const stats = this.statistics.get(`${kind}:${counted}`) ?? emptyStats();
+        return counters.map(([type, , field]): RadiusAttribute => vsa(type, stats[field]));
       }),
     ];
   }

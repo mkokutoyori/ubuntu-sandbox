@@ -164,6 +164,8 @@ export const FREERADIUS_INTERNAL_COUNTERS: readonly (readonly [type: number, dis
 
 export const FREERADIUS_STATS_CLIENT_ADDRESS = 167;
 export const FREERADIUS_STATS_ERROR = 187;
+export const FREERADIUS_STATS_CLIENT_NUMBER = 168;
+export const FREERADIUS_STATS_CLIENT_NETMASK = 169;
 export const FREERADIUS_STATS_SERVER_ADDRESS = 170;
 export const FREERADIUS_STATS_SERVER_PORT = 171;
 export const FREERADIUS_STATS_SERVER_OUTSTANDING = 172;
@@ -190,6 +192,8 @@ export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   ...FREERADIUS_PROXY_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
   { vendorId: FREERADIUS_VENDOR_ID, vendorType: FREERADIUS_STATS_CLIENT_ADDRESS, name: 'freeradius-stats-client-ip-address', displayName: 'FreeRADIUS-Stats-Client-IP-Address', valueType: 'address' },
   { vendorId: FREERADIUS_VENDOR_ID, vendorType: FREERADIUS_STATS_SERVER_ADDRESS, name: 'freeradius-stats-server-ip-address', displayName: 'FreeRADIUS-Stats-Server-IP-Address', valueType: 'address' },
+  freeradiusCounter(FREERADIUS_STATS_CLIENT_NUMBER, 'FreeRADIUS-Stats-Client-Number'),
+  freeradiusCounter(FREERADIUS_STATS_CLIENT_NETMASK, 'FreeRADIUS-Stats-Client-Netmask'),
   freeradiusCounter(FREERADIUS_STATS_SERVER_PORT, 'FreeRADIUS-Stats-Server-Port'),
   freeradiusCounter(FREERADIUS_STATS_SERVER_OUTSTANDING, 'FreeRADIUS-Stats-Server-Outstanding-Requests'),
   freeradiusCounter(FREERADIUS_STATS_SERVER_STATE, 'FreeRADIUS-Stats-Server-State', { 'alive': 0, 'zombie': 1, 'dead': 2, 'idle': 3, 'admin-down': 4, 'connection-fail': 5 }),
