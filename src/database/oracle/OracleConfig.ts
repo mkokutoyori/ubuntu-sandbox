@@ -189,7 +189,53 @@ export const ORACLE_ERRORS = {
   ORA_00600: 'ORA-00600: internal error code, arguments: [%s], [%s], [%s]',
   /** Recursive SQL during typing */
   ORA_00604: 'ORA-00604: error occurred at recursive SQL level %s',
+
+  // ── Flashback, standby redo logs and Data Guard broker ──
+  ORA_01184: 'ORA-01184: logfile group %s already exists',
+  ORA_01185: 'ORA-01185: logfile group number %s is invalid',
+  ORA_38707: 'ORA-38707: Media recovery is not enabled.',
+  ORA_38757: 'ORA-38757: Database must be mounted and not open to FLASHBACK.',
+  ORA_38729: 'ORA-38729: Not enough flashback database log data to do FLASHBACK.',
+  ORA_38754: 'ORA-38754: FLASHBACK DATABASE not started; required redo log is not available',
+  ORA_38724: 'ORA-38724: Invalid option to the FLASHBACK DATABASE command.',
+  ORA_16789: 'ORA-16789: standby redo logs configured incorrectly',
+  ORA_16693: 'ORA-16693: requirements not met for enabling fast-start failover',
+  ORA_16819: 'ORA-16819: fast-start failover observer not started',
+  ORA_16827: 'ORA-16827: Flashback Database is disabled',
+  ORA_16844: 'ORA-16844: database does not have a valid fast-start failover target standby database',
+  ORA_16654: 'ORA-16654: fast-start failover is enabled',
+  ORA_16647: 'ORA-16647: maximum number of observers has already been started',
+  ORA_16627: 'ORA-16627: operation disallowed since no standby databases would remain to support protection mode',
+  ORA_16603: 'ORA-16603: detected configuration already exists',
+  ORA_16532: 'ORA-16532: Oracle Data Guard broker configuration does not exist',
+  ORA_16642: 'ORA-16642: DB_UNIQUE_NAME mismatch',
+  ORA_16652: 'ORA-16652: Fast-Start Failover target standby not found',
+  ORA_16596: 'ORA-16596: property value is invalid',
+  ORA_16541: 'ORA-16541: member is not enabled',
+  ORA_16626: 'ORA-16626: failed to enable specified member',
+  ORA_16698: 'ORA-16698: member has a LOG_ARCHIVE_DEST_n parameter setting conflict',
+  ORA_16778: 'ORA-16778: redo transport error for one or more members',
+  ORA_00227: 'ORA-00227: corrupt block detected in control file: (block %s, # blocks %s)',
+  ORA_00202: "ORA-00202: control file: '%s'",
+  ORA_01578: 'ORA-01578: ORACLE data block corrupted (file # %s, block # %s)',
+  ORA_00345: 'ORA-00345: redo log write error block %s count %s',
+  ORA_00312: "ORA-00312: online log %s thread %s: '%s'",
+  ORA_01114: 'ORA-01114: IO error writing block to file %s (block # %s)',
+  ORA_00257: 'ORA-00257: Archiver error. Connect AS SYSDBA only until resolved.',
+  ORA_19504: 'ORA-19504: failed to create file "%s"',
+  ORA_16524: 'ORA-16524: unsupported command, option, or argument',
+  ORA_16661: 'ORA-16661: the standby database needs to be reinstated',
+  ORA_16653: 'ORA-16653: failed to reinstate database',
 } as const;
+
+export function oracleError(template: string, ...values: readonly (string | number)[]): string {
+  let index = 0;
+  return template.replace(/%s/g, () => String(values[index++] ?? ''));
+}
+
+export function oracleErrorCode(message: string): number {
+  return Number(/ORA-(\d+)/.exec(message)?.[1] ?? 0);
+}
 
 // ─── TNS Error Codes ────────────────────────────────────────────────
 

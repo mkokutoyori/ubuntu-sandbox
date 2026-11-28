@@ -396,6 +396,7 @@ export class OracleExecutor extends BaseExecutor {
     });
     this.instanceAdmin = new InstanceAdminExecutor({
       storage, catalog, instance, privileges: this.privileges,
+      evaluate: (expression) => this.evaluateExpression(expression, [], []),
       killSession: (sid, serial, immediate) =>
         this.commandHost?.killSession(sid, serial, immediate) ?? null,
     });
@@ -966,6 +967,7 @@ export class OracleExecutor extends BaseExecutor {
       }
       case 'FlashbackStatement': {
         const s = statement as import('../engine/parser/ASTNode').FlashbackStatement;
+        if (s.target === 'DATABASE') return this.instanceAdmin.executeFlashbackDatabase(s);
         // Only FLASHBACK TABLE … TO BEFORE DROP is plumbed against
         // real state (the recyclebin). DATABASE / TO TIMESTAMP / SCN
         // are accepted but logical no-ops — the simulator has no

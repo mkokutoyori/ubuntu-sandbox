@@ -1763,19 +1763,25 @@ export abstract class BaseParser {
     let target: 'DATABASE' | 'TABLE' = 'DATABASE';
     let schema: string | undefined;
     let name: string | undefined;
+    const standby = this.matchKeyword('STANDBY');
     if (this.matchKeyword('TABLE')) {
       target = 'TABLE';
       name = this.expectIdentifier();
       if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
     } else {
       this.matchKeyword('DATABASE');
+      if (this.check(TokenType.IDENTIFIER) && this.current().value.toUpperCase() !== 'TO') this.advance();
     }
-    let toKind: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RAW' = 'RAW';
+    let toKind: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RESETLOGS' | 'RAW' = 'RAW';
     let toExpr: import('./ASTNode').Expression | undefined;
+    let before = false;
     if (this.matchKeyword('TO')) {
-      if (this.matchKeyword('BEFORE')) {
-        this.expectKeyword('DROP');
+      before = this.matchKeyword('BEFORE');
+      if (before && this.matchKeyword('DROP')) {
         toKind = 'BEFORE_DROP';
+        before = false;
+      } else if (before && this.matchKeyword('RESETLOGS')) {
+        toKind = 'RESETLOGS';
       } else if (this.matchKeyword('SCN')) {
         toKind = 'SCN';
         toExpr = this.parseExpression();
@@ -1791,7 +1797,7 @@ export abstract class BaseParser {
     const toText = toKind === 'RAW'
       ? `TO ${parts.join(' ')}`.trim()
       : `TO ${toKind.replace('_', ' ')}${toExpr ? ' …' : ''}`;
-    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: toText, toKind, toExpr };
+    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: toText, toKind, toExpr, before, standby };
   }
 
   protected parsePurge(): import('./ASTNode').PurgeStatement {

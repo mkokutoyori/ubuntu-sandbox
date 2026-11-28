@@ -26,13 +26,15 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
-import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { getDefaultScheduler, type TimerHandle } from '@/events/Scheduler';
+import { ORACLE_CONFIG, ORACLE_ERRORS, oracleError } from '@/database/oracle/OracleConfig';
+import { hostNowMs } from '@/database/oracle/time/OracleHostClock';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { renderDatafileImage, parseDatafileImage } from '@/database/oracle/storage/DatafileImage';
 import { renderBackupPieceImage } from '@/terminal/subshells/rman/core/BackupPieceImage';
 import { renderRedoStream, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 import {
-  controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf,
+  controlFileBanner, controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf,
   type ControlFileStructure,
 } from '@/database/oracle/storage/ControlFileImage';
 
@@ -96,18 +98,20 @@ function appendAsOracle(dev: FsEquipment, path: string, content: string): boolea
   return dev.appendSystemFile(path, content);
 }
 
-function writeAsOracle(dev: FsEquipment, path: string, content: string): void {
+const HEALTH_CHECK_INTERVAL_MS = 60000;
+
+function writeAsOracle(dev: FsEquipment, path: string, content: string): boolean {
   if (!dev.installSystemFile) {
     dev.writeFileFromEditor(path, content);
-    return;
+    return true;
   }
-  if (path.startsWith('/u01')) dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID);
-  else dev.installSystemFile(path, content);
+  return path.startsWith('/u01') ? dev.installSystemFile(path, content, ORACLE_OS_UID, ORACLE_OS_GID) : dev.installSystemFile(path, content);
 }
 
 export class OracleFilesystemSync {
   private subs: Unsubscribe[] = [];
   /** Per-device accumulated spfile parameters, rendered atomically on each change. */
+  private healthChecks = new Map<string, TimerHandle>();
   private spfileParams: Map<string, Map<string, string>> = new Map();
   /** Per-device monotonically increasing counter used in adump/*.aud filenames. */
   private auditCounters: Map<string, number> = new Map();
@@ -190,9 +194,11 @@ export class OracleFilesystemSync {
           this.loadSegmentImages(deviceId);
         }
         this.syncSgaMemory(deviceId, newState === 'OPEN');
+        this.watchHealth(deviceId, newState === 'OPEN');
       }),
 
       this.bus.subscribe('oracle.storage.checkpoint-completed', (e) => {
+        this.inspectCorruption(e.payload.deviceId);
         this.writeSegmentImages(e.payload.deviceId);
         this.refreshControlFiles(e.payload.deviceId);
       }),
@@ -278,6 +284,35 @@ export class OracleFilesystemSync {
         }
       }),
 
+      this.bus.subscribe('oracle.transaction.committed', (e) => {
+        this.writeCurrentRedoGroup(e.payload.deviceId);
+        this.recordFlashbackLog(e.payload.deviceId);
+      }),
+      this.bus.subscribe('oracle.ddl.executed', (e) => this.recordFlashbackLog(e.payload.deviceId)),
+
+      this.bus.subscribe('oracle.flashback.mode-changed', (e) => {
+        if (e.payload.on) {
+          this.recordFlashbackLog(e.payload.deviceId);
+          return;
+        }
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        const dev = this.dev(e.payload.deviceId);
+        for (const log of db?.instance.getFlashbackLogs() ?? []) dev?.deleteFileFromEditor?.(log.file);
+        db?.instance.dropFlashbackLogs();
+      }),
+
+      this.bus.subscribe('oracle.flashback.restore-requested', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        const body = dev === undefined ? null : this.readAsOracle(dev, e.payload.file);
+        if (dev === undefined || body === null) {
+          e.payload.accept(false);
+          return;
+        }
+        const images = (JSON.parse(body) as { images: Record<string, string> }).images;
+        for (const [path, image] of Object.entries(images)) writeAsOracle(dev, path, image);
+        e.payload.accept(true);
+      }),
+
       this.bus.subscribe('oracle.asm.disk-added', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
@@ -344,13 +379,21 @@ export class OracleFilesystemSync {
         if ((e.payload.origin ?? 'SWITCH') !== 'SWITCH') return;
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        writeAsOracle(dev,
+        const written = writeAsOracle(dev,
           e.payload.path,
           renderBackupPieceImage(
             `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
             { datafiles: this.segmentImages(e.payload.deviceId), scn: e.payload.scn },
           ) + renderRedoStream(e.payload.redo as readonly RedoRecord[]),
         );
+        const instance = this.ctx.resolveDatabase(e.payload.deviceId)?.instance;
+        if (instance === undefined) return;
+        if (written) instance.setArchiverStuck(false);
+        else {
+          instance.setArchiverStuck(true);
+          instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_19504, e.payload.path));
+          instance.logAlertEvent(ORACLE_ERRORS.ORA_00257);
+        }
       }),
 
       this.bus.subscribe('oracle.storage.tablespace-dropped', (e) => {
@@ -454,6 +497,8 @@ export class OracleFilesystemSync {
   stop(): void {
     for (const u of this.subs) u();
     this.subs.length = 0;
+    for (const handle of this.healthChecks.values()) getDefaultScheduler().clear(handle);
+    this.healthChecks.clear();
     this.spfileParams.clear();
     this.auditCounters.clear();
     this.reservedSgaKib.clear();
@@ -605,10 +650,64 @@ export class OracleFilesystemSync {
     const structure = this.controlFileStructure(deviceId);
     db.instance.getControlFilePaths().forEach((path, index) => {
       const current = this.readAsOracle(dev, path);
-      if (current === null) return;
+      if (current === null || !current.startsWith(controlFileBanner(index))) return;
       const merged = mergeControlFileImage(parseControlFileImage(current), structure);
       writeAsOracle(dev, path, controlFileBody(index, merged));
     });
+  }
+
+  private inspectCorruption(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!dev || !db) return;
+    const instance = db.instance;
+    const corruptControlFiles = instance.getControlFilePaths().filter((path, index) => {
+      const current = this.readAsOracle(dev, path);
+      return current !== null && !current.startsWith(controlFileBanner(index));
+    });
+    const system = (db.storage as import('@/database/oracle/OracleStorage').OracleStorage).listDatafiles().find((file) => file.tablespace === 'SYSTEM');
+    const systemImage = system === undefined ? null : this.readAsOracle(dev, system.path);
+    const dictionaryCorrupt = system !== undefined && systemImage !== null && !systemImage.startsWith('[ORACLE ');
+    if (corruptControlFiles.length > 0 && !instance.controlfileCorrupt) {
+      instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00227, '1', '1'));
+      for (const path of corruptControlFiles) instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00202, path));
+    }
+    if (dictionaryCorrupt && !instance.dictionaryCorrupt && system !== undefined) instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01578, String(system.fileNo), '1'));
+    instance.setCorruption(corruptControlFiles.length > 0, dictionaryCorrupt);
+  }
+
+  private watchHealth(deviceId: string, open: boolean): void {
+    const running = this.healthChecks.get(deviceId);
+    if (running !== undefined) getDefaultScheduler().clear(running);
+    this.healthChecks.delete(deviceId);
+    if (open) this.healthChecks.set(deviceId, getDefaultScheduler().setInterval(() => this.inspectCorruption(deviceId), HEALTH_CHECK_INTERVAL_MS));
+  }
+
+  private recordFlashbackLog(deviceId: string): void {
+    const db = this.ctx.resolveDatabase(deviceId);
+    const dev = this.dev(deviceId);
+    if (!db || !dev || !db.instance.flashbackOn) return;
+    const instance = db.instance;
+    const seq = instance.nextFlashbackSeq();
+    const file = `${ORACLE_CONFIG.FRA}/${instance.config.sid.toUpperCase()}/flashback/o1_mf_${seq}_.flb`;
+    const body = JSON.stringify({ scn: instance.getCurrentScn(), images: this.segmentImages(deviceId) });
+    writeAsOracle(dev, file, body);
+    for (const stale of instance.noteFlashbackLog({ seq, scn: instance.getCurrentScn(), timeMs: hostNowMs(), bytes: body.length, file })) {
+      dev.deleteFileFromEditor?.(stale.file);
+    }
+  }
+
+  private writeCurrentRedoGroup(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const instance = this.ctx.resolveDatabase(deviceId)?.instance;
+    const group = instance?.getRedoLogGroups().find((candidate) => candidate.status === 'CURRENT');
+    if (!dev || !instance || !group) return;
+    const label = `[ORACLE REDO LOG - Group ${group.group} - ${Math.round(group.sizeBytes / 1048576)}M]`;
+    const writable = group.members.filter((member) => this.fileExists(dev, member) && writeAsOracle(dev, member, label));
+    instance.setLogfileInaccessible(writable.length === 0);
+    if (writable.length > 0) return;
+    instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00345, '1', '1'));
+    for (const member of group.members) instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00312, String(group.group), '1', member));
   }
 
   private segmentImages(deviceId: string): Record<string, string> {
@@ -629,10 +728,18 @@ export class OracleFilesystemSync {
   private writeSegmentImages(deviceId: string): void {
     const dev = this.dev(deviceId);
     if (!dev) return;
+    const instance = this.ctx.resolveDatabase(deviceId)?.instance;
+    const numbers = new Map(((this.ctx.resolveDatabase(deviceId)?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined)?.listDatafiles() ?? []).map((file) => [file.path, file.fileNo]));
+    let failed = false;
+    const system = ((this.ctx.resolveDatabase(deviceId)?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined)?.listDatafiles() ?? []).find((file) => file.tablespace === 'SYSTEM');
     for (const [path, body] of Object.entries(this.segmentImages(deviceId))) {
       if (!this.fileExists(dev, path)) continue;
-      writeAsOracle(dev, path, body);
+      if (path === system?.path && !(this.readAsOracle(dev, path) ?? '').startsWith('[ORACLE ')) continue;
+      if (writeAsOracle(dev, path, body)) continue;
+      failed = true;
+      instance?.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01114, String(numbers.get(path) ?? 0), '1'));
     }
+    instance?.setDatafileWriteError(failed);
   }
 
   private loadSegmentImages(deviceId: string): void {

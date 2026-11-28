@@ -25,6 +25,7 @@ import { ncUnixClientPath } from '@/network/devices/linux/commands/net/Nc';
 import { parseAuditdArguments } from '@/network/devices/linux/audit/tools/AuditdCommandTool';
 import { splitChainText, splitPipeStages } from '@/network/devices/linux/LinuxShellParser';
 import type { AsyncJobContext } from '@/terminal/async';
+import { stopObserversOf, untilObserversStop } from '@/terminal/commands/DgmgrlObserver';
 
 export interface StreamScreen {
   mark(): void;
@@ -224,6 +225,7 @@ function planStage(
     case 'top': return planTop(dev, session, commandLine, toks, screen);
     case 'journalctl': return planJournal(dev, session, commandLine, toks);
     case 'freeradius': return planFreeradius(dev, session, commandLine, toks);
+    case 'dgmgrl': return planDgmgrl(dev, session, commandLine);
     case 'ip': return planIpMonitor(dev, commandLine, toks);
     case 'dmesg': return planDmesg(dev, session, commandLine, toks);
     case 'netstat': return planNetstat(dev, session, commandLine, toks);
@@ -267,6 +269,27 @@ function planFreeradius(dev: LinuxMachine, session: LinuxShellSession, commandLi
       const out = dev.runCommandFrameInSession(commandLine, session).replace(/\n$/, '');
       if (out.length > 0) emit(ctx, out);
       started = !wasRunning && server.getRadiusd().isRunning();
+      return true;
+    },
+  });
+}
+
+function planDgmgrl(dev: LinuxMachine, session: LinuxShellSession, commandLine: string): StreamPlan | null {
+  if (/[|&;]/.test(commandLine) || !/\bSTART\s+OBSERVER\b/i.test(commandLine) || /\bIN\s+BACKGROUND\b/i.test(commandLine)) return null;
+  const deviceId = dev.getId();
+  let blocking = false;
+  return job((ctx) => new Promise<void>((resolve) => {
+    if (!blocking || ctx.cancelled()) { resolve(); return; }
+    untilObserversStop(deviceId, resolve);
+    ctx.onCancel(() => {
+      stopObserversOf(deviceId);
+      resolve();
+    });
+  }), {
+    prepare: (ctx) => {
+      const out = dev.runCommandFrameInSession(commandLine, session).replace(/\n$/, '');
+      if (out.length > 0) emit(ctx, out);
+      blocking = /Observer started/.test(out);
       return true;
     },
   });

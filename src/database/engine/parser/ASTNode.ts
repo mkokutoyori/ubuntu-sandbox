@@ -765,8 +765,10 @@ export interface FlashbackStatement extends ASTNode {
   name?: string;
   /** Raw SCN / TIMESTAMP / RESTORE POINT / BEFORE DROP clause. */
   to: string;
-  toKind?: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RAW';
+  toKind?: 'SCN' | 'TIMESTAMP' | 'BEFORE_DROP' | 'RESETLOGS' | 'RAW';
   toExpr?: Expression;
+  before?: boolean;
+  standby?: boolean;
 }
 
 export interface PurgeStatement extends ASTNode {

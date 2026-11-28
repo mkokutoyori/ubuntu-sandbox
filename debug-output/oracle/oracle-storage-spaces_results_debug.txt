@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-storage-spaces
-Generated: 2026-11-28T00:30:26.495Z
+Generated: 2026-11-28T13:38:30.243Z
 Topology:  LinuxServer ora-stor — Oracle ORCL OPEN
 Total commands: 371
 ============================================================
@@ -1109,9 +1109,9 @@ SQL [181/371]> SELECT * FROM v$instance WHERE rownum < 5;
 
 SQL [182/371]> SELECT * FROM v$database WHERE rownum < 5;
   
-        DBID ACTIVATION# NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE SWITCHOVER_STATUS PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
-  ---------- ----------- ---- --------- ------------ ---------- ------------- ----------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  3966445747   966445747 ORCL 28-NOV-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 28-NOV-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000412            1000001
+        DBID ACTIVATION# NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE SWITCHOVER_STATUS PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE# PROTECTION_MODE     PROTECTION_LEVEL   
+  ---------- ----------- ---- --------- ------------ ---------- ------------- ----------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------ ------------------- -------------------
+  1106498053   106498053 ORCL 28-NOV-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 28-NOV-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000412            1000001 MAXIMUM PERFORMANCE MAXIMUM PERFORMANCE
   
   1 row selected.
 
@@ -1438,18 +1438,18 @@ SQL [211/371]> SELECT * FROM v$sql WHERE rownum < 5;
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1         1053      842           1          0              0 SYS                 2026-11-28T00:30:26
+         REGION_          1         1065      852           1          0              0 SYS                 2026-11-28T13:38:30
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1          102       81           1          0              0 SYS                 2026-11-28T00:30:26
+         COUNTR          1          112       90           1          0              0 SYS                 2026-11-28T13:38:30
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          149      119           1          0              0 SYS                 2026-11-28T00:30:26
+         STR          1          164      131           1          0              0 SYS                 2026-11-28T13:38:30
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -1460,7 +1460,7 @@ SQL [211/371]> SELECT * FROM v$sql WHERE rownum < 5;
                  )                                                                                                                                                                                             
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          231      185           1          0              0 SYS                 2026-11-28T00:30:26
+                  1          234      187           1          0              0 SYS                 2026-11-28T13:38:30
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
@@ -1473,10 +1473,10 @@ SQL [212/371]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  0jfss4xa3xqw0               0           1          1       1         1053      842           1          0              0 SYS                 28-NOV-26       
-  1p340y2a3xqw0               0           1          1       1          102       81           1          0              0 SYS                 28-NOV-26       
-  0438608a3xqw0               0           1          1       1          149      119           1          0              0 SYS                 28-NOV-26       
-  0jmvs97a3xqw0               0           1          1       1          231      185           1          0              0 SYS                 28-NOV-26       
+  0jfss4xa3xqw0               0           1          1       1         1065      852           1          0              0 SYS                 28-NOV-26       
+  1p340y2a3xqw0               0           1          1       1          112       90           1          0              0 SYS                 28-NOV-26       
+  0438608a3xqw0               0           1          1       1          164      131           1          0              0 SYS                 28-NOV-26       
+  0jmvs97a3xqw0               0           1          1       1          234      187           1          0              0 SYS                 28-NOV-26       
   
   4 rows selected.
 
@@ -1736,11 +1736,7 @@ SQL [242/371]> SELECT * FROM v$archive_processes WHERE rownum < 5;
 
 SQL [243/371]> SELECT * FROM v$flashback_database_log WHERE rownum < 5;
   
-  OLDEST_FLASHBACK_SCN OLDEST_FLASHBACK_TIME RETENTION_TARGET FLASHBACK_SIZE ESTIMATED_FLASHBACK_SIZE
-  -------------------- --------------------- ---------------- -------------- ------------------------
-                     0                                   1440              0                        0
-  
-  1 row selected.
+  no rows selected
 
 SQL [244/371]> SELECT * FROM v$flash_recovery_area_usage WHERE rownum < 5;
   
@@ -1828,10 +1824,10 @@ SQL [256/371]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-11-28T00:30:26.364Z          529496636
-           2 SYS$USERS      SYS$USERS      2026-11-28T00:30:26.352Z          529496624
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-11-28T00:30:26.352Z          529496624
-           4 ORCLPDB1       ORCLPDB1       2026-11-28T00:30:26.352Z          529496624
+           1 ORCL           ORCL           2026-11-28T13:38:30.091Z          576780363
+           2 SYS$USERS      SYS$USERS      2026-11-28T13:38:30.085Z          576780357
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-11-28T13:38:30.085Z          576780357
+           4 ORCLPDB1       ORCLPDB1       2026-11-28T13:38:30.085Z          576780357
   
   4 rows selected.
 
@@ -1839,10 +1835,10 @@ SQL [257/371]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-11-28T00:30:26.364Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-11-28T00:30:26.352Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-11-28T00:30:26.352Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-11-28T00:30:26.352Z
+           1 ORCL           ORCL           ORCL 2026-11-28T13:38:30.091Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-11-28T13:38:30.085Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-11-28T13:38:30.085Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-11-28T13:38:30.085Z
   
   4 rows selected.
 
@@ -1881,7 +1877,7 @@ SQL [261/371]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
   SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
   --- ---------- --------------- -------------- ------------- ------------------ ------------------------
-  100        986             986              0           291                  7                        0
+  100        985             985              0           291                  7                        0
   
   1 row selected.
 
@@ -1889,10 +1885,10 @@ SQL [262/371]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME               VALUE
   --- ---------- ----------------------- -----
-  100 3649082374 DB time                 88394
-  100 3712030189 DB CPU                  70707
-  100 1561673735 background elapsed time 22098
-  100 4157170894 background cpu time     17676
+  100 3649082374 DB time                 97031
+  100 3712030189 DB CPU                  77627
+  100 1561673735 background elapsed time 24257
+  100 4157170894 background cpu time     19406
   
   4 rows selected.
 
@@ -1985,10 +1981,10 @@ SQL [272/371]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        28-NOV-26 28-NOV-26     2026-11-28:00:30:26 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        28-NOV-26 28-NOV-26     2026-11-28:00:30:26 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        28-NOV-26 28-NOV-26     2026-11-28:00:30:26 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        28-NOV-26 28-NOV-26     2026-11-28:00:30:26 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        28-NOV-26 28-NOV-26     2026-11-28:13:38:30 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        28-NOV-26 28-NOV-26     2026-11-28:13:38:30 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        28-NOV-26 28-NOV-26     2026-11-28:13:38:30 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        28-NOV-26 28-NOV-26     2026-11-28:13:38:30 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -2302,10 +2298,10 @@ SQL [306/371]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 00:30:26: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 00:30:26: Database mounted                            
-            3 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 00:30:26: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 00:30:26: Database opened                             
+            1 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 13:38:30: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 13:38:30: Database mounted                            
+            3 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 13:38:30: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 13:38:30: Database opened                             
   
   4 rows selected.
 
@@ -2335,7 +2331,7 @@ SQL [309/371]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME END_INTERVAL_TIME STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------- ----------------- --------- ------------ ----------- ------------- ------
-        1    1               1          1 27-NOV-26           28-NOV-26         COMPLETED YES          TYPICAL                 1 AUTO  
+        1    1               1          1 28-NOV-26           28-NOV-26         COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 
@@ -2343,10 +2339,10 @@ SQL [310/371]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 3966445747               1       0 logons cumulative             1
-        1 3966445747               1       1 logons current                1
-        1 3966445747               1       2 opened cursors cumulative   621
-        1 3966445747               1       3 opened cursors current      616
+        1 1106498053               1       0 logons cumulative             1
+        1 1106498053               1       1 logons current                1
+        1 1106498053               1       2 opened cursors cumulative   621
+        1 1106498053               1       3 opened cursors current      616
   
   4 rows selected.
 
@@ -2354,10 +2350,10 @@ SQL [311/371]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 0jfss4xa3xqw0               0                1               1053            842                 1                0                    0
-        1 1p340y2a3xqw0               0                1                102             81                 1                0                    0
-        1 0438608a3xqw0               0                1                149            119                 1                0                    0
-        1 0jmvs97a3xqw0               0                1                231            185                 1                0                    0
+        1 0jfss4xa3xqw0               0                1               1065            852                 1                0                    0
+        1 1p340y2a3xqw0               0                1                112             90                 1                0                    0
+        1 0438608a3xqw0               0                1                164            131                 1                0                    0
+        1 0jmvs97a3xqw0               0                1                234            187                 1                0                    0
   
   4 rows selected.
 
@@ -2752,7 +2748,7 @@ SQL [368/371]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP                  
   ------------------------------
-  2026-11-28 00:30:26.675 +00:00
+  2026-11-28 13:38:30.429 +00:00
   
   1 row selected.
 

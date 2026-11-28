@@ -122,12 +122,12 @@ describe('replication of the broker configuration', () => {
     expect(dgmgrl(lab.prod, "SHOW DATABASE 'ORCL';")).toContain('Log Transport Mode: SYNC');
   });
 
-  it('after a FAILOVER the promoted standby lists itself as the primary and drops the lost one', () => {
+  it('after a FAILOVER the promoted standby lists itself as the primary and keeps the lost one for reinstatement', () => {
     configured();
     lab.sql(lab.prod, 'SHUTDOWN ABORT;');
     dgmgrl(lab.dr, "FAILOVER TO 'ORCL_STB';");
     const out = dgmgrl(lab.dr, 'SHOW CONFIGURATION;');
     expect(out).toMatch(/ORCL_STB - Primary database/);
-    expect(out).not.toMatch(/ORCL - /);
+    expect(out).toMatch(/ORCL - Physical standby database\s+Error: ORA-16661/);
   });
 });

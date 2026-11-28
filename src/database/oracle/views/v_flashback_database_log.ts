@@ -1,9 +1,3 @@
-/**
- * V$FLASHBACK_DATABASE_LOG — flashback log space usage.
- *
- * Fed by `oracle.flashback.event` { kind: 'logged' }.
- */
-
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
@@ -11,8 +5,9 @@ import { registerView } from './registry';
 registerView({
   name: 'V$FLASHBACK_DATABASE_LOG',
   comment: 'Flashback log usage',
-  query({ runtime }) {
-    const used = runtime.flashbackHistory.reduce((s, f) => s + f.bytes, 0);
+  query({ instance }) {
+    const logs = instance.getFlashbackLogs();
+    const used = logs.reduce((total, log) => total + log.bytes, 0);
     return queryResult(
       [
         col.num('OLDEST_FLASHBACK_SCN'),
@@ -21,13 +16,13 @@ registerView({
         col.num('FLASHBACK_SIZE'),
         col.num('ESTIMATED_FLASHBACK_SIZE'),
       ],
-      [[
-        runtime.flashbackHistory[0]?.scn ?? 0,
-        runtime.flashbackHistory[0]
-          ? new Date(runtime.flashbackHistory[0].ts).toISOString()
-          : null as unknown as string,
-        1440, used, used * 2,
-      ]]
+      logs.length === 0 ? [] : [[
+        logs[0].scn,
+        new Date(logs[0].timeMs).toISOString(),
+        Number(instance.getParameter('db_flashback_retention_target') ?? '1440'),
+        used,
+        used,
+      ]],
     );
   },
 });
