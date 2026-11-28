@@ -263,7 +263,7 @@ function showFastStartFailover(instance: OracleInstance, state: BrokerState): st
     '  Health Conditions:',
     ...Object.entries(state.fsfo.health).map(([condition, on]) => `    ${condition.padEnd(31)}${on ? 'YES' : ' NO'}`),
     '  Oracle Error Conditions:',
-    ...(state.fsfo.errors.length === 0 ? ['    (none)'] : state.fsfo.errors.map((code) => `    ORA-${String(code).padStart(5, '0')}`)),
+    ...(state.fsfo.errors.length === 0 ? ['    (none)'] : state.fsfo.errors.map((code) => `    ORA-${code}: control file enqueue held for more than %s seconds`)),
   ];
 }
 
@@ -418,6 +418,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     const value = unquote(condition[2]);
     if (/^\d+$/.test(value)) {
       const code = Number(value);
+      if (code !== 240) return [`Error: ${ORACLE_ERRORS.ORA_16524}`];
       state.fsfo.errors = on ? [...new Set([...state.fsfo.errors, code])] : state.fsfo.errors.filter((known) => known !== code);
       if (on) alertCursors.set(instance, instance.getAlertLog().length);
       return ['Succeeded.'];

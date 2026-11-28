@@ -2,7 +2,7 @@
  * Sonde — fast-start failover en mode Potential Data Loss et retard de transport reel. Sources (reference de la CLI du broker 19c, docs.oracle.com, lue le jour du developpement) : la page VALIDATE
  * FAST_START FAILOVER donne le libelle `Fast-Start Failover: Enabled in Potential Data Loss Mode` en protection MaxPerformance ; SHOW FAST_START FAILOVER affiche `Lag Limit` (celui de
  * FastStartFailoverLagLimit, 30 s par defaut d'apres l'exemple 2 de SHOW CONFIGURATION) ; la page ENABLE FAST_START FAILOVER montre `Enabled in Zero Data Loss Mode.` : le simulateur dit
- * `Enabled in Potential Data Loss Mode.` par symetrie (le texte exact n'est dans aucune page lue).
+ * `Enabled in Potential Data Loss Mode.`, texte releve sur des transcripts publics (ASRblogger, le guide Google Cloud de l'observateur Data Guard), qui priment sur la documentation quand elle ne le montre pas (regle 8).
  *
  * Releve AVANT : ENABLE etait refuse en MaxPerformance (ORA-16693), `Lag Limit` valait toujours 0 et le `Transport Lag` de SHOW DATABASE etait constant (0).
  *

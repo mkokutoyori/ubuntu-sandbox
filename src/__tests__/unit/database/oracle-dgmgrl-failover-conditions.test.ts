@@ -1,6 +1,6 @@
 /*
  * Sonde — conditions de bascule configurables du fast-start failover. Source : pages ENABLE/DISABLE FAST_START FAILOVER CONDITION et SHOW FAST_START FAILOVER de la reference de la CLI du broker 19c
- * (docs.oracle.com, lue le jour du developpement) : `ENABLE FAST_START FAILOVER CONDITION value` prend un nom de condition de sante (entre guillemets) ou un numero d'erreur Oracle (`240` pour ORA-00240) ;
+ * (docs.oracle.com, lue le jour du developpement) : `ENABLE FAST_START FAILOVER CONDITION value` prend un nom de condition de sante (entre guillemets) ou `240` (la page 26ai : « ORA-240 is the only Oracle error that can be named », affiche `ORA-240: control file enqueue held for more than %s seconds`) ;
  * `SHOW FAST_START FAILOVER` liste les conditions de sante (YES/NO) et les `Oracle Error Conditions`. Un nom inconnu est refuse par ORA-16524 (« unsupported command, option, or argument », releve sur un
  * transcript public). Les pages ne donnent ni le texte de sortie de ENABLE/DISABLE CONDITION (le simulateur dit `Succeeded.`) ni le code d'une condition deja posee : les deux commandes sont idempotentes.
  *
@@ -66,9 +66,10 @@ describe('configurable fast-start failover conditions', () => {
     dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;');
     expect(dgmgrl(lab.prod, 'SHOW FAST_START FAILOVER;')).toContain('Oracle Error Conditions:\n    (none)');
     expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION 240;')).toContain('Succeeded.');
-    expect(dgmgrl(lab.prod, 'SHOW FAST_START FAILOVER;')).toContain('    ORA-00240');
+    expect(dgmgrl(lab.prod, 'SHOW FAST_START FAILOVER;')).toContain('    ORA-240: control file enqueue held for more than %s seconds');
+    expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION 600;')).toContain('ORA-16524');
     dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION 240;');
-    expect(dgmgrl(lab.prod, 'SHOW FAST_START FAILOVER;')).not.toContain('ORA-00240');
+    expect(dgmgrl(lab.prod, 'SHOW FAST_START FAILOVER;')).not.toContain('ORA-240');
   });
 
   it('a health condition is switched on and off and an unknown name is refused', () => {
