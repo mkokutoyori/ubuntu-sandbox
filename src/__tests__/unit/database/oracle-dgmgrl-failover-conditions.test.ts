@@ -5,7 +5,7 @@
  * transcript public). Les pages ne donnent ni le texte de sortie de ENABLE/DISABLE CONDITION (le simulateur dit `Succeeded.`) ni le code d'une condition deja posee : les deux commandes sont idempotentes.
  *
  * Evalue : une condition numerique est comparee aux lignes ORA-nnnnn que la primaire ecrit dans son journal d'alerte APRES l'activation ; a la sonde suivante l'observateur bascule sans attendre le seuil
- * (`Shutdown Primary: TRUE` : la primaire est arretee). Evalue aussi : `Corrupted Controlfile` (un fichier de controle qui ne porte plus son en-tete a un checkpoint : ORA-00227 puis ORA-00202) et `Corrupted Dictionary` (le fichier de donnees SYSTEM ecrase : ORA-01578), titres des pages d'erreur, conditions actives par defaut ; le simulateur ne repare plus ces fichiers en silence ; `Inaccessible Logfile` (un COMMIT qui ne peut ecrire AUCUN membre du groupe courant, fichiers supprimes ou disque plein : ORA-00345 puis ORA-00312, titres des pages d'erreur) et `Datafile Write Errors` (un checkpoint dont l'ecriture des fichiers de donnees echoue, disque plein : ORA-01114, titre de la page d'erreur ; condition active par defaut, comme dans SHOW FAST_START FAILOVER) et `Stuck Archiver` (le journal archive ne peut pas s'ecrire, disque plein : ORA-19504 puis ORA-00257, titres des pages d'erreur). NON evalue, enregistre dans TODO.md : les autres conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
+ * (`Shutdown Primary: TRUE` : la primaire est arretee). Evalue aussi, par un verificateur de sante qui passe toutes les minutes (la page SHOW CONFIGURATION : « the health ... is evaluated once a minute ») et a chaque checkpoint : `Corrupted Controlfile` (un fichier de controle qui ne porte plus son en-tete a un checkpoint : ORA-00227 puis ORA-00202) et `Corrupted Dictionary` (le fichier de donnees SYSTEM ecrase : ORA-01578), titres des pages d'erreur, conditions actives par defaut ; le simulateur ne repare plus ces fichiers en silence ; `Inaccessible Logfile` (un COMMIT qui ne peut ecrire AUCUN membre du groupe courant, fichiers supprimes ou disque plein : ORA-00345 puis ORA-00312, titres des pages d'erreur) et `Datafile Write Errors` (un checkpoint dont l'ecriture des fichiers de donnees echoue, disque plein : ORA-01114, titre de la page d'erreur ; condition active par defaut, comme dans SHOW FAST_START FAILOVER) et `Stuck Archiver` (le journal archive ne peut pas s'ecrire, disque plein : ORA-19504 puis ORA-00257, titres des pages d'erreur). NON evalue, enregistre dans TODO.md : les autres conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
  *
  * SHOW CONFIGURATION VERBOSE (page SHOW CONFIGURATION, exemple 2) : cible FSFO marquee `(*)`, liste `Properties:` puis resume du FSFO ; le mot etait accepte et ignore.
  *
@@ -239,6 +239,33 @@ describe('configurable fast-start failover conditions', () => {
     lab.sql(lab.prod, 'ALTER SYSTEM CHECKPOINT;');
     expect(alertOf()).not.toMatch(/ORA-00227|ORA-01578/);
     scheduler.advance(20000);
+    expect(roleOf(lab.dr)).not.toContain('PRIMARY');
+  });
+
+  it('the health checker finds a corrupted control file once a minute, with no checkpoint to trigger it', () => {
+    observed();
+    const path = getOracleDatabase(lab.prod.getId()).instance.getControlFilePaths()[0];
+    lab.sh(lab.prod, `echo garbage > ${path}`);
+    scheduler.advance(30000);
+    expect(alertOf()).not.toContain('ORA-00227');
+    expect(roleOf(lab.dr)).not.toContain('PRIMARY');
+    scheduler.advance(40000);
+    expect(alertOf()).toContain('ORA-00227');
+    expect(roleOf(lab.dr)).toContain('PRIMARY');
+  });
+
+  it('the health checker finds an overwritten SYSTEM datafile and reports it once, not at every pass', () => {
+    observed();
+    lab.sh(lab.prod, 'echo garbage > /u01/app/oracle/oradata/ORCL/system01.dbf');
+    scheduler.advance(63000);
+    expect(alertOf().match(/ORA-01578/g)?.length).toBe(1);
+    expect(roleOf(lab.dr)).toContain('PRIMARY');
+  });
+
+  it('TEMOIN — the health checker leaves an intact database alone', () => {
+    observed();
+    scheduler.advance(180000);
+    expect(alertOf()).not.toMatch(/ORA-00227|ORA-01578/);
     expect(roleOf(lab.dr)).not.toContain('PRIMARY');
   });
 });

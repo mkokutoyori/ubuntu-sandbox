@@ -26,6 +26,7 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
+import { getDefaultScheduler, type TimerHandle } from '@/events/Scheduler';
 import { ORACLE_CONFIG, ORACLE_ERRORS, oracleError } from '@/database/oracle/OracleConfig';
 import { hostNowMs } from '@/database/oracle/time/OracleHostClock';
 import { parseSize } from '@/database/oracle/views/_fileSize';
@@ -97,6 +98,8 @@ function appendAsOracle(dev: FsEquipment, path: string, content: string): boolea
   return dev.appendSystemFile(path, content);
 }
 
+const HEALTH_CHECK_INTERVAL_MS = 60000;
+
 function writeAsOracle(dev: FsEquipment, path: string, content: string): boolean {
   if (!dev.installSystemFile) {
     dev.writeFileFromEditor(path, content);
@@ -108,6 +111,7 @@ function writeAsOracle(dev: FsEquipment, path: string, content: string): boolean
 export class OracleFilesystemSync {
   private subs: Unsubscribe[] = [];
   /** Per-device accumulated spfile parameters, rendered atomically on each change. */
+  private healthChecks = new Map<string, TimerHandle>();
   private spfileParams: Map<string, Map<string, string>> = new Map();
   /** Per-device monotonically increasing counter used in adump/*.aud filenames. */
   private auditCounters: Map<string, number> = new Map();
@@ -190,9 +194,11 @@ export class OracleFilesystemSync {
           this.loadSegmentImages(deviceId);
         }
         this.syncSgaMemory(deviceId, newState === 'OPEN');
+        this.watchHealth(deviceId, newState === 'OPEN');
       }),
 
       this.bus.subscribe('oracle.storage.checkpoint-completed', (e) => {
+        this.inspectCorruption(e.payload.deviceId);
         this.writeSegmentImages(e.payload.deviceId);
         this.refreshControlFiles(e.payload.deviceId);
       }),
@@ -491,6 +497,8 @@ export class OracleFilesystemSync {
   stop(): void {
     for (const u of this.subs) u();
     this.subs.length = 0;
+    for (const handle of this.healthChecks.values()) getDefaultScheduler().clear(handle);
+    this.healthChecks.clear();
     this.spfileParams.clear();
     this.auditCounters.clear();
     this.reservedSgaKib.clear();
@@ -640,20 +648,39 @@ export class OracleFilesystemSync {
     const db = this.ctx.resolveDatabase(deviceId);
     if (!dev || !db) return;
     const structure = this.controlFileStructure(deviceId);
-    let corrupt = false;
     db.instance.getControlFilePaths().forEach((path, index) => {
       const current = this.readAsOracle(dev, path);
-      if (current === null) return;
-      if (!current.startsWith(controlFileBanner(index))) {
-        corrupt = true;
-        db.instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00227, '1', '1'));
-        db.instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00202, path));
-        return;
-      }
+      if (current === null || !current.startsWith(controlFileBanner(index))) return;
       const merged = mergeControlFileImage(parseControlFileImage(current), structure);
       writeAsOracle(dev, path, controlFileBody(index, merged));
     });
-    db.instance.setCorruption(corrupt, db.instance.dictionaryCorrupt);
+  }
+
+  private inspectCorruption(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!dev || !db) return;
+    const instance = db.instance;
+    const corruptControlFiles = instance.getControlFilePaths().filter((path, index) => {
+      const current = this.readAsOracle(dev, path);
+      return current !== null && !current.startsWith(controlFileBanner(index));
+    });
+    const system = (db.storage as import('@/database/oracle/OracleStorage').OracleStorage).listDatafiles().find((file) => file.tablespace === 'SYSTEM');
+    const systemImage = system === undefined ? null : this.readAsOracle(dev, system.path);
+    const dictionaryCorrupt = system !== undefined && systemImage !== null && !systemImage.startsWith('[ORACLE ');
+    if (corruptControlFiles.length > 0 && !instance.controlfileCorrupt) {
+      instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00227, '1', '1'));
+      for (const path of corruptControlFiles) instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00202, path));
+    }
+    if (dictionaryCorrupt && !instance.dictionaryCorrupt && system !== undefined) instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01578, String(system.fileNo), '1'));
+    instance.setCorruption(corruptControlFiles.length > 0, dictionaryCorrupt);
+  }
+
+  private watchHealth(deviceId: string, open: boolean): void {
+    const running = this.healthChecks.get(deviceId);
+    if (running !== undefined) getDefaultScheduler().clear(running);
+    this.healthChecks.delete(deviceId);
+    if (open) this.healthChecks.set(deviceId, getDefaultScheduler().setInterval(() => this.inspectCorruption(deviceId), HEALTH_CHECK_INTERVAL_MS));
   }
 
   private recordFlashbackLog(deviceId: string): void {
@@ -705,20 +732,14 @@ export class OracleFilesystemSync {
     const numbers = new Map(((this.ctx.resolveDatabase(deviceId)?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined)?.listDatafiles() ?? []).map((file) => [file.path, file.fileNo]));
     let failed = false;
     const system = ((this.ctx.resolveDatabase(deviceId)?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined)?.listDatafiles() ?? []).find((file) => file.tablespace === 'SYSTEM');
-    let dictionaryCorrupt = false;
     for (const [path, body] of Object.entries(this.segmentImages(deviceId))) {
       if (!this.fileExists(dev, path)) continue;
-      if (path === system?.path && !(this.readAsOracle(dev, path) ?? '').startsWith('[ORACLE ')) {
-        dictionaryCorrupt = true;
-        instance?.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01578, String(system.fileNo), '1'));
-        continue;
-      }
+      if (path === system?.path && !(this.readAsOracle(dev, path) ?? '').startsWith('[ORACLE ')) continue;
       if (writeAsOracle(dev, path, body)) continue;
       failed = true;
       instance?.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_01114, String(numbers.get(path) ?? 0), '1'));
     }
     instance?.setDatafileWriteError(failed);
-    instance?.setCorruption(instance.controlfileCorrupt, dictionaryCorrupt);
   }
 
   private loadSegmentImages(deviceId: string): void {
