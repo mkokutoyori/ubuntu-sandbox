@@ -17,6 +17,7 @@
  */
 
 
+import { openNoarchivelogBackupIsAllowed } from './NoarchivelogBackupPolicy';
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
@@ -176,6 +177,11 @@ export class RmanJobEngine implements IRmanJobEngine {
             : incLevel === 1    ? 'datafile-incremental-1'
               : 'datafile-full';
     const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
+
+    if (job.operation === 'BACKUP_DATABASE' && this._ctx.isArchiveLogMode?.() === false
+      && this._ctx.getInstanceState?.() === 'OPEN' && !openNoarchivelogBackupIsAllowed()) {
+      return err({ code: 'ERROR_STACK', message: 'RMAN-06149: cannot BACKUP DATABASE in NOARCHIVELOG mode' });
+    }
 
     const allDatafiles = this._ctx.getDatafiles();
     // Multi-fileNo : params.fileNo peut contenir "4" ou "1,2,3"

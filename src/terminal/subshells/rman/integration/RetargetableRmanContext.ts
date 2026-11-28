@@ -35,6 +35,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {
     return this._current.getInstanceState();
   }
+  isArchiveLogMode(): boolean { return this._current.isArchiveLogMode?.() ?? true; }
   isDatafileOffline(fileNo: number): boolean { return this._current.isDatafileOffline(fileNo); }
   setDatafileNeedsRecovery(fileNo: number, needsRecovery: boolean): void { this._current.setDatafileNeedsRecovery(fileNo, needsRecovery); }
   getRecoveryAreaUsedBytes(): number { return this._current.getRecoveryAreaUsedBytes(); }

@@ -488,6 +488,12 @@ export class LinuxRmanContext implements IRmanOracleContext {
     return this._oracle?.instance.state ?? 'OPEN';
   }
 
+  isArchiveLogMode(): boolean {
+    const distant = this.askRemoteScalar('SELECT log_mode FROM V$DATABASE', 'LOG_MODE');
+    if (distant !== null) return String(distant).toUpperCase() === 'ARCHIVELOG';
+    return this._oracle?.instance.archiveLogMode ?? true;
+  }
+
   getControlFilePaths(): ReadonlyArray<string> {
     const distant = this.askRemoteColumn('SELECT name FROM V$CONTROLFILE', 'NAME');
     if (distant && distant.length > 0) return distant;

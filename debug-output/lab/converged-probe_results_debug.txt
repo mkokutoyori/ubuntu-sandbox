@@ -1038,7 +1038,6 @@ areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Route
   LISTEN    0         4096               0.0.0.0:1521             0.0.0.0:*                                                                                       
   LISTEN    0         128                0.0.0.0:22               0.0.0.0:*        users:(("sshd",pid=22,fd=3))                                                   
   LISTEN    0         4096         127.0.0.53%lo:53               0.0.0.0:*        users:(("systemd-resolve",pid=29,fd=4))                                        
-  LISTEN    0         4096               0.0.0.0:1812             0.0.0.0:*        users:(("freeradius",pid=40,fd=3))                                             
   LISTEN    0         4096                  [::]:1521                [::]:*                                                                                       
   LISTEN    0         128                   [::]:22                  [::]:*        users:(("sshd",pid=22,fd=4))                                                   
 

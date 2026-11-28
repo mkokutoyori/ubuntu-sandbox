@@ -1176,22 +1176,24 @@ export abstract class LinuxMachine extends EndHost
     this.scriptRunners.delete(name);
   }
 
-  private async runServiceScript(command: string, pid?: number): Promise<string> {
-    const um = this.executor.userMgr;
-    const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
-    um.currentUser = 'root';
-    um.currentUid = 0;
-    um.currentGid = 0;
-    try {
-      const run = () => this.executor.executeAsync(command);
-      return await (pid !== undefined ? this.executor.withProcessIdentityAsync(pid, run) : run());
-    } catch {
-      return '';
-    } finally {
-      um.currentUser = prev.user;
-      um.currentUid = prev.uid;
-      um.currentGid = prev.gid;
-    }
+  private runServiceScript(command: string, pid?: number): Promise<string> {
+    return this.sessionQueue.run(async () => {
+      const um = this.executor.userMgr;
+      const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
+      um.currentUser = 'root';
+      um.currentUid = 0;
+      um.currentGid = 0;
+      try {
+        const run = () => this.executor.executeAsync(command);
+        return await (pid !== undefined ? this.executor.withProcessIdentityAsync(pid, run) : run());
+      } catch {
+        return '';
+      } finally {
+        um.currentUser = prev.user;
+        um.currentUid = prev.uid;
+        um.currentGid = prev.gid;
+      }
+    });
   }
 
   private applyDhcpd(result: { ok: boolean; output: string }): void {

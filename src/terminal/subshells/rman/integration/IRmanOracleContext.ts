@@ -96,6 +96,7 @@ export interface IRmanOracleContext {
   getControlFilePaths?(): ReadonlyArray<string>;
   /** Optional: instance lifecycle state used to gate CONNECT/RESTORE/RECOVER. */
   getInstanceState?(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
+  isArchiveLogMode?(): boolean;
   /** Whether a datafile is offline (its own flag or its tablespace's): a restore of an online file under an open database is refused. */
   isDatafileOffline?(fileNo: number): boolean;
   /** Marks a datafile as restored from a backup older than the control file (needs media recovery) or recovered. */
