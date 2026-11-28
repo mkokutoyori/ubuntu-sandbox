@@ -42,7 +42,7 @@ interface BrokerState {
   primaryIdentifier: string;
   divergenceScn: number;
   self: string;
-  fsfo: { enabled: boolean; threshold: number; target: string | null; errors: number[]; health: Record<string, boolean> };
+  fsfo: { enabled: boolean; threshold: number; target: string | null; errors: number[]; health: Record<string, boolean>; lagLimit: number };
   observers: { name: string; host: string }[];
   protectionMode: ProtectionMode;
   members: Map<string, BrokerMember>;
@@ -61,7 +61,7 @@ function raisedCondition(instance: OracleInstance, state: BrokerState): boolean 
   return log.slice(from).some((line) => [...line.matchAll(/ORA-0*(\d+)/g)].some((found) => state.fsfo.errors.includes(Number(found[1]))));
 }
 
-const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', divergenceScn: 0, self: '', fsfo: { enabled: false, threshold: 30, target: null, errors: [], health: { ...DEFAULT_HEALTH_CONDITIONS } }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
+const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', divergenceScn: 0, self: '', fsfo: { enabled: false, threshold: 30, target: null, errors: [], health: { ...DEFAULT_HEALTH_CONDITIONS }, lagLimit: 30 }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
 
 function stateOf(instance: OracleInstance): BrokerState {
   const stored = instance.getParameter(CONFIG_PARAMETER);
@@ -135,14 +135,14 @@ function roleOf(instance: OracleInstance, state: BrokerState, name: string): str
   return name === state.primaryName && name !== state.self ? 'PRIMARY' : 'PHYSICAL STANDBY';
 }
 
-const FSFO_MODE_LABEL = (state: BrokerState): string => (state.protectionMode === 'MAXIMUM PERFORMANCE' ? 'Enabled' : 'Enabled in Zero Data Loss Mode');
+const FSFO_MODE_LABEL = (state: BrokerState): string => (state.protectionMode === 'MAXIMUM PERFORMANCE' ? 'Enabled in Potential Data Loss Mode' : 'Enabled in Zero Data Loss Mode');
 
 function configurationProperties(state: BrokerState): [string, string][] {
   return [
     ['FastStartFailoverThreshold', String(state.fsfo.threshold)],
     ['OperationTimeout', '30'],
     ['TraceLevel', 'USER'],
-    ['FastStartFailoverLagLimit', '30'],
+    ['FastStartFailoverLagLimit', String(state.fsfo.lagLimit)],
     ['CommunicationTimeout', '180'],
     ['ObserverReconnect', '0'],
     ['FastStartFailoverAutoReinstate', 'TRUE'],
@@ -190,6 +190,11 @@ function showConfiguration(device: HostCapableDevice, instance: OracleInstance, 
   return lines;
 }
 
+function transportLagOf(instance: OracleInstance, name: string, nowMs: number): number {
+  const dest = readArchiveDestinations(instance.getAllParameters()).find((d) => d.kind === 'SERVICE' && (d.dbUniqueName ?? d.target) === name);
+  return dest === undefined ? 0 : instance.transportLagSeconds(dest.destId, nowMs);
+}
+
 function showDatabase(device: HostCapableDevice, instance: OracleInstance, state: BrokerState, name: string): string[] {
   const member = state.members.get(name);
   if (name !== state.primaryName && member === undefined) return [`${ORACLE_ERRORS.ORA_16541}`];
@@ -197,7 +202,8 @@ function showDatabase(device: HostCapableDevice, instance: OracleInstance, state
   const lines = ['', `Database - ${name}`, '', `  Role:               ${role}`];
   lines.push(`  Intended State:     ${role === 'PRIMARY' ? 'TRANSPORT-ON' : 'APPLY-ON'}`);
   if (role !== 'PRIMARY') {
-    lines.push('  Transport Lag:      0 seconds (computed 0 seconds ago)', '  Apply Lag:          0 seconds (computed 0 seconds ago)');
+    const lag = instance.databaseRole === 'PRIMARY' ? transportLagOf(instance, name, getDefaultScheduler().now()) : Number(viaDatabase(device, state.primaryIdentifier, `EXPORT LAG ${name}`)[0]) || 0;
+    lines.push(`  Transport Lag:      ${lag} seconds (computed 0 seconds ago)`, '  Apply Lag:          0 seconds (computed 0 seconds ago)');
     lines.push(`  Log Transport Mode: ${member?.logXptMode ?? 'ASYNC'}`);
   }
   const lacking = member !== undefined && standbyLogsOf(device, instance, state, name) === 0;
@@ -240,7 +246,7 @@ function showFastStartFailover(instance: OracleInstance, state: BrokerState): st
   return [
     `Fast-Start Failover: ${FSFO_MODE_LABEL(state)}`,
     `  Protection Mode:    ${PROTECTION_LABEL[instance.databaseRole === 'PRIMARY' ? instance.protectionMode : state.protectionMode]}`,
-    '  Lag Limit:          0 seconds',
+    `  Lag Limit:          ${instance.protectionMode === 'MAXIMUM PERFORMANCE' ? state.fsfo.lagLimit : 0} seconds`,
     `  Threshold:          ${state.fsfo.threshold} seconds`,
     '  Ping Interval:      3000 milliseconds',
     '  Ping Retry:         0',
@@ -383,6 +389,8 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     return [`Error: ${answer}`];
   }
   const nowMs = getDefaultScheduler().now();
+  const exportLag = /^EXPORT\s+LAG\s+(\S+)$/i.exec(text);
+  if (exportLag) return [String(transportLagOf(instance, exportLag[1].toUpperCase(), nowMs))];
   if (upper === 'EXPORT CONFIGURATION') return [JSON.stringify({ ...JSON.parse(serialize(state, state.self)), standbyLogs: instance.getStandbyLogs().length })];
   const register = /^REGISTER\s+OBSERVER\s+(\S+)\s+(\S+)$/i.exec(text);
   if (register) {
@@ -423,10 +431,11 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     const targetName = activeTarget(state);
     const target = targetName === null ? undefined : state.members.get(targetName);
     const logsReady = instance.getStandbyLogs().length > 0 && targetName !== null && (standbyLogsOf(device, instance, state, targetName) ?? 0) > 0;
-    if (target === undefined || !logsReady || instance.protectionMode !== 'MAXIMUM AVAILABILITY' || target.logXptMode !== 'SYNC') return [`Error: ${ORACLE_ERRORS.ORA_16693}`];
+    const potentialDataLoss = instance.protectionMode === 'MAXIMUM PERFORMANCE';
+    if (target === undefined || !logsReady || !(potentialDataLoss || (instance.protectionMode === 'MAXIMUM AVAILABILITY' && target.logXptMode === 'SYNC'))) return [`Error: ${ORACLE_ERRORS.ORA_16693}`];
     state.fsfo.target = targetName;
     state.fsfo.enabled = true;
-    return [...(instance.flashbackOn ? [] : [`Warning: ${ORACLE_ERRORS.ORA_16827}`]), 'Enabled in Zero Data Loss Mode.'];
+    return [...(instance.flashbackOn ? [] : [`Warning: ${ORACLE_ERRORS.ORA_16827}`]), `${FSFO_MODE_LABEL({ ...state, protectionMode: instance.protectionMode })}.`];
   }
   if (/^DISABLE\s+FAST_START\s+FAILOVER(\s+FORCE)?$/i.test(text)) {
     state.fsfo.enabled = false;
@@ -463,6 +472,11 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   if (threshold) {
     state.fsfo.threshold = Number(threshold[1]);
     return ['Property "faststartfailoverthreshold" updated'];
+  }
+  const lagLimit = /^EDIT\s+CONFIGURATION\s+SET\s+PROPERTY\s+FastStartFailoverLagLimit\s*=\s*'?(\d+)'?$/i.exec(text);
+  if (lagLimit) {
+    state.fsfo.lagLimit = Number(lagLimit[1]);
+    return ['Property "faststartfailoverlaglimit" updated'];
   }
   if (upper === 'SHOW FAST_START FAILOVER') return showFastStartFailover(instance, state);
   if (upper === 'SHOW OBSERVER') return showObserver(instance, state, nowMs);

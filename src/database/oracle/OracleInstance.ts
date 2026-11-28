@@ -534,13 +534,26 @@ export class OracleInstance {
     return this._transportState.get(destId);
   }
 
+  private _unshippedSince = new Map<number, number>();
+
+  noteUnshippedRedo(destId: number, nowMs: number): void {
+    if (!this._unshippedSince.has(destId)) this._unshippedSince.set(destId, nowMs);
+  }
+
+  transportLagSeconds(destId: number, nowMs: number): number {
+    const since = this._unshippedSince.get(destId);
+    return since === undefined ? 0 : Math.max(0, Math.floor((nowMs - since) / 1000));
+  }
+
   recordTransportSuccess(destId: number, sequence: number, standbyName: string): void {
+    this._unshippedSince.delete(destId);
     this._transportState.set(destId, { status: 'VALID', error: null, sequence });
     this.dataGuard.noteTransport(standbyName, sequence);
     this.logAlert(`LNS: Standby redo logfile shipped to ${standbyName} sequence ${sequence}`);
   }
 
   recordSynchronousTransportSuccess(destId: number): void {
+    this._unshippedSince.delete(destId);
     const connu = this._transportState.get(destId);
     this._transportState.set(destId, { status: 'VALID', error: null, sequence: connu?.sequence ?? 0 });
   }

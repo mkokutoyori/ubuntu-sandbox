@@ -18,6 +18,7 @@ import { shipRedoOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
 import { renderRedoStream, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 import type { SynchronousRedoAnswer } from '@/database/oracle/dataguard/SynchronousRedoPort';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { getDefaultScheduler } from '@/events/Scheduler';
 
 const ARCHIVE_DIRECTORY = ORACLE_CONFIG.ARCHIVELOG_DIR;
 
@@ -41,6 +42,7 @@ export class OracleRedoTransport {
 
   start(): void {
     this.subs.push(
+      this.bus.subscribe('oracle.transaction.committed', (e) => this.noteUnshipped(e.payload.deviceId)),
       this.bus.subscribe('oracle.archive-log.created', (e) => {
         if ((e.payload.origin ?? 'SWITCH') !== 'SWITCH') return;
         this.expedier(e.payload.deviceId, {
@@ -55,6 +57,14 @@ export class OracleRedoTransport {
   stop(): void {
     for (const u of this.subs) u();
     this.subs = [];
+  }
+
+  private noteUnshipped(deviceId: string): void {
+    const instance = this.ctx.resolveDatabase(deviceId)?.instance;
+    if (!instance) return;
+    for (const dest of readArchiveDestinations(instance.getAllParameters())) {
+      if (dest.kind === 'SERVICE' && dest.state === 'ENABLE' && dest.transport !== 'SYNC') instance.noteUnshippedRedo(dest.destId, getDefaultScheduler().now());
+    }
   }
 
   private expedier(

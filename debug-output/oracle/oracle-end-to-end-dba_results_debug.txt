@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-end-to-end-dba
-Generated: 2026-11-28T11:13:41.584Z
+Generated: 2026-11-28T11:43:05.830Z
 Topology:  LinuxServer ora-e2e — Oracle ORCL OPEN
 Total commands: 387
 ============================================================
@@ -991,7 +991,7 @@ SQL [83/387]> SELECT * FROM dba_hist_snapshot ORDER BY snap_id DESC FETCH FIRST 
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME END_INTERVAL_TIME STATUS    STARTUP_TIME        FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------- ----------------- --------- ------------------- ----------- ------------- ------
-        1    1               1          1 28-NOV-26           28-NOV-26         COMPLETED 2026-11-28T11:13:41 TYPICAL                 1 MANUAL
+        1    1               1          1 28-NOV-26           28-NOV-26         COMPLETED 2026-11-28T11:43:05 TYPICAL                 1 MANUAL
   
   1 row selected.
 
@@ -1003,42 +1003,42 @@ SQL [85/387]> SELECT * FROM dba_hist_sqlstat ORDER BY snap_id DESC FETCH FIRST 3
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 0jfss4xa3xqw0               0                1               1045            836                 1                0                    0
-        1 1p340y2a3xqw0               0                1                 83             66                 1                0                    0
-        1 0438608a3xqw0               0                1                105             84                 1                0                    0
-        1 0jmvs97a3xqw0               0                1                261            209                 1                0                    0
-        1 1xqamkba3xqw0               0                1                 52             42                 1                0                    0
-        1 13iiq67a3xqw0               0                1                 68             55                 1                0                    0
-        1 09yjycba3xqw0               0                1                 26             21                 1                0                    0
-        1 1bbre0pa3xqw0               0                1               2036           1628                 1                0                    1
-        1 1rj844la3xqw0               0                1                263            210                 1                0                    1
-        1 165abgna3xqw0               0                1                192            154                 1                0                    1
-        1 1lrdndha3xqw0               0                1                175            140                 1                0                    1
-        1 0lx34pna3xqw0               0                1                123             98                 1                0                    1
-        1 075thxta3xqw0               0                1                151            121                 1                0                    1
-        1 1ogfneya3xqw0               0                1                171            137                 1                0                    1
+        1 0jfss4xa3xqw0               0                1               1069            855                 1                0                    0
+        1 1p340y2a3xqw0               0                1                101             81                 1                0                    0
+        1 0438608a3xqw0               0                1                129            103                 1                0                    0
+        1 0jmvs97a3xqw0               0                1                188            151                 1                0                    0
+        1 1xqamkba3xqw0               0                1                 48             39                 1                0                    0
+        1 13iiq67a3xqw0               0                1                 73             59                 1                0                    0
+        1 09yjycba3xqw0               0                1                 27             21                 1                0                    0
+        1 1bbre0pa3xqw0               0                1               2190           1752                 1                0                    1
+        1 1rj844la3xqw0               0                1                234            188                 1                0                    1
+        1 165abgna3xqw0               0                1                238            190                 1                0                    1
+        1 1lrdndha3xqw0               0                1                251            201                 1                0                    1
+        1 0lx34pna3xqw0               0                1                155            124                 1                0                    1
+        1 075thxta3xqw0               0                1                210            168                 1                0                    1
+        1 1ogfneya3xqw0               0                1                260            208                 1                0                    1
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 13i4coqa3xqw0               0                1                 91             72                 1                0                    1
-        1 0vbcgv9a3xqw0               0                1                158            126                 1                0                    1
-        1 07jxh36a3xqw0               0                1                108             86                 1                0                    1
-        1 0wcn17ca3xqw0               0                1                 41             33                 1                0                    1
-        1 1cmu11ea3xqw0               0                1                 32             26                 1                0                    1
-        1 1ppp7cta3xqw0               0                1                 29             23                 1                0                    1
-        1 0e0st2xa3xqw0               0                1                 30             24                 1                0                    1
-        1 132zflia3xqw0               0                1                 61             48                 1                0                    1
-        1 0wptvesa3xqw0               0                1                 39             31                 1                0                    1
-        1 1snp3bba3xqw0               0                1                 85             68                 1                0                    1
-        1 16hnhn1a3xqw0               0                1                 27             21                 1                0                    1
-        1 14tlwhua3xqw0               0                1                 27             21                 1                0                    1
-        1 0bh8qrja3xqw0               0                1                 24             19                 1                0                    1
-        1 1fjuquca3xqw0               0                1                 25             20                 1                0                    1
+        1 13i4coqa3xqw0               0                1                171            137                 1                0                    1
+        1 0vbcgv9a3xqw0               0                1                232            185                 1                0                    1
+        1 07jxh36a3xqw0               0                1                180            144                 1                0                    1
+        1 0wcn17ca3xqw0               0                1                 85             68                 1                0                    1
+        1 1cmu11ea3xqw0               0                1                 77             61                 1                0                    1
+        1 1ppp7cta3xqw0               0                1                 54             43                 1                0                    1
+        1 0e0st2xa3xqw0               0                1                 53             42                 1                0                    1
+        1 132zflia3xqw0               0                1                100             80                 1                0                    1
+        1 0wptvesa3xqw0               0                1                 77             61                 1                0                    1
+        1 1snp3bba3xqw0               0                1                135            108                 1                0                    1
+        1 16hnhn1a3xqw0               0                1                 36             28                 1                0                    1
+        1 14tlwhua3xqw0               0                1                 28             23                 1                0                    1
+        1 0bh8qrja3xqw0               0                1                 32             25                 1                0                    1
+        1 1fjuquca3xqw0               0                1                 57             45                 1                0                    1
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 19li9rga3xqw0               0                1                 34             27                 1                0                    1
-        1 0xbms2xa3xqw0               0                1                 54             43                 1                0                    1
+        1 19li9rga3xqw0               0                1                 35             28                 1                0                    1
+        1 0xbms2xa3xqw0               0                1                101             81                 1                0                    1
   
   30 rows selected.
 
@@ -1119,39 +1119,39 @@ SQL [96/387]> SELECT message_text FROM x$dbgalertext ORDER BY originating_timest
   
   MESSAGE_TEXT                                                                    
   --------------------------------------------------------------------------------
-  2026-11-28 11:13:41: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
+  2026-11-28 11:43:05: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
   urs                                                                             
-  2026-11-28 11:13:41: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
+  2026-11-28 11:43:05: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
   urs                                                                             
-  2026-11-28 11:13:41: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
+  2026-11-28 11:43:05: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
   urs                                                                             
-  2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
+  2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
   ned object APP_READONLY_ROLE                                                    
-  2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
+  2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
   ned object APP_ROLE                                                             
-  2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
+  2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
   ned object APP_READONLY                                                         
-  2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
+  2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
   ned object APP_USER                                                             
-  2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
+  2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
   ned object APP_OWNER                                                            
-  2026-11-28 11:13:41: [LOW] UNUSUAL_LOGIN_SOURCE: Successful logon outside busine
+  2026-11-28 11:43:05: [LOW] UNUSUAL_LOGIN_SOURCE: Successful logon outside busine
   ss hours                                                                        
-  2026-11-28 11:13:41: Logon: user=SYS sid=8 as SYSDBA                            
-  2026-11-28 11:13:41: Logoff: user=SYS sid=7 as SYSDBA                           
-  2026-11-28 11:13:41: Logon: user=SYS sid=7 as SYSDBA                            
-  2026-11-28 11:13:41: Logoff: user=SYS sid=6 as SYSDBA                           
-  2026-11-28 11:13:41: Logon: user=SYS sid=6 as SYSDBA                            
+  2026-11-28 11:43:05: Logon: user=SYS sid=8 as SYSDBA                            
+  2026-11-28 11:43:05: Logoff: user=SYS sid=7 as SYSDBA                           
+  2026-11-28 11:43:05: Logon: user=SYS sid=7 as SYSDBA                            
+  2026-11-28 11:43:05: Logoff: user=SYS sid=6 as SYSDBA                           
+  2026-11-28 11:43:05: Logon: user=SYS sid=6 as SYSDBA                            
   
   MESSAGE_TEXT                                                                    
   --------------------------------------------------------------------------------
-  2026-11-28 11:13:41: Logoff: user=SYS sid=5 as SYSDBA                           
-  2026-11-28 11:13:41: Logon: user=SYS sid=5 as SYSDBA                            
-  2026-11-28 11:13:41: Listener LISTENER started successfully                     
-  2026-11-28 11:13:41: Database opened                                            
-  2026-11-28 11:13:41: Completed checkpoint up to RBA, SCN: 1000001               
-  2026-11-28 11:13:41: Database mounted                                           
-  2026-11-28 11:13:41: Starting ORACLE instance (normal)                          
+  2026-11-28 11:43:05: Logoff: user=SYS sid=5 as SYSDBA                           
+  2026-11-28 11:43:05: Logon: user=SYS sid=5 as SYSDBA                            
+  2026-11-28 11:43:05: Listener LISTENER started successfully                     
+  2026-11-28 11:43:05: Database opened                                            
+  2026-11-28 11:43:05: Completed checkpoint up to RBA, SCN: 1000001               
+  2026-11-28 11:43:05: Database mounted                                           
+  2026-11-28 11:43:05: Starting ORACLE instance (normal)                          
   
   21 rows selected.
 
@@ -1167,34 +1167,34 @@ SQL [99/387]> SELECT * FROM v$diag_alert_ext WHERE rownum < 20;
   
   ORIGINATING_TIMESTAMP NORMALIZED_TIMESTAMP ORGANIZATION_ID COMPONENT_ID HOST_ID   HOST_ADDRESS MESSAGE_TYPE MESSAGE_LEVEL MESSAGE_ID MESSAGE_GROUP CLIENT_ID MODULE_ID PROCESS_ID THREAD_ID USER_ID INSTANCE_ID DETAILED_LOCATION PROBLEM_KEY UPSTREAM_COMP_ID DOWNSTREAM_COMP_ID EXECUTION_CONTEXT_ID EXECUTION_CONTEXT_SEQUENCE MESSAGE_TEXT                                                                     MESSAGE_ARGUMENTS
   --------------------- -------------------- --------------- ------------ --------- ------------ ------------ ------------- ---------- ------------- --------- --------- ---------- --------- ------- ----------- ----------------- ----------- ---------------- ------------------ -------------------- -------------------------- -------------------------------------------------------------------------------- -----------------
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Starting ORACLE instance (normal)                                            
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Database mounted                                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Completed checkpoint up to RBA, SCN: 1000001                                 
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Database opened                                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Listener LISTENER started successfully                                       
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Logon: user=SYS sid=5 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Logoff: user=SYS sid=5 as SYSDBA                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Logon: user=SYS sid=6 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Logoff: user=SYS sid=6 as SYSDBA                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Logon: user=SYS sid=7 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Logoff: user=SYS sid=7 as SYSDBA                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: Logon: user=SYS sid=8 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: [LOW] UNUSUAL_LOGIN_SOURCE: Successful logon outside busine                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Starting ORACLE instance (normal)                                            
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Database mounted                                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Completed checkpoint up to RBA, SCN: 1000001                                 
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Database opened                                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Listener LISTENER started successfully                                       
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Logon: user=SYS sid=5 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Logoff: user=SYS sid=5 as SYSDBA                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Logon: user=SYS sid=6 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Logoff: user=SYS sid=6 as SYSDBA                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Logon: user=SYS sid=7 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Logoff: user=SYS sid=7 as SYSDBA                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: Logon: user=SYS sid=8 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: [LOW] UNUSUAL_LOGIN_SOURCE: Successful logon outside busine                  
                                                                                                                                                                                                                                                                                                                                     ss hours                                                                                          
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_OWNER                                                                              
   
   ORIGINATING_TIMESTAMP NORMALIZED_TIMESTAMP ORGANIZATION_ID COMPONENT_ID HOST_ID   HOST_ADDRESS MESSAGE_TYPE MESSAGE_LEVEL MESSAGE_ID MESSAGE_GROUP CLIENT_ID MODULE_ID PROCESS_ID THREAD_ID USER_ID INSTANCE_ID DETAILED_LOCATION PROBLEM_KEY UPSTREAM_COMP_ID DOWNSTREAM_COMP_ID EXECUTION_CONTEXT_ID EXECUTION_CONTEXT_SEQUENCE MESSAGE_TEXT                                                                     MESSAGE_ARGUMENTS
   --------------------- -------------------- --------------- ------------ --------- ------------ ------------ ------------- ---------- ------------- --------- --------- ---------- --------- ------- ----------- ----------------- ----------- ---------------- ------------------ -------------------- -------------------------- -------------------------------------------------------------------------------- -----------------
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_USER                                                                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_READONLY                                                                           
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_ROLE                                                                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_READONLY_ROLE                                                                      
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:13:41: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-11-28 11:43:05: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho                  
                                                                                                                                                                                                                                                                                                                                     urs                                                                                               
   
   19 rows selected.
@@ -1239,64 +1239,48 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
   
   OS_USERNAME USERNAME  USERHOST  TIMESTAMP ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- --------- --------- --------- ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON order_lines TO app_role                  GRANT         
+  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT ON order_lines TO app_readonly_role                                 GRANT         
+  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        ORDERS                             0 APP_OWNER         8           GRANT SELECT ON orders TO app_readonly_role                                      GRANT         
   root        APP_OWNER ora-e2e   28-NOV-26 GRANT        CUSTOMERS                          0 APP_OWNER         8           GRANT SELECT ON customers TO app_readonly_role                                   GRANT         
   root        APP_OWNER ora-e2e   28-NOV-26 GRANT        PRODUCTS                           0 APP_OWNER         8           GRANT SELECT ON products TO app_readonly_role                                    GRANT         
-  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        ORDERS                             0 APP_OWNER         8           GRANT SELECT ON orders TO app_readonly_role                                      GRANT         
-  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT ON order_lines TO app_readonly_role                                 GRANT         
-  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        CUSTOMERS                          0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON customers TO app_role                    GRANT         
+  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON order_lines TO app_role                  GRANT         
   root        APP_OWNER ora-e2e   28-NOV-26 GRANT        PRODUCTS                           0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON products TO app_role                     GRANT         
   root        APP_OWNER ora-e2e   28-NOV-26 GRANT        ORDERS                             0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON orders TO app_role                       GRANT         
+  root        APP_OWNER ora-e2e   28-NOV-26 GRANT        CUSTOMERS                          0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON customers TO app_role                    GRANT         
   root        APP_OWNER ora-e2e   28-NOV-26 CREATE INDEX IDX_ORDERS_CUST                    0 APP_OWNER         8           CREATE INDEX idx_orders_cust ON orders (customer_id)                             CREATE INDEX  
   root        APP_OWNER ora-e2e   28-NOV-26 CREATE INDEX IDX_ORDERS_DATE                    0 APP_OWNER         8           CREATE INDEX idx_orders_date ON orders (order_date)                              CREATE INDEX  
   root        APP_OWNER ora-e2e   28-NOV-26 CREATE INDEX IDX_OL_PROD                        0 APP_OWNER         8           CREATE INDEX idx_ol_prod ON order_lines (product_id)                             CREATE INDEX  
+  root        APP_OWNER ora-e2e   28-NOV-26 CREATE TABLE ORDERS                             0 APP_OWNER         8           CREATE TABLE orders (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, custome CREATE TABLE  
+                                                                                                                            r_id NUMBER NOT NULL, order_date DATE DEFAULT SYSDATE, status VARCHAR2(20) DEFAU               
+                                                                                                                            LT 'PENDING', CONSTRAINT fk_orders_cust FOREIGN KEY (customer_id) REFERENCES cus               
+                                                                                                                            tomers(id))                                                                                    
   root        APP_OWNER ora-e2e   28-NOV-26 CREATE TABLE ORDER_LINES                        0 APP_OWNER         8           CREATE TABLE order_lines (order_id NUMBER, line_no NUMBER, product_id NUMBER, qt CREATE TABLE  
                                                                                                                             y NUMBER, unit_price NUMBER(10,2), CONSTRAINT pk_ol PRIMARY KEY (order_id, line_               
                                                                                                                             no), CONSTRAINT fk_ol_ord FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE               
                                                                                                                              CASCADE, CONSTRAINT fk_ol_prod FOREIGN KEY (product_id) REFERENCES products(id)               
                                                                                                                             )                                                                                              
-  root        APP_OWNER ora-e2e   28-NOV-26 CREATE TABLE ORDERS                             0 APP_OWNER         8           CREATE TABLE orders (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, custome CREATE TABLE  
-                                                                                                                            r_id NUMBER NOT NULL, order_date DATE DEFAULT SYSDATE, status VARCHAR2(20) DEFAU               
-                                                                                                                            LT 'PENDING', CONSTRAINT fk_orders_cust FOREIGN KEY (customer_id) REFERENCES cus               
-                                                                                                                            tomers(id))                                                                                    
-  root        APP_OWNER ora-e2e   28-NOV-26 CREATE TABLE CUSTOMERS                          0 APP_OWNER         8           CREATE TABLE customers (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name CREATE TABLE  
-                                                                                                                             VARCHAR2(100) NOT NULL, email VARCHAR2(200) UNIQUE, created DATE DEFAULT SYSDAT               
-                                                                                                                            E)                                                                                             
-  
-  OS_USERNAME USERNAME  USERHOST  TIMESTAMP ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
-  ----------- --------- --------- --------- ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
   root        APP_OWNER ora-e2e   28-NOV-26 CREATE TABLE PRODUCTS                           0 APP_OWNER         8           CREATE TABLE products (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, sku V CREATE TABLE  
                                                                                                                             ARCHAR2(20) UNIQUE NOT NULL, name VARCHAR2(200), price NUMBER(10,2) CHECK (price               
                                                                                                                              >= 0))                                                                                        
+  
+  OS_USERNAME USERNAME  USERHOST  TIMESTAMP ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
+  ----------- --------- --------- --------- ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
+  root        APP_OWNER ora-e2e   28-NOV-26 CREATE TABLE CUSTOMERS                          0 APP_OWNER         8           CREATE TABLE customers (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name CREATE TABLE  
+                                                                                                                             VARCHAR2(100) NOT NULL, email VARCHAR2(200) UNIQUE, created DATE DEFAULT SYSDAT               
+                                                                                                                            E)                                                                                             
   root        SYS       ora-e2e   28-NOV-26 GRANT                                           0 SYS               8           GRANT app_readonly_role TO app_readonly                                          GRANT         
+  root        SYS       ora-e2e   28-NOV-26 CREATE ROLE  APP_ROLE                           0 SYS               8           CREATE ROLE app_role                                                             CREATE ROLE   
   root        SYS       ora-e2e   28-NOV-26 CREATE ROLE  APP_READONLY_ROLE                  0 SYS               8           CREATE ROLE app_readonly_role                                                    CREATE ROLE   
   root        SYS       ora-e2e   28-NOV-26 GRANT                                           0 SYS               8           GRANT app_role TO app_user                                                       GRANT         
-  root        SYS       ora-e2e   28-NOV-26 CREATE ROLE  APP_ROLE                           0 SYS               8           CREATE ROLE app_role                                                             CREATE ROLE   
-  root        SYS       ora-e2e   28-NOV-26 GRANT                                           0 SYS               8           GRANT CREATE SESSION TO app_user                                                 GRANT         
-  root        SYS       ora-e2e   28-NOV-26 CREATE USER  APP_READONLY                       0 SYS               8           CREATE USER app_readonly IDENTIFIED BY "Ro1#"                                    CREATE USER   
   root        SYS       ora-e2e   28-NOV-26 GRANT                                           0 SYS               8           GRANT CREATE SESSION TO app_readonly                                             GRANT         
+  root        SYS       ora-e2e   28-NOV-26 CREATE USER  APP_READONLY                       0 SYS               8           CREATE USER app_readonly IDENTIFIED BY "Ro1#"                                    CREATE USER   
+  root        SYS       ora-e2e   28-NOV-26 GRANT                                           0 SYS               8           GRANT CREATE SESSION TO app_user                                                 GRANT         
   root        SYS       ora-e2e   28-NOV-26 CREATE USER  APP_USER                           0 SYS               8           CREATE USER app_user IDENTIFIED BY "AppUser1#"                                   CREATE USER   
   root        SYS       ora-e2e   28-NOV-26 GRANT                                           0 SYS               8           GRANT CONNECT, RESOURCE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE, CREATE  GRANT         
                                                                                                                             TRIGGER, CREATE TYPE TO app_owner                                                              
   root        SYS       ora-e2e   28-NOV-26 CREATE USER  APP_OWNER                          0 SYS               8           CREATE USER app_owner IDENTIFIED BY "App1#" QUOTA UNLIMITED ON users             CREATE USER   
   root        SYS       ora-e2e   28-NOV-26 LOGON                                           0                   8 SYSDBA                                                                                     LOGON         
   oracle      SYS       localhost 28-NOV-26 LOGOFF                                          0                   7                                                                                            LOGOFF        
-  oracle      SYS       localhost 28-NOV-26 CREATE TABLE FBTB_TILL_TXN_DETAIL_HIST          0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (
-       BRANCHCODE VARCHAR2(3) N CREATE TABLE  
-                                                                                                                            OT NULL,
-       TILL_ID VARCHAR2(4) NOT NULL,
-       XREF VARCHAR2(16),
-       CCYCODE               
-                                                                                                                             VARCHAR2(3),
-       DENOMCODE VARCHAR2(10),
-       INFLOW NUMBER(22,3),
-       OUTFLO               
-                                                                                                                            W NUMBER(22,3),
-       POSTINGDATE DATE
-     )                                                     
-  
-  OS_USERNAME USERNAME  USERHOST  TIMESTAMP ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
-  ----------- --------- --------- --------- ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
   oracle      SYS       localhost 28-NOV-26 CREATE TABLE DETB_RTL_TELLER                    0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.DETB_RTL_TELLER (
        TRN_REF_NO VARCHAR2(16) NOT NULL,
    CREATE TABLE  
@@ -1390,6 +1374,22 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
        CHG_GL_2 VARCHAR2(20),
        CHG_GL_3 VARCHAR2(20),
        CHG_G               
+  
+  OS_USERNAME USERNAME  USERHOST  TIMESTAMP ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
+  ----------- --------- --------- --------- ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
+  oracle      SYS       localhost 28-NOV-26 CREATE TABLE FBTB_TILL_TXN_DETAIL_HIST          0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (
+       BRANCHCODE VARCHAR2(3) N CREATE TABLE  
+                                                                                                                            OT NULL,
+       TILL_ID VARCHAR2(4) NOT NULL,
+       XREF VARCHAR2(16),
+       CCYCODE               
+                                                                                                                             VARCHAR2(3),
+       DENOMCODE VARCHAR2(10),
+       INFLOW NUMBER(22,3),
+       OUTFLO               
+                                                                                                                            W NUMBER(22,3),
+       POSTINGDATE DATE
+     )                                                     
   oracle      SYS       localhost 28-NOV-26 CREATE TABLE CLTB_ACCOUNT_SCHEDULES             0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (
        ACCOUNT_NUMBER VARCHAR2(20) CREATE TABLE  
                                                                                                                              NOT NULL,
@@ -3288,33 +3288,33 @@ SQL [185/387]> SELECT * FROM dba_alert_history ORDER BY creation_time DESC FETCH
   
   SEQUENCE_ID REASON_ID            SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                                         
   ----------- -------------------- -------- ------------- --------------- --------------------------------------------------------------------------------
-           28 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Logoff: user=SYS sid=9 as SYSDBA                           
-           27 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: [LOW] UNUSUAL_LOGIN_SOURCE: Successful logon outside busine
+           28 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:06: Logoff: user=SYS sid=9 as SYSDBA                           
+           27 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:06: [LOW] UNUSUAL_LOGIN_SOURCE: Successful logon outside busine
                                                                           ss hours                                                                        
+           26 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:06: Logon: user=SYS sid=9 as SYSDBA                            
           513 UNUSUAL_LOGIN_SOURCE LOW      28-NOV-26                     Successful logon outside business hours                                         
-           26 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Logon: user=SYS sid=9 as SYSDBA                            
-           25 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Completed checkpoint up to RBA, SCN: 1000341               
-           24 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Thread 1 advanced to log sequence 2                        
-           23 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Completed checkpoint up to RBA, SCN: 1000340               
-           22 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: FLASHBACK TABLE APP_OWNER.CUSTOMERS TO TIMESTAMP …         
-           21 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
+           25 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:06: Completed checkpoint up to RBA, SCN: 1000341               
+           24 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:06: Thread 1 advanced to log sequence 2                        
+           23 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:06: Completed checkpoint up to RBA, SCN: 1000340               
+           22 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:06: FLASHBACK TABLE APP_OWNER.CUSTOMERS TO TIMESTAMP …         
+           21 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:05: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
                                                                           urs                                                                             
           512 OFF_HOURS_DML        MEDIUM   28-NOV-26                     UPDATE executed outside business hours                                          
-           20 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
+           20 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:05: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
                                                                           urs                                                                             
           511 OFF_HOURS_DML        MEDIUM   28-NOV-26                     UPDATE executed outside business hours                                          
-           19 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
+           19 Info                 NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:05: [MEDIUM] OFF_HOURS_DML: UPDATE executed outside business ho
                                                                           urs                                                                             
           510 OFF_HOURS_DML        MEDIUM   28-NOV-26                     UPDATE executed outside business hours                                          
   
   SEQUENCE_ID REASON_ID            SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                                         
   ----------- -------------------- -------- ------------- --------------- --------------------------------------------------------------------------------
-          460 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_DBA_AUDITOR breached                                             
-          461 SOD_BREACH           HIGH     28-NOV-26                     SoD policy SOD_USER_MGMT_VS_SECURITY breached                                   
-          462 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_DATA_EXFILTRATION breached                                       
-          463 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_GRANT_MONOPOLY breached                                          
-          464 SOD_BREACH           MEDIUM   28-NOV-26                     SoD policy SOD_DML_VS_AUDIT breached                                            
-          465 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_DBA_AUDITOR breached                                             
+          500 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_DBA_AUDITOR breached                                             
+          501 SOD_BREACH           HIGH     28-NOV-26                     SoD policy SOD_USER_MGMT_VS_SECURITY breached                                   
+          502 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_DATA_EXFILTRATION breached                                       
+          503 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_GRANT_MONOPOLY breached                                          
+          504 SOD_BREACH           MEDIUM   28-NOV-26                     SoD policy SOD_DML_VS_AUDIT breached                                            
+          505 SOD_BREACH           CRITICAL 28-NOV-26                     SoD policy SOD_DBA_AUDITOR breached                                             
   
   20 rows selected.
 
@@ -3382,7 +3382,7 @@ SQL [198/387]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID ACTIVATION# NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE SWITCHOVER_STATUS PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE# PROTECTION_MODE     PROTECTION_LEVEL   
   ---------- ----------- ---- --------- ------------ ---------- ------------- ----------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------ ------------------- -------------------
-  1994330646   994330646 ORCL 28-NOV-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000341 28-NOV-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000346            1000341 MAXIMUM PERFORMANCE MAXIMUM PERFORMANCE
+  2927996441   927996441 ORCL 28-NOV-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000341 28-NOV-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000346            1000341 MAXIMUM PERFORMANCE MAXIMUM PERFORMANCE
   
   1 row selected.
 
@@ -3709,18 +3709,18 @@ SQL [227/387]> SELECT * FROM v$sql WHERE rownum < 5;
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1         1045      836           1          0              0 SYS                 2026-11-28T11:13:41
+         REGION_          1         1069      855           1          0              0 SYS                 2026-11-28T11:43:05
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1           83       66           1          0              0 SYS                 2026-11-28T11:13:41
+         COUNTR          1          101       81           1          0              0 SYS                 2026-11-28T11:43:05
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          105       84           1          0              0 SYS                 2026-11-28T11:13:41
+         STR          1          129      103           1          0              0 SYS                 2026-11-28T11:43:05
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -3731,7 +3731,7 @@ SQL [227/387]> SELECT * FROM v$sql WHERE rownum < 5;
                  )                                                                                                                                                                                             
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          261      209           1          0              0 SYS                 2026-11-28T11:13:41
+                  1          188      151           1          0              0 SYS                 2026-11-28T11:43:05
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
@@ -3744,10 +3744,10 @@ SQL [228/387]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  0jfss4xa3xqw0               0           1          1       1         1045      836           1          0              0 SYS                 28-NOV-26       
-  1p340y2a3xqw0               0           1          1       1           83       66           1          0              0 SYS                 28-NOV-26       
-  0438608a3xqw0               0           1          1       1          105       84           1          0              0 SYS                 28-NOV-26       
-  0jmvs97a3xqw0               0           1          1       1          261      209           1          0              0 SYS                 28-NOV-26       
+  0jfss4xa3xqw0               0           1          1       1         1069      855           1          0              0 SYS                 28-NOV-26       
+  1p340y2a3xqw0               0           1          1       1          101       81           1          0              0 SYS                 28-NOV-26       
+  0438608a3xqw0               0           1          1       1          129      103           1          0              0 SYS                 28-NOV-26       
+  0jmvs97a3xqw0               0           1          1       1          188      151           1          0              0 SYS                 28-NOV-26       
   
   4 rows selected.
 
@@ -4095,10 +4095,10 @@ SQL [272/387]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-11-28T11:13:41.453Z          568091725
-           2 SYS$USERS      SYS$USERS      2026-11-28T11:13:41.448Z          568091720
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-11-28T11:13:41.448Z          568091720
-           4 ORCLPDB1       ORCLPDB1       2026-11-28T11:13:41.448Z          568091720
+           1 ORCL           ORCL           2026-11-28T11:43:05.655Z          569855927
+           2 SYS$USERS      SYS$USERS      2026-11-28T11:43:05.650Z          569855922
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-11-28T11:43:05.650Z          569855922
+           4 ORCLPDB1       ORCLPDB1       2026-11-28T11:43:05.650Z          569855922
   
   4 rows selected.
 
@@ -4106,10 +4106,10 @@ SQL [273/387]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-11-28T11:13:41.453Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-11-28T11:13:41.448Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-11-28T11:13:41.448Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-11-28T11:13:41.448Z
+           1 ORCL           ORCL           ORCL 2026-11-28T11:43:05.655Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-11-28T11:43:05.650Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-11-28T11:43:05.650Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-11-28T11:43:05.650Z
   
   4 rows selected.
 
@@ -4156,10 +4156,10 @@ SQL [278/387]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME                VALUE
   --- ---------- ----------------------- ------
-  100 3649082374 DB time                 187010
-  100 3712030189 DB CPU                  149606
-  100 1561673735 background elapsed time  46752
-  100 4157170894 background cpu time      37401
+  100 3649082374 DB time                 259697
+  100 3712030189 DB CPU                  207752
+  100 1561673735 background elapsed time  64924
+  100 4157170894 background cpu time      51938
   
   4 rows selected.
 
@@ -4252,10 +4252,10 @@ SQL [288/387]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:13:41 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:13:41 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:13:41 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:13:41 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:43:05 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:43:05 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:43:05 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        28-NOV-26 28-NOV-26     2026-11-28:11:43:05 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -4569,10 +4569,10 @@ SQL [322/387]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Database mounted                            
-            3 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:13:41: Database opened                             
+            1 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:05: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:05: Database mounted                            
+            3 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:05: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   28-NOV-26     28-NOV-26       2026-11-28 11:43:05: Database opened                             
   
   4 rows selected.
 
@@ -4602,7 +4602,7 @@ SQL [325/387]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME END_INTERVAL_TIME STATUS    STARTUP_TIME        FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------- ----------------- --------- ------------------- ----------- ------------- ------
-        1    1               1          1 28-NOV-26           28-NOV-26         COMPLETED 2026-11-28T11:13:41 TYPICAL                 1 MANUAL
+        1    1               1          1 28-NOV-26           28-NOV-26         COMPLETED 2026-11-28T11:43:05 TYPICAL                 1 MANUAL
   
   1 row selected.
 
@@ -4621,10 +4621,10 @@ SQL [327/387]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 1crczcga3xqw0               0                1                 61             48                 1                0                    1
-        1 13q2o7va3xqw0               0                1                 59             47                 1                0                    1
-        1 0pp9qa9a3xqw0               0                1                 39             31                 1                0                    1
-        1 1wnhu3ma3xqw0               0                1                103             83                 1                0                    1
+        1 1crczcga3xqw0               0                1                 30             24                 1                0                    1
+        1 13q2o7va3xqw0               0                1                 39             31                 1                0                    1
+        1 0pp9qa9a3xqw0               0                1                 37             30                 1                0                    1
+        1 1wnhu3ma3xqw0               0                1                125            100                 1                0                    1
   
   4 rows selected.
 
@@ -5019,7 +5019,7 @@ SQL [384/387]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP                  
   ------------------------------
-  2026-11-28 11:13:41.903 +00:00
+  2026-11-28 11:43:06.315 +00:00
   
   1 row selected.
 

@@ -7,7 +7,7 @@
  * `ORA-16844` sans cible valide ; `ORA-16647` au-dela du nombre maximal d'observateurs (3 de la 12.2 a la 19c).
  * L'observateur est un acteur planifie (IScheduler) sur la machine ou tourne dgmgrl : toutes les 3000 ms (Ping Interval) il joint la primaire par une session Oracle Net, et quand elle se tait
  * depuis FastStartFailoverThreshold secondes (30 par defaut) et que la cible repond, il lance le FAILOVER sur la cible puis l'ouvre. START OBSERVER rend la main au lieu de bloquer (limite connue) ;
- * le mode Potential Data Loss (MaxPerformance, FastStartFailoverLagLimit) n'est pas implemente : son texte de sortie n'est pas dans la documentation lue.
+ * le mode Potential Data Loss (MaxPerformance, FastStartFailoverLagLimit) a sa propre sonde, oracle-dgmgrl-potential-data-loss.
  *
  * Plusieurs standbys : `FastStartFailoverTarget` se regle sur la primaire (`Property "faststartfailovertarget" updated for member "X".`), est requis des qu'il y a plus d'une standby (ORA-16693 sinon), se relit par
  * `SHOW DATABASE 'X' FastStartFailoverTarget;` (` FastStartFailoverTarget='Y';`, reciproque sur la cible) et ne se change plus une fois le FSFO active (ORA-16654) ; les cibles potentielles sont les membres SYNC.
@@ -75,8 +75,9 @@ describe('observer and fast-start failover', () => {
     expect(out).toContain('SUCCESS');
   });
 
-  it('a standby that is not SYNC refuses it with ORA-16693', () => {
-    configured(false);
+  it('MaxAvailability with a standby that is not SYNC refuses it with ORA-16693', () => {
+    configured();
+    dgmgrl(lab.prod, "EDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='ASYNC';");
     expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;')).toContain('ORA-16693: requirements not met for enabling fast-start failover');
   });
 

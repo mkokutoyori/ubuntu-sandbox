@@ -3,7 +3,8 @@ import { getDefaultScheduler, type TimerHandle } from '@/events/Scheduler';
 export const OBSERVER_PING_INTERVAL_MS = 3000;
 
 export interface ObserverConfigView {
-  fsfo: { enabled: boolean; threshold: number; target: string | null };
+  fsfo: { enabled: boolean; threshold: number; target: string | null; lagLimit: number };
+  protectionMode: string;
   members: [string, { identifier: string; needsReinstate?: boolean }][];
 }
 
@@ -27,6 +28,7 @@ export function startObserver(deviceId: string, name: string, initialPrimaryIden
   let unreachableMs = 0;
   const reinstating = new Set<string>();
   let lastTargetPing = scheduler.now();
+  let lastTargetLag = 0;
   let view: ObserverConfigView | null = null;
   const parse = (lines: string[] | null): ObserverConfigView | null => {
     try { return lines === null ? null : (JSON.parse(lines.join('\n')) as ObserverConfigView); } catch { return null; }
@@ -40,6 +42,7 @@ export function startObserver(deviceId: string, name: string, initialPrimaryIden
       view = parse(ports.ask(primaryIdentifier, 'EXPORT CONFIGURATION')) ?? view;
       const target = view?.members.find(([name]) => name === view?.fsfo.target) ?? view?.members[0];
       if (target !== undefined && ports.ask(target[1].identifier, 'EXPORT CONFIGURATION') !== null) lastTargetPing = scheduler.now();
+      lastTargetLag = Number(ports.ask(primaryIdentifier, `EXPORT LAG ${target?.[0] ?? ''}`)?.[0]) || 0;
       for (const [lost, member] of view?.members ?? []) {
         if (member.needsReinstate !== true) { reinstating.delete(lost); continue; }
         if (ports.ask(member.identifier, 'EXPORT CONFIGURATION') === null) { reinstating.delete(lost); continue; }
@@ -53,6 +56,7 @@ export function startObserver(deviceId: string, name: string, initialPrimaryIden
     if (view === null || !view.fsfo.enabled || (!raised && unreachableMs < view.fsfo.threshold * 1000)) return;
     const target = view.members.find(([name]) => name === view?.fsfo.target) ?? view.members[0];
     if (target === undefined || ports.ask(target[1].identifier, 'EXPORT CONFIGURATION') === null) return;
+    if (view.protectionMode === 'MAXIMUM PERFORMANCE' && lastTargetLag > view.fsfo.lagLimit) return;
     ports.ask(target[1].identifier, `OBSERVER FAILOVER TO '${target[0]}'`);
     ports.sql(target[1].identifier, 'ALTER DATABASE OPEN');
     primaryIdentifier = target[1].identifier;
