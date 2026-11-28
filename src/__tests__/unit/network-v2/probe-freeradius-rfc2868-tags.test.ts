@@ -4,7 +4,9 @@
  * The users file parser read the `:1` and dropped it: the codec wrote 0x00 as the tag whatever was asked, so two tunnels in one reply could not be told apart and a reader never saw the tag.
  * It is a criterion read and not enforced (rule 6): the tag now travels in RadiusAttribute.tag, is written by the codec, read back and printed by radclient.
  *
- * Discriminated with git stash on src/network: 4 of 5 fall before the fix. The witness (an untagged tunnel attribute is written with tag 0 and printed without a tag) passes either way.
+ * A tag above 31 is refused when the users file is read, as pair.c does (TAG_VALID_ZERO: tag < 0x20, otherwise "Invalid tag for attribute %s"); the tags 0 and 31 are valid.
+ *
+ * Discriminated with git stash on src/network: 4 of the first 5 cases fell before the tag was carried at all (measured then); of the 2 range cases added after, 1 falls before the check and the tags 0 and 31 pass either way. The witness (an untagged tunnel attribute is written with tag 0 and printed without a tag) passes either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -81,5 +83,19 @@ describe('RFC 2868 tags', () => {
     const out = await ask(client);
     expect(out).toContain('Tunnel-Type:1 = VLAN');
     expect(out).toContain('Tunnel-Type:2 = GRE');
+  });
+
+  const reload = async (reply: string) => {
+    const { target } = await lab('');
+    write(target, USERS_FILE_PATH, `alice Cleartext-Password := "wonderland"\n${reply}`);
+    return target.executeCommand('systemctl reload freeradius');
+  };
+
+  it('a tag above 31 makes the reload fail, naming the file, the line and the attribute', async () => {
+    expect(await reload('\tTunnel-Type:40 = VLAN\n')).toContain(`${USERS_FILE_PATH}[2]: Parse error (reply) for entry alice: Invalid tag for attribute Tunnel-Type`);
+  });
+
+  it('the tags 0 and 31 are valid', async () => {
+    expect(await reload('\tTunnel-Type:31 = VLAN,\n\tTunnel-Medium-Type:0 = IEEE-802\n')).not.toContain('Invalid tag');
   });
 });

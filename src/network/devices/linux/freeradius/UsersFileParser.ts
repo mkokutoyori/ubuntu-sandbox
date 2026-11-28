@@ -203,6 +203,7 @@ function readEntries(
         if (parsed.trailingComma) return fail(lineNo, `Invalid text after check attributes for entry ${name}`);
         for (const pair of parsed.pairs) {
           if (!knownName(pair.name)) return fail(lineNo, `Parse error (check) for entry ${name}: Unknown attribute "${pair.name}"`);
+          if (pair.tag !== null && pair.tag > 31) return fail(lineNo, `Parse error (check) for entry ${name}: Invalid tag for attribute ${pair.name}`);
         }
         check = parsed.pairs;
         mode = 'want-reply';
@@ -217,6 +218,7 @@ function readEntries(
       if ('error' in parsed) return fail(lineNo, `Parse error (reply) for entry ${name}: ${parsed.error}`);
       for (const pair of parsed.pairs) {
         if (!knownName(pair.name)) return fail(lineNo, `Parse error (reply) for entry ${name}: Unknown attribute "${pair.name}"`);
+        if (pair.tag !== null && pair.tag > 31) return fail(lineNo, `Parse error (reply) for entry ${name}: Invalid tag for attribute ${pair.name}`);
         if (pair.name.toLowerCase() in RADIUS_ATTR && usersPairToAttribute(pair) === null) {
           return fail(lineNo, `Parse error (reply) for entry ${name}: Failed parsing "${pair.value}" as a value for attribute "${pair.name}"`);
         }
