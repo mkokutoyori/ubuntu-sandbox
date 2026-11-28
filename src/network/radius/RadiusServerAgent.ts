@@ -27,7 +27,7 @@ import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
 import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, encodeEapPacket, verifyEapMd5Response } from './eap';
-import { MICROSOFT_VENDOR_ID } from './dictionary';
+import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, type FreeradiusCounter } from './dictionary';
 import {
   ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
   deriveMppeKeys, encryptMppeKey,
@@ -1009,7 +1009,7 @@ export class RadiusServerAgent {
     if (!this.running || !this.config.enabled) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius' || payload.code !== 'status-server') return;
-    this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies, clients);
+    this.handleStatusServer(inPort, srcIp, udp, payload, 'access-accept', this.recentReplies, clients, true);
   }
 
   private handleStatusServer(
@@ -1017,6 +1017,7 @@ export class RadiusServerAgent {
     replyCode: 'access-accept' | 'accounting-response',
     cache: Map<string, { response: RadiusPacket; sentAt: number }>,
     clients: RadiusClientTable | null = null,
+    statisticsListener = false,
   ): void {
     const senderIp = srcIp.toString();
     const refused = clients === null ? this.clientRefused(senderIp) : clients.find(srcIp, this.transport()) === null;
@@ -1058,7 +1059,7 @@ export class RadiusServerAgent {
     if (decided?.verdict === 'drop' || (decided?.verdict === 'reject' && replyCode === 'accounting-response')) return;
     let response: RadiusPacket = cached?.response ?? {
       type: 'radius', code: decided?.verdict === 'reject' ? 'access-reject' : replyCode, identifier: request.identifier, authenticator: '00'.repeat(16),
-      attributes: [...(decided?.reply ?? []), ...this.proxyStatesOf(request)],
+      attributes: [...(decided?.reply ?? []), ...(statisticsListener ? this.statisticsAttributes(request) : []), ...this.proxyStatesOf(request)],
     };
     if (!cached) {
       response = withMessageAuthenticator(response, request.authenticator, secret);
@@ -1066,6 +1067,21 @@ export class RadiusServerAgent {
       cache.set(dedupKey, { response, sentAt: simulationNowMs() });
     }
     this.sendRadiusFrame(inPort, port, localIp, srcIp, udp.sourcePort, udp.destinationPort, response);
+  }
+
+  private statisticsAttributes(request: RadiusPacket): RadiusAttribute[] {
+    const asked = request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === 127);
+    const flag = asked === undefined ? 0 : Number(asked.value);
+    const kinds: { kind: 'auth' | 'acct'; bit: number; counters: readonly FreeradiusCounter[] }[] = [
+      { kind: 'auth', bit: 0x01, counters: FREERADIUS_AUTH_COUNTERS },
+      { kind: 'acct', bit: 0x02, counters: FREERADIUS_ACCT_COUNTERS },
+    ];
+    return kinds
+      .filter(({ bit }) => (flag & bit) !== 0 && (flag & 0xe0) === 0)
+      .flatMap(({ kind, counters }) => {
+        const stats = this.statistics.get(`${kind}:*`) ?? emptyStats();
+        return counters.map(([type, , field]): RadiusAttribute => ({ type: 'vendor-specific', value: stats[field], vendor: { id: FREERADIUS_VENDOR_ID, type } }));
+      });
   }
 
   private withSessionTimeout(user: RadiusUser, secondsLeft: number): RadiusUser {

@@ -107,6 +107,7 @@ export const RADIUS_DICTIONARY_BY_TYPE: ReadonlyMap<number, RadiusAttrDef> = new
 
 export const CISCO_VENDOR_ID = 9;
 export const MICROSOFT_VENDOR_ID = 311;
+export const FREERADIUS_VENDOR_ID = 11344;
 
 export interface RadiusVsaDef {
   vendorId: number;
@@ -114,12 +115,32 @@ export interface RadiusVsaDef {
   name: string;
   displayName: string;
   valueType: RadiusValueType;
+  valueNames?: Readonly<Record<string, number>>;
 }
 
 /**
  * Known Vendor-Specific sub-attributes. Not exhaustive — covers what the
  * simulator's Cisco/Huawei AAA integration and the planned MS-CHAP path need.
  */
+function freeradiusCounter(vendorType: number, displayName: string, valueNames?: Readonly<Record<string, number>>): RadiusVsaDef {
+  return { vendorId: FREERADIUS_VENDOR_ID, vendorType, name: displayName.toLowerCase(), displayName, valueType: 'integer', ...(valueNames === undefined ? {} : { valueNames }) };
+}
+
+export type FreeradiusCounter = readonly [type: number, displayName: string, field: 'requests' | 'responses' | 'accepts' | 'rejects' | 'challenges' | 'dup' | 'malformed' | 'badAuthenticator' | 'dropped' | 'unknownTypes' | 'conflicts'];
+
+export const FREERADIUS_AUTH_COUNTERS: readonly FreeradiusCounter[] = [
+  [128, 'FreeRADIUS-Total-Access-Requests', 'requests'], [129, 'FreeRADIUS-Total-Access-Accepts', 'accepts'], [130, 'FreeRADIUS-Total-Access-Rejects', 'rejects'],
+  [131, 'FreeRADIUS-Total-Access-Challenges', 'challenges'], [132, 'FreeRADIUS-Total-Auth-Responses', 'responses'], [133, 'FreeRADIUS-Total-Auth-Duplicate-Requests', 'dup'],
+  [134, 'FreeRADIUS-Total-Auth-Malformed-Requests', 'malformed'], [135, 'FreeRADIUS-Total-Auth-Invalid-Requests', 'badAuthenticator'],
+  [136, 'FreeRADIUS-Total-Auth-Dropped-Requests', 'dropped'], [137, 'FreeRADIUS-Total-Auth-Unknown-Types', 'unknownTypes'], [191, 'FreeRADIUS-Total-Auth-Conflicts', 'conflicts'],
+];
+
+export const FREERADIUS_ACCT_COUNTERS: readonly FreeradiusCounter[] = [
+  [148, 'FreeRADIUS-Total-Accounting-Requests', 'requests'], [149, 'FreeRADIUS-Total-Accounting-Responses', 'responses'], [150, 'FreeRADIUS-Total-Acct-Duplicate-Requests', 'dup'],
+  [151, 'FreeRADIUS-Total-Acct-Malformed-Requests', 'malformed'], [152, 'FreeRADIUS-Total-Acct-Invalid-Requests', 'badAuthenticator'],
+  [153, 'FreeRADIUS-Total-Acct-Dropped-Requests', 'dropped'], [154, 'FreeRADIUS-Total-Acct-Unknown-Types', 'unknownTypes'], [192, 'FreeRADIUS-Total-Acct-Conflicts', 'conflicts'],
+];
+
 export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   // Cisco (vendor 9): the single catch-all AV-pair sub-attribute (type 1),
   // e.g. "shell:priv-lvl=15" for privilege-level authorization.
@@ -131,6 +152,12 @@ export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   { vendorId: MICROSOFT_VENDOR_ID, vendorType: 17, name: 'ms-mppe-recv-key', displayName: 'MS-MPPE-Recv-Key', valueType: 'octets' },
   { vendorId: MICROSOFT_VENDOR_ID, vendorType: 25, name: 'ms-chap2-response', displayName: 'MS-CHAP2-Response', valueType: 'octets' },
   { vendorId: MICROSOFT_VENDOR_ID, vendorType: 26, name: 'ms-chap2-success', displayName: 'MS-CHAP2-Success', valueType: 'octets' },
+  freeradiusCounter(127, 'FreeRADIUS-Statistics-Type', {
+    'none': 0, 'authentication': 1, 'accounting': 2, 'proxy-authentication': 4, 'proxy-accounting': 8, 'internal': 0x10, 'client': 0x20,
+    'server': 0x40, 'home-server': 0x80, 'auth-acct': 0x03, 'proxy-auth-acct': 0x0c, 'all': 0x1f,
+  }),
+  ...FREERADIUS_AUTH_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
+  ...FREERADIUS_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
 ];
 
 const VSA_BY_VENDOR_AND_TYPE = new Map<string, RadiusVsaDef>(

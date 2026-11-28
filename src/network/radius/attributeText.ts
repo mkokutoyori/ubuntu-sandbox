@@ -35,6 +35,10 @@ export function formatRadiusAttributeValue(attribute: RadiusAttribute): string {
   }
   if (valueType === 'text' || valueType === 'string' || valueType === 'tagged-string') return `"${raw}"`;
   if (valueType === 'integer' || valueType === 'tagged-integer') {
+    if (vsa?.valueNames !== undefined) {
+      const known = Object.keys(vsa.valueNames).find((name) => vsa.valueNames?.[name] === Number(attribute.value));
+      if (known !== undefined) return known.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('-');
+    }
     const names = RADIUS_VALUE_NAMES[attribute.type];
     const key = names ? Object.keys(names).find((name) => names[name] === Number(attribute.value)) : undefined;
     if (key !== undefined) return NAMED_CASE[key] ?? key.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('-');

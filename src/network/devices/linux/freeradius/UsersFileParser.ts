@@ -245,7 +245,9 @@ export function usersPairToAttribute(pair: UsersPair): RadiusAttribute | null {
   const key = pair.name.toLowerCase();
   const vsa = lookupVsaByName(key);
   if (vsa !== undefined) {
-    const value = vsa.valueType === 'octets' ? (/^0x[0-9a-f]*$/i.test(pair.value) ? pair.value.slice(2) : null) : pair.value;
+    const value = vsa.valueType === 'octets' ? (/^0x[0-9a-f]*$/i.test(pair.value) ? pair.value.slice(2) : null)
+      : vsa.valueType === 'integer' ? (vsa.valueNames?.[pair.value.toLowerCase()] ?? (/^\d+$/.test(pair.value) ? Number(pair.value) : null))
+        : pair.value;
     return value === null ? null : { type: 'vendor-specific', value, vendor: { id: vsa.vendorId, type: vsa.vendorType } };
   }
   if (!(key in RADIUS_ATTR)) return null;
