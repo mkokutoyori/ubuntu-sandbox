@@ -162,6 +162,9 @@ export const FREERADIUS_INTERNAL_COUNTERS: readonly (readonly [type: number, dis
   [193, 'FreeRADIUS-Stats-Threads-Active', 'integer'], [194, 'FreeRADIUS-Stats-Threads-Total', 'integer'], [195, 'FreeRADIUS-Stats-Threads-Max', 'integer'],
 ];
 
+export const FREERADIUS_STATS_CLIENT_ADDRESS = 167;
+export const FREERADIUS_STATS_ERROR = 187;
+
 export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   // Cisco (vendor 9): the single catch-all AV-pair sub-attribute (type 1),
   // e.g. "shell:priv-lvl=15" for privilege-level authorization.
@@ -181,6 +184,8 @@ export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   ...FREERADIUS_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
   ...FREERADIUS_PROXY_AUTH_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
   ...FREERADIUS_PROXY_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
+  { vendorId: FREERADIUS_VENDOR_ID, vendorType: FREERADIUS_STATS_CLIENT_ADDRESS, name: 'freeradius-stats-client-ip-address', displayName: 'FreeRADIUS-Stats-Client-IP-Address', valueType: 'address' },
+  { vendorId: FREERADIUS_VENDOR_ID, vendorType: FREERADIUS_STATS_ERROR, name: 'freeradius-stats-error', displayName: 'FreeRADIUS-Stats-Error', valueType: 'text' },
   ...FREERADIUS_INTERNAL_COUNTERS.map(([type, name, valueType]) => ({ ...freeradiusCounter(type, name), valueType })),
 ];
 
