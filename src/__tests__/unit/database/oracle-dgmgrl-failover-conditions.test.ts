@@ -2,7 +2,7 @@
  * Sonde — conditions de bascule configurables du fast-start failover. Source : pages ENABLE/DISABLE FAST_START FAILOVER CONDITION et SHOW FAST_START FAILOVER de la reference de la CLI du broker 19c
  * (docs.oracle.com, lue le jour du developpement) : `ENABLE FAST_START FAILOVER CONDITION value` prend un nom de condition de sante (entre guillemets) ou `240` (la page 26ai : « ORA-240 is the only Oracle error that can be named », affiche `ORA-240: control file enqueue held for more than %s seconds`) ;
  * `SHOW FAST_START FAILOVER` liste les conditions de sante (YES/NO) et les `Oracle Error Conditions`. Un nom inconnu est refuse par ORA-16524 (« unsupported command, option, or argument », releve sur un
- * transcript public). `Succeeded.` est la sortie de l'exemple 3 de ENABLE FAST_START FAILOVER CONDITION dans la reference 12.2. Les pages disent qu'une condition deja posee (ou retiree sans avoir ete posee) est une erreur mais n'en donnent pas le code : les deux commandes sont idempotentes.
+ * transcript public). `Succeeded.` est la sortie de l'exemple 3 de ENABLE FAST_START FAILOVER CONDITION dans la reference 12.2. Les references 12.2, 19c et 21c disent qu'une condition deja posee (ou retiree sans avoir ete posee) est une erreur mais n'en donnent pas le code (la 11.2 et le brevet de la fonction disent le contraire) : le simulateur, qui affiche la version 19c, leve l'erreur generique ORA-16524 ; ce code est INFERE, non source, et se corrige des qu'une capture le donne.
  *
  * Evalue : une condition numerique est comparee aux lignes ORA-nnnnn que la primaire ecrit dans son journal d'alerte APRES l'activation ; a la sonde suivante l'observateur bascule sans attendre le seuil
  * (`Shutdown Primary: TRUE` : la primaire est arretee). Evalue aussi, par un verificateur de sante qui passe toutes les minutes (la page SHOW CONFIGURATION : « the health ... is evaluated once a minute ») et a chaque checkpoint : `Corrupted Controlfile` (un fichier de controle qui ne porte plus son en-tete a un checkpoint : ORA-00227 puis ORA-00202) et `Corrupted Dictionary` (le fichier de donnees SYSTEM ecrase : ORA-01578), titres des pages d'erreur, conditions actives par defaut ; le simulateur ne repare plus ces fichiers en silence ; `Inaccessible Logfile` (un COMMIT qui ne peut ecrire AUCUN membre du groupe courant, fichiers supprimes ou disque plein : ORA-00345 puis ORA-00312, titres des pages d'erreur) et `Datafile Write Errors` (un checkpoint dont l'ecriture des fichiers de donnees echoue, disque plein : ORA-01114, titre de la page d'erreur ; condition active par defaut, comme dans SHOW FAST_START FAILOVER) et `Stuck Archiver` (le journal archive ne peut pas s'ecrire, disque plein : ORA-19504 puis ORA-00257, titres des pages d'erreur). NON evalue, enregistre dans TODO.md : les autres conditions de sante nommees s'activent et se desactivent mais le moteur n'a pas d'evenement pour les detecter.
@@ -267,5 +267,18 @@ describe('configurable fast-start failover conditions', () => {
     scheduler.advance(180000);
     expect(alertOf()).not.toMatch(/ORA-00227|ORA-01578/);
     expect(roleOf(lab.dr)).not.toContain('PRIMARY');
+  });
+
+  it('enabling a condition that is already set, or disabling one that is not, is an error (19c reference)', () => {
+    configured();
+    dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;');
+    expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION "Stuck Archiver";')).toContain('Succeeded.');
+    expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION "Stuck Archiver";')).toContain('ORA-16524');
+    expect(dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION "Stuck Archiver";')).toContain('Succeeded.');
+    expect(dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION "Stuck Archiver";')).toContain('ORA-16524');
+    expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION 240;')).toContain('Succeeded.');
+    expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER CONDITION 240;')).toContain('ORA-16524');
+    expect(dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION 240;')).toContain('Succeeded.');
+    expect(dgmgrl(lab.prod, 'DISABLE FAST_START FAILOVER CONDITION 240;')).toContain('ORA-16524');
   });
 });

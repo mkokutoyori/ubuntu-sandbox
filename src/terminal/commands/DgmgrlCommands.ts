@@ -419,12 +419,13 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     if (/^\d+$/.test(value)) {
       const code = Number(value);
       if (code !== 240) return [`Error: ${ORACLE_ERRORS.ORA_16524}`];
-      state.fsfo.errors = on ? [...new Set([...state.fsfo.errors, code])] : state.fsfo.errors.filter((known) => known !== code);
+      if (state.fsfo.errors.includes(code) === on) return [`Error: ${ORACLE_ERRORS.ORA_16524}`];
+      state.fsfo.errors = on ? [...state.fsfo.errors, code] : state.fsfo.errors.filter((known) => known !== code);
       if (on) alertCursors.set(instance, instance.getAlertLog().length);
       return ['Succeeded.'];
     }
     const health = Object.keys(state.fsfo.health).find((known) => known.toLowerCase() === value.toLowerCase());
-    if (health === undefined) return [`Error: ${ORACLE_ERRORS.ORA_16524}`];
+    if (health === undefined || state.fsfo.health[health] === on) return [`Error: ${ORACLE_ERRORS.ORA_16524}`];
     state.fsfo.health[health] = on;
     return ['Succeeded.'];
   }
