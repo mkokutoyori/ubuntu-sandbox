@@ -47,5 +47,6 @@ export function formatRadiusAttributeValue(attribute: RadiusAttribute): string {
 }
 
 export function formatRadiusAttribute(attribute: RadiusAttribute): string {
-  return `${radiusAttributeDisplayName(attribute)} = ${formatRadiusAttributeValue(attribute)}`;
+  const tag = attribute.tag === undefined || attribute.tag === 0 ? '' : `:${attribute.tag}`;
+  return `${radiusAttributeDisplayName(attribute)}${tag} = ${formatRadiusAttributeValue(attribute)}`;
 }

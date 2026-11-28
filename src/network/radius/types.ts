@@ -185,6 +185,7 @@ export interface RadiusAttribute {
   value: string | number;
   /** Present only on 'vendor-specific' (26): Vendor-Id + sub-attribute Vendor-Type (RFC 2865 §5.26). */
   vendor?: { id: number; type: number };
+  tag?: number;
 }
 
 export interface RadiusPacket extends NetworkPdu {

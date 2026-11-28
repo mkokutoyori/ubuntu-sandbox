@@ -253,7 +253,8 @@ export function usersPairToAttribute(pair: UsersPair): RadiusAttribute | null {
   if (!(key in RADIUS_ATTR)) return null;
   const type = key as RadiusAttrType;
   const value = encodeValue(RADIUS_DICTIONARY[type].valueType, type, pair.value);
-  return value === null ? null : { type, value };
+  const tagged = RADIUS_DICTIONARY[type].valueType === 'tagged-integer' || RADIUS_DICTIONARY[type].valueType === 'tagged-string';
+  return value === null ? null : { type, value, ...(tagged && pair.tag !== null && pair.tag !== undefined ? { tag: pair.tag } : {}) };
 }
 
 function matches(op: UsersOperator, actual: string | number | undefined, wanted: string): boolean {
