@@ -1029,7 +1029,7 @@ export class RadiusdService {
     if (match.rejected) context.control.set('auth-type', 'reject');
     if (match.loginTime !== null) context.control.set('login-time', match.loginTime);
     if (match.simultaneousUse !== null) context.control.set('simultaneous-use', String(match.simultaneousUse));
-    context.reply.push(...match.reply);
+    context.reply.push(...match.reply.map((attribute) => (typeof attribute.value === 'string' && attribute.value.includes('%{') ? { ...attribute, value: expandForContext(attribute.value, context, (value) => value) } : attribute)));
   }
 
   private runAuthorizeModule(name: string, context: UnlangContext, entries: UsersEntry[], nasIp: string, groupsOf: (username: string) => readonly string[]): ModuleOutcome {
