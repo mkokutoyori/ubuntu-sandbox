@@ -202,8 +202,12 @@ export class RadiusdService {
     return this.statisticsLines(kind, this.radiusServer.clientStatistics(kind, clientIp), false);
   }
 
+  private listenerAt(address: string, port: number): ListenerSpec | undefined {
+    return this.activeListeners.find((candidate) => candidate.port === port && candidate.tls === undefined && (candidate.address === null || candidate.address === address));
+  }
+
   socketStatisticsListing(address: string, port: number): string[] | null {
-    const spec = this.activeListeners.find((candidate) => candidate.port === port && candidate.tls === undefined && (candidate.address === null || candidate.address === address));
+    const spec = this.listenerAt(address, port);
     if (spec === undefined) return null;
     const kind = spec.type === 'acct' ? 'acct' : 'auth';
     return this.statisticsLines(kind, this.radiusServer.listenerStatistics(kind, port), false);
@@ -1348,6 +1352,7 @@ export class RadiusdService {
     this.radiusServer.setAuthenticateHook((info) => this.runAuthenticate(info));
     this.radiusServer.setSessionHook((info) => this.runSession(info));
     this.radiusServer.setStatusHook((info) => this.runStatus(info));
+    this.radiusServer.setListenerLookup((address, port) => this.listenerAt(address, port) !== undefined);
     this.radiusServer.setInternalStatistics(() => {
       const [, total, max] = this.threadStatisticsListing().map((line) => Number(line.split('\t').pop()));
       return { 176: Math.floor(this.daemonStartedMs / 1000), 177: Math.floor(this.threadPoolStartedMs / 1000), 193: 0, 194: total, 195: max };

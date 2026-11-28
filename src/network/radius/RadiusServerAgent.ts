@@ -27,7 +27,7 @@ import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
 import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, encodeEapPacket, verifyEapMd5Response } from './eap';
-import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, FREERADIUS_PROXY_AUTH_COUNTERS, FREERADIUS_PROXY_ACCT_COUNTERS, FREERADIUS_INTERNAL_COUNTERS, FREERADIUS_STATS_CLIENT_ADDRESS, FREERADIUS_STATS_ERROR, type FreeradiusCounter } from './dictionary';
+import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, FREERADIUS_PROXY_AUTH_COUNTERS, FREERADIUS_PROXY_ACCT_COUNTERS, FREERADIUS_INTERNAL_COUNTERS, FREERADIUS_STATS_CLIENT_ADDRESS, FREERADIUS_STATS_ERROR, FREERADIUS_STATS_SERVER_ADDRESS, FREERADIUS_STATS_SERVER_PORT, type FreeradiusCounter } from './dictionary';
 import {
   ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
   deriveMppeKeys, encryptMppeKey,
@@ -1078,6 +1078,31 @@ export class RadiusServerAgent {
     return FREERADIUS_INTERNAL_COUNTERS.map(([type]): RadiusAttribute => ({ type: 'vendor-specific', value: values[type] ?? 0, vendor: { id: FREERADIUS_VENDOR_ID, type } }));
   }
 
+  private listenerLookup: ((address: string, port: number) => boolean) | null = null;
+
+  setListenerLookup(lookup: ((address: string, port: number) => boolean) | null): void { this.listenerLookup = lookup; }
+
+  private serverAttributes(request: RadiusPacket, flag: number): RadiusAttribute[] {
+    const find = (type: number) => request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === type);
+    const error = (message: string): RadiusAttribute[] => [{ type: 'vendor-specific', value: message, vendor: { id: FREERADIUS_VENDOR_ID, type: FREERADIUS_STATS_ERROR } }];
+    const port = find(FREERADIUS_STATS_SERVER_PORT);
+    if (port === undefined) return [];
+    const address = find(FREERADIUS_STATS_SERVER_ADDRESS);
+    if (address === undefined) return error('No listener IP address supplied');
+    if (this.listenerLookup?.(String(address.value), Number(port.value)) !== true) return error('No such listener');
+    const listenerPort = Number(port.value);
+    return [
+      address, port,
+      ...[
+        { kind: 'auth' as const, bit: 0x01, counters: FREERADIUS_AUTH_COUNTERS },
+        { kind: 'acct' as const, bit: 0x02, counters: FREERADIUS_ACCT_COUNTERS },
+      ].filter(({ bit }) => (flag & bit) !== 0).flatMap(({ kind, counters }) => {
+        const stats = this.listenerStatistics(kind, listenerPort);
+        return counters.map(([type, , field]): RadiusAttribute => ({ type: 'vendor-specific', value: stats[field], vendor: { id: FREERADIUS_VENDOR_ID, type } }));
+      }),
+    ];
+  }
+
   private clientAttributes(request: RadiusPacket, flag: number): RadiusAttribute[] {
     const asked = request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === FREERADIUS_STATS_CLIENT_ADDRESS);
     if (asked === undefined) return [];
@@ -1107,7 +1132,7 @@ export class RadiusServerAgent {
       { kind: 'auth', bit: 0x04, mask: 0x20, proxied: true, counters: FREERADIUS_PROXY_AUTH_COUNTERS },
       { kind: 'acct', bit: 0x08, mask: 0x20, proxied: true, counters: FREERADIUS_PROXY_ACCT_COUNTERS },
     ];
-    const internal = [...((flag & 0x10) !== 0 ? this.internalAttributes() : []), ...((flag & 0x20) !== 0 ? this.clientAttributes(request, flag) : [])];
+    const internal = [...((flag & 0x10) !== 0 ? this.internalAttributes() : []), ...((flag & 0x20) !== 0 ? this.clientAttributes(request, flag) : []), ...((flag & 0x40) !== 0 && (flag & 0x03) !== 0 ? this.serverAttributes(request, flag) : [])];
     return kinds
       .filter(({ bit, mask }) => (flag & bit) !== 0 && (flag & mask) === 0)
       .flatMap(({ kind, proxied, counters }) => {

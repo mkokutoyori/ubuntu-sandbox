@@ -4,10 +4,11 @@
  * request_stats_addvp walks authvp / acctvp in order) and share/dictionary.freeradius (vendor 11344, attribute numbers 127 and 128-137, 148-154, 191, 192, the value
  * names of FreeRADIUS-Statistics-Type). The simulator's dictionary had no FreeRADIUS attribute, so a Status-Server answered only a Message-Authenticator.
  * The counters are the ones radmin already reads (`stats auth`): one store, two views. Not served: the elapsed histogram (vendor attribute 198 is a TLV in 3.x), the
- * server and home-server statistics. Flag 0x20 with FreeRADIUS-Stats-Client-IP-Address returns that client's own counters (client_authvp / client_acctvp: no conflicts counter) after an echo of the
+ * home-server statistics. Flag 0x40 with FreeRADIUS-Stats-Server-IP-Address and -Port returns the counters of that listener (the ones `radmin stats socket` reads) after echoing both,
+ * or "No such listener" / "No listener IP address supplied" in FreeRADIUS-Stats-Error. Flag 0x20 with FreeRADIUS-Stats-Client-IP-Address returns that client's own counters (client_authvp / client_acctvp: no conflicts counter) after an echo of the
  * address, or FreeRADIUS-Stats-Error "No such client"; lookup by client number and the netmask echo are not served. Flag 0x10 (internal) returns the start and HUP times, the five queue lengths and PPS (zero: no queue is modelled) and the thread counts radmin `stats threads` prints. Flags 4 and 8 return the proxy counters (the home servers' global store), masked out by 0x20 as stats.c does.
  *
- * Discriminated with git stash on src/network against the tree before any statistics: 8 of 10 fall (4 for the Authentication/Accounting counters, 1 for the proxy mask, 1 for the internal mask, 2 for the client mask, the last three measured separately
+ * Discriminated with git stash on src/network against the tree before any statistics: 10 of 13 fall (4 for the Authentication/Accounting counters, 1 for the proxy mask, 1 for the internal mask, 2 for the client mask, 3 for the server mask, the last four measured separately
  * against the version without them). Two pass either way and are named: the witness (a Status-Server without the attribute is answered with no counter) and the 0x20 mask case, a
  * non-regression that is vacuously true until a counter is served.
  */
@@ -128,5 +129,28 @@ describe('Status-Server statistics', () => {
     const out = await withClient(target, '33', '192.0.2.99');
     expect(out).toContain('FreeRADIUS-Stats-Error = "No such client"');
     expect(out).not.toContain('FreeRADIUS-Total');
+  });
+
+  const withServer = (target: LinuxServer, flag: string, extra: string) =>
+    target.executeCommand(`printf 'Message-Authenticator = 0x00\\nFreeRADIUS-Statistics-Type = ${flag}\\n${extra}' | radclient -x 127.0.0.1:18121 status adminsecret`);
+
+  it('a server mask names a listener and returns its own counters after echoing its address and port', async () => {
+    const { target } = await lab();
+    const out = await withServer(target, '65', 'FreeRADIUS-Stats-Server-IP-Address = 127.0.0.1\\nFreeRADIUS-Stats-Server-Port = 1812\\n');
+    expect(out).toContain('FreeRADIUS-Stats-Server-Port = 1812');
+    expect(out).toMatch(/FreeRADIUS-Total-Access-Requests = 2\b/);
+  });
+
+  it('a port that no listener serves gets "No such listener"', async () => {
+    const { target } = await lab();
+    const out = await withServer(target, '65', 'FreeRADIUS-Stats-Server-IP-Address = 127.0.0.1\\nFreeRADIUS-Stats-Server-Port = 1999\\n');
+    expect(out).toContain('FreeRADIUS-Stats-Error = "No such listener"');
+    expect(out).not.toContain('FreeRADIUS-Total');
+  });
+
+  it('a server mask without an address says so', async () => {
+    const { target } = await lab();
+    const out = await withServer(target, '65', 'FreeRADIUS-Stats-Server-Port = 1812\\n');
+    expect(out).toContain('FreeRADIUS-Stats-Error = "No listener IP address supplied"');
   });
 });
