@@ -85,7 +85,6 @@ const REFUSED_VALUES: Record<string, string> = {
   D: 'only the built-in dictionaries are modelled',
   n: 'a request rate is not modelled',
   p: 'parallel packets are not modelled',
-  P: 'only UDP is modelled by this client',
 };
 
 const REFUSED_COMMANDS: Record<string, string> = {
@@ -275,6 +274,9 @@ export async function runRadclient(ctx: LinuxCommandContext, args: string[], std
   for (const [flag, reason] of Object.entries(REFUSED_VALUES)) {
     if (options.values.has(flag)) return { output: `radclient: -${flag} is not implemented in this simulator: ${reason}.`, exitCode: 1 };
   }
+  const transport = options.values.get('P');
+  if (transport === 'tcp') return { output: 'radclient: -P tcp is not implemented in this simulator: the client has no RADIUS/TCP transport.', exitCode: 1 };
+  if (transport !== undefined && transport !== 'udp') return { output: RADCLIENT_USAGE, exitCode: 1 };
   const secretFile = options.values.get('S');
   const expectedPositionals = secretFile === undefined ? 3 : 2;
   if (options.positional.length !== expectedPositionals) return { output: RADCLIENT_USAGE, exitCode: 1 };

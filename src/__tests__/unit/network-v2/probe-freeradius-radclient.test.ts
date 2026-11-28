@@ -5,7 +5,8 @@
  * code does not come back, "No reply from server for ID %d socket %d", -c/-r/-t/-q/-s/-S/-f, the summary block, the version string)
  * and radtest.sh (which pipes its arguments to `radclient -x`). radtest now builds that input and runs the same engine, so the two
  * print one notation. The auth and acct commands are implemented (acct through the accounting client's new generic send);
- * auto is refused naming the missing brick, as are -6, -b, -F, -D, -n, -p, -P (status, coa and disconnect have their own probes).
+ * auto is refused naming the missing brick, as are -6, -b, -F, -D, -n, -p and -P tcp (status, coa and disconnect have their own probes). `-P udp` is the default transport and is accepted
+ * as radclient.c does (strcmp(proto, "udp") -> no protocol set); any other value prints the usage. Measured before the change: -P udp was refused as if it were TCP; the 3 -P cases below all fall before it (the tcp refusal now names the missing transport instead of claiming UDP only).
  *
  * Discriminated with git stash on src: 16 of 17 fall before the fix; one passes either way and is named: the witness (radtest, now a
  * wrapper, still accepts a right login).
@@ -171,5 +172,20 @@ describe('radclient', () => {
     const { client } = await lab();
     expect((await status(client, `printf 'User-Password = "x"\\n' | radclient 10.0.0.2 auth shared`)).output)
       .toContain('Packet is missing User-Name');
+  });
+
+  it('-P udp is the default transport and the request is sent', async () => {
+    const { client } = await lab();
+    expect((await status(client, `${ALICE} | radclient -P udp 10.0.0.2 auth shared`)).output).toContain('Received Access-Accept');
+  });
+
+  it('-P tcp is refused naming the missing transport', async () => {
+    const { client } = await lab();
+    expect((await status(client, `${ALICE} | radclient -P tcp 10.0.0.2 auth shared`)).output).toContain('-P tcp is not implemented in this simulator');
+  });
+
+  it('-P with any other value prints the usage', async () => {
+    const { client } = await lab();
+    expect((await status(client, `${ALICE} | radclient -P sctp 10.0.0.2 auth shared`)).output).toContain('Usage: radclient');
   });
 });
