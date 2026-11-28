@@ -3,7 +3,7 @@ import { getDefaultScheduler, type TimerHandle } from '@/events/Scheduler';
 export const OBSERVER_PING_INTERVAL_MS = 3000;
 
 export interface ObserverConfigView {
-  fsfo: { enabled: boolean; threshold: number };
+  fsfo: { enabled: boolean; threshold: number; target: string | null };
   members: [string, { identifier: string }][];
 }
 
@@ -35,13 +35,13 @@ export function startObserver(deviceId: string, name: string, primaryIdentifier:
     if (reply !== null) {
       unreachableMs = 0;
       view = parse(ports.ask(primaryIdentifier, 'EXPORT CONFIGURATION')) ?? view;
-      const target = view?.members[0];
+      const target = view?.members.find(([name]) => name === view?.fsfo.target) ?? view?.members[0];
       if (target !== undefined && ports.ask(target[1].identifier, 'EXPORT CONFIGURATION') !== null) lastTargetPing = scheduler.now();
       return;
     }
     unreachableMs += OBSERVER_PING_INTERVAL_MS;
     if (view === null || !view.fsfo.enabled || unreachableMs < view.fsfo.threshold * 1000) return;
-    const target = view.members[0];
+    const target = view.members.find(([name]) => name === view?.fsfo.target) ?? view.members[0];
     if (target === undefined || ports.ask(target[1].identifier, 'EXPORT CONFIGURATION') === null) return;
     ports.ask(target[1].identifier, `FAILOVER TO '${target[0]}'`);
     ports.sql(target[1].identifier, 'ALTER DATABASE OPEN');

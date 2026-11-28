@@ -34,7 +34,7 @@ interface BrokerState {
   primaryName: string;
   primaryIdentifier: string;
   self: string;
-  fsfo: { enabled: boolean; threshold: number };
+  fsfo: { enabled: boolean; threshold: number; target: string | null };
   observers: { name: string; host: string }[];
   protectionMode: ProtectionMode;
   members: Map<string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }>;
@@ -42,13 +42,13 @@ interface BrokerState {
 
 const CONFIG_PARAMETER = '_dg_broker_config';
 
-const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', self: '', fsfo: { enabled: false, threshold: 30 }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
+const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', self: '', fsfo: { enabled: false, threshold: 30, target: null }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
 
 function stateOf(instance: OracleInstance): BrokerState {
   const stored = instance.getParameter(CONFIG_PARAMETER);
   if (stored === undefined || stored === '') return emptyState();
   const parsed = JSON.parse(stored) as Omit<BrokerState, 'members'> & { members: [string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }][] };
-  return { ...emptyState(), ...parsed, members: new Map(parsed.members) };
+  return { ...emptyState(), ...parsed, fsfo: { ...emptyState().fsfo, ...parsed.fsfo }, members: new Map(parsed.members) };
 }
 
 function serialize(state: BrokerState, self: string): string {
@@ -154,6 +154,15 @@ function showDatabase(instance: OracleInstance, state: BrokerState, name: string
 
 const MAX_OBSERVERS = 3;
 
+function activeTarget(state: BrokerState): string | null {
+  if (state.fsfo.target !== null && state.members.has(state.fsfo.target)) return state.fsfo.target;
+  return state.members.size === 1 ? [...state.members.keys()][0] : null;
+}
+
+function potentialTargets(state: BrokerState): string[] {
+  return [...state.members].filter(([, member]) => member.logXptMode === 'SYNC').map(([name]) => name);
+}
+
 function agoLabel(thenMs: number, nowMs: number): string {
   const seconds = Math.max(0, Math.round((nowMs - thenMs) / 1000));
   return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
@@ -161,7 +170,8 @@ function agoLabel(thenMs: number, nowMs: number): string {
 
 function showFastStartFailover(instance: OracleInstance, state: BrokerState): string[] {
   if (!state.fsfo.enabled) return ['Fast-Start Failover: DISABLED'];
-  const target = [...state.members.keys()][0] ?? '';
+  const target = activeTarget(state) ?? '';
+  const potentials = potentialTargets(state);
   const observers = state.observers.map((observer) => observer.host);
   return [
     `Fast-Start Failover: ${FSFO_MODE_LABEL(state)}`,
@@ -171,8 +181,8 @@ function showFastStartFailover(instance: OracleInstance, state: BrokerState): st
     '  Ping Interval:      3000 milliseconds',
     '  Ping Retry:         0',
     `  Active Target:      ${target}`,
-    `  Potential Targets:  "${target}"`,
-    `    ${target} valid`,
+    `  Potential Targets:  "${potentials.join(', ')}"`,
+    ...potentials.map((name) => `    ${name} valid`),
     observers.length === 0 ? '  Observer:           (none)' : observers.length === 1 ? `  Observer:           ${observers[0]}` : `  Observers:          ${observers.join(', ')}`,
     '  Shutdown Primary:   TRUE',
     '  Auto-reinstate:     TRUE',
@@ -191,7 +201,7 @@ function showFastStartFailover(instance: OracleInstance, state: BrokerState): st
 }
 
 function showObserver(instance: OracleInstance, state: BrokerState, nowMs: number): string[] {
-  const target = [...state.members.keys()][0] ?? '';
+  const target = activeTarget(state) ?? '';
   const lines = [`Configuration - ${state.configurationName.toLowerCase()}`, `Primary:               ${state.primaryName}`, `Active Target Standby: ${target}`];
   state.observers.forEach((observer, index) => {
     const pings = (instance.getParameter(`_dg_observer_${observer.name.toLowerCase()}`) ?? '').split(',').map(Number);
@@ -323,8 +333,10 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   }
   if (upper === 'ENABLE FAST_START FAILOVER') {
     if (!state.enabled || state.members.size === 0) return ['Error: ORA-16844: database does not have a valid fast-start failover target standby database'];
-    const target = [...state.members.values()][0];
-    if (instance.protectionMode !== 'MAXIMUM AVAILABILITY' || target.logXptMode !== 'SYNC') return ['Error: ORA-16693: requirements not met for enabling fast-start failover'];
+    const targetName = activeTarget(state);
+    const target = targetName === null ? undefined : state.members.get(targetName);
+    if (target === undefined || instance.protectionMode !== 'MAXIMUM AVAILABILITY' || target.logXptMode !== 'SYNC') return ['Error: ORA-16693: requirements not met for enabling fast-start failover'];
+    state.fsfo.target = targetName;
     state.fsfo.enabled = true;
     return [...(instance.flashbackOn ? [] : ['Warning: ORA-16827: Flashback Database is disabled']), 'Enabled in Zero Data Loss Mode.'];
   }
@@ -340,6 +352,24 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     if (which !== undefined && which.toUpperCase() !== 'ALL' && !state.observers.some((observer) => observer.name.toLowerCase() === which.toLowerCase())) return [`Error: observer "${which}" is not registered`];
     state.observers = which === undefined || which.toUpperCase() === 'ALL' ? [] : state.observers.filter((observer) => observer.name.toLowerCase() !== which.toLowerCase());
     return ['Done.'];
+  }
+  const targetProperty = /^EDIT\s+DATABASE\s+('[^']*'|"[^"]*"|\S+)\s+SET\s+PROPERTY\s+'?FastStartFailoverTarget'?\s*=\s*('[^']*'|"[^"]*"|\S+)$/i.exec(text);
+  if (targetProperty) {
+    const owner = unquote(targetProperty[1]).toUpperCase();
+    const wanted = unquote(targetProperty[2]).toUpperCase();
+    if (owner !== state.primaryName) return ['Error: ORA-16596: property value is invalid'];
+    const known = [...state.members.keys()].find((name) => name.toUpperCase() === wanted);
+    if (known === undefined && wanted !== 'ANY') return ['Error: ORA-16844: database does not have a valid fast-start failover target standby database'];
+    if (state.fsfo.enabled) return ['Error: ORA-16654: fast-start failover is enabled'];
+    state.fsfo.target = known ?? null;
+    return [`Property "faststartfailovertarget" updated for member "${state.primaryName}".`];
+  }
+  const showTarget = /^SHOW\s+DATABASE\s+('[^']*'|"[^"]*"|\S+)\s+'?FastStartFailoverTarget'?$/i.exec(text);
+  if (showTarget) {
+    const owner = unquote(showTarget[1]).toUpperCase();
+    const target = activeTarget(state) ?? '';
+    const value = owner === state.primaryName ? target : state.fsfo.enabled && owner === target.toUpperCase() ? state.primaryName : '';
+    return [`  FastStartFailoverTarget='${value}';`];
   }
   const threshold = /^EDIT\s+CONFIGURATION\s+SET\s+PROPERTY\s+FastStartFailoverThreshold\s*=\s*'?(\d+)'?$/i.exec(text);
   if (threshold) {

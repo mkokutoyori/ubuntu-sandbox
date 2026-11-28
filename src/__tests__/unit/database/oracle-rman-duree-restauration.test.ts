@@ -6,7 +6,7 @@
  * puis « Finished restore at 02:19:32 » pour « elapsed time: 00:00:25 ». Deux ecritures d'un meme fait qui se contredisaient.
  *
  * Maintenant : une seule regle (taille / 50 Mo/s, minimum 1 s, `pureUtils.simulateBackupElapsedMs`), la restauration et la recuperation l'appliquent et font avancer l'horloge de l'hote d'autant,
- * donc `Finished restore at` - `Starting restore at` = `elapsed time`. Le debit de 50 Mo/s est un MODELE (pas une mesure de disque) : c'est la limite qui reste, dite telle quelle.
+ * donc `Finished restore at` - `Starting restore at` = `elapsed time` (a quelques secondes pres : l'horloge de l'hote avance aussi du temps reel que le test consomme, d'ou la tolerance de 3 s mesuree sous charge). Le debit de 50 Mo/s est un MODELE (pas une mesure de disque) : c'est la limite qui reste, dite telle quelle.
  *
  * Discrimine par `git stash push -- src/terminal` : 2 des 3 cas tombent. TEMOIN : la duree d'une sauvegarde suit toujours le meme modele (passe des deux cotes).
  */
@@ -55,7 +55,9 @@ describe('duration of RESTORE and RECOVER', () => {
   it('the clock moves by the sum of the restore times that are printed', () => {
     const out = restoreOutput();
     expect(elapsed(out)).toBeGreaterThan(0);
-    expect(clock(out, 'Finished') - clock(out, 'Starting')).toBe(elapsed(out));
+    const moved = clock(out, 'Finished') - clock(out, 'Starting');
+    expect(moved).toBeGreaterThanOrEqual(elapsed(out));
+    expect(moved).toBeLessThanOrEqual(elapsed(out) + 3);
   });
 
   it('the printed restore time is not the old literal 00:00:25 for every file', () => {

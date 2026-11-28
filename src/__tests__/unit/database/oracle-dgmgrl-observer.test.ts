@@ -9,6 +9,9 @@
  * depuis FastStartFailoverThreshold secondes (30 par defaut) et que la cible repond, il lance le FAILOVER sur la cible puis l'ouvre. START OBSERVER rend la main au lieu de bloquer (limite connue) ;
  * le mode Potential Data Loss (MaxPerformance, FastStartFailoverLagLimit) n'est pas implemente : son texte de sortie n'est pas dans la documentation lue.
  *
+ * Plusieurs standbys : `FastStartFailoverTarget` se regle sur la primaire (`Property "faststartfailovertarget" updated for member "X".`), est requis des qu'il y a plus d'une standby (ORA-16693 sinon), se relit par
+ * `SHOW DATABASE 'X' FastStartFailoverTarget;` (` FastStartFailoverTarget='Y';`, reciproque sur la cible) et ne se change plus une fois le FSFO active (ORA-16654) ; les cibles potentielles sont les membres SYNC.
+ *
  * Discrimine par `git stash push -- src/terminal src/database src/adapters` : les 9 cas tombent, le temoin aussi puisque la ligne `Fast-Start Failover:` valait `Disabled` (de memoire) et vaut maintenant `DISABLED`
  * comme la page SHOW CONFIGURATION de la documentation.
  */
@@ -133,5 +136,39 @@ describe('observer and fast-start failover', () => {
     dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;');
     for (const name of ['o1', 'o2', 'o3']) dgmgrl(lab.prod, `START OBSERVER ${name};`);
     expect(dgmgrl(lab.prod, 'START OBSERVER o4;')).toContain('ORA-16647');
+  });
+
+  const withTwoStandbys = (): void => {
+    configured();
+    dgmgrl(lab.prod, "ADD DATABASE 'ORCL_STB2' AS CONNECT IDENTIFIER IS 10.99.0.1:1521/ORCL MAINTAINED AS PHYSICAL;", "EDIT DATABASE 'ORCL_STB2' SET PROPERTY LogXptMode='SYNC';");
+  };
+
+  it('with two standbys ENABLE needs a designated target', () => {
+    withTwoStandbys();
+    expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;')).toContain('ORA-16693');
+    expect(dgmgrl(lab.prod, "EDIT DATABASE 'ORCL' SET PROPERTY FastStartFailoverTarget='ORCL_STB';")).toContain('Property "faststartfailovertarget" updated for member "ORCL".');
+    expect(dgmgrl(lab.prod, 'ENABLE FAST_START FAILOVER;')).toContain('Enabled in Zero Data Loss Mode.');
+  });
+
+  it('SHOW FAST_START FAILOVER names the target and lists the SYNC members as potential targets', () => {
+    withTwoStandbys();
+    dgmgrl(lab.prod, "EDIT DATABASE 'ORCL' SET PROPERTY FastStartFailoverTarget='ORCL_STB';", 'ENABLE FAST_START FAILOVER;');
+    const out = dgmgrl(lab.prod, 'SHOW FAST_START FAILOVER;');
+    expect(out).toContain('Active Target:      ORCL_STB');
+    expect(out).toContain('Potential Targets:  "ORCL_STB, ORCL_STB2"');
+    expect(out).toContain('    ORCL_STB2 valid');
+  });
+
+  it('the property is read back on the primary and reciprocally on the target', () => {
+    withTwoStandbys();
+    dgmgrl(lab.prod, "EDIT DATABASE 'ORCL' SET PROPERTY FastStartFailoverTarget='ORCL_STB';", 'ENABLE FAST_START FAILOVER;');
+    expect(dgmgrl(lab.prod, "SHOW DATABASE 'ORCL' FastStartFailoverTarget;")).toContain("FastStartFailoverTarget='ORCL_STB';");
+    expect(dgmgrl(lab.prod, "SHOW DATABASE 'ORCL_STB' FastStartFailoverTarget;")).toContain("FastStartFailoverTarget='ORCL';");
+  });
+
+  it('the target cannot be changed while fast-start failover is enabled', () => {
+    withTwoStandbys();
+    dgmgrl(lab.prod, "EDIT DATABASE 'ORCL' SET PROPERTY FastStartFailoverTarget='ORCL_STB';", 'ENABLE FAST_START FAILOVER;');
+    expect(dgmgrl(lab.prod, "EDIT DATABASE 'ORCL' SET PROPERTY FastStartFailoverTarget='ORCL_STB2';")).toContain('ORA-16654');
   });
 });
