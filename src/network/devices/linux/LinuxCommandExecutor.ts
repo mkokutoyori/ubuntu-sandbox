@@ -1001,7 +1001,7 @@ export class LinuxCommandExecutor {
   /** Optional Oracle TNS hook — backs `tnsping`. */
   _oracleTnsping: ((args: string[]) => string) | null = null;
   /** Optional Oracle utility hook — backs `expdp` / `impdp` / `adrci`. */
-  _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
+  _oracleUtil: ((cmd: string, args: string[], stdin?: string) => string | null) | null = null;
   /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
   oracleCaller(program: string): OsSecurityContext {
     const users = this.userMgr;
@@ -7333,9 +7333,10 @@ export class LinuxCommandExecutor {
       }
       case 'expdp':
       case 'impdp':
+      case 'dgmgrl':
       case 'adrci': {
         if (this.isServer && this._oracleUtil) {
-          const output = this._oracleUtil(cmd, args);
+          const output = this._oracleUtil(cmd, args, stdin);
           if (output !== null) return { output, exitCode: /ORA-\d|error/i.test(output) ? 1 : 0 };
         }
         return {

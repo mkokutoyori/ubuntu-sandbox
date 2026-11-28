@@ -16,6 +16,7 @@ import { oracleSqlConnector } from '@/adapters/RadiusOracleSql';
 import { createSQLPlusSession, getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracleNetConnection } from '@/terminal/commands/database';
 import { installOracleClientHooks } from './linux/oracleClientHooks';
 import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
+import { runDgmgrl } from '@/terminal/commands/DgmgrlCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 import { parseRmanInvocation } from '@/terminal/subshells/rman/RmanInvocation';
 import type { RmanRun } from './linux/LinuxCommandExecutor';
@@ -218,7 +219,8 @@ export class LinuxServer extends LinuxMachine {
       handleLsnrctl(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
       return lines.join('\n');
     };
-    this.executor._oracleUtil = (cmd: string, args: string[]) => {
+    this.executor._oracleUtil = (cmd: string, args: string[], stdin?: string) => {
+      if (cmd === 'dgmgrl') return runDgmgrl(this as unknown as HostCapableDevice, args, stdin, this.executor.oracleCaller('dgmgrl'));
       const handler = cmd === 'expdp' ? handleExpdp
         : cmd === 'impdp' ? handleImpdp
         : cmd === 'adrci' ? handleAdrci : null;
