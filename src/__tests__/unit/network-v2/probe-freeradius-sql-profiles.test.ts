@@ -1,13 +1,16 @@
 /*
  * Probe: rlm_sql profiles. read_profiles and default_user_profile were accepted and ignored, and the User-Profile attribute meant nothing. Source of truth: FreeRADIUS v3.2.x
- * src/modules/rlm_sql/rlm_sql.c (sql_authorize: after the user's own entry and its groups, a PROFILE is read like a group, with the same authorize_group_check_query and
- * authorize_group_reply_query and %{Sql-Group} set to the profile name; the profile is the User-Profile of the check items, else default_user_profile; read_profiles = no skips it;
- * like groups it is read when the user has no matching entry or its reply carries Fall-Through = Yes), raddb/mods-available/sql (read_profiles = yes, default_user_profile = ""). The
- * rows become the same users-file entries as the user's own, so the chain and Fall-Through are the files module's.
+ * src/modules/rlm_sql/rlm_sql.c (mod_authorize and rlm_sql_process_groups, read from the source): the groups are read when the user reply carries Fall-Through = Yes, or read_groups
+ * is yes and no Fall-Through was given; a group reply sets the state again (its Fall-Through, else the default) and the loop goes on only while it is Yes; then the profile is read
+ * when the state is Yes, or read_profiles is yes and it is the default. The profile is the User-Profile of the check items, else default_user_profile; it is processed as a USER
+ * NAME: SQL-User-Name becomes the profile, group_membership_query lists the groups of that name, and each group is read with authorize_group_check_query and
+ * authorize_group_reply_query. raddb/mods-available/sql (read_profiles = yes, default_user_profile = ""). The rows become the same users-file entries, chained so that every
+ * one the module decided to read is applied.
  *
- * Discriminated with git stash on src/network: 2 of 6 fall before the fix (the profile named by User-Profile, and default_user_profile). The four that pass either way, with their
- * reason: the witness (no profile); the user whose profile is not reached (no Fall-Through), the unknown newcomer without a default and the run with read_profiles = no, which are
- * negative assertions that hold when the profile is simply never read; they only mean something next to their positive twins.
+ * Discriminated with git stash on src/network (authorize and profiles files together): 5 of 24 fall, among them the profile read as a user name, default_user_profile through the
+ * membership table and the profile reached without Fall-Through.
+ *
+ * Earlier revisions of this probe read the profile as a group name and stopped the chain without Fall-Through: both premises were wrong against the source, fixed with it.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -52,9 +55,14 @@ const ROWS = [
   "INSERT INTO system.radreply VALUES (1, 'erin', 'Fall-Through', 'Yes', ':=')",
   "INSERT INTO system.radcheck VALUES (4, 'frank', 'Cleartext-Password', 'pw', ':=')",
   "INSERT INTO system.radcheck VALUES (5, 'frank', 'User-Profile', 'gold', ':=')",
-  "INSERT INTO system.radgroupreply VALUES (1, 'gold', 'Reply-Message', 'gold profile', ':=')",
-  "INSERT INTO system.radgroupcheck VALUES (1, 'silver', 'Cleartext-Password', 'silverpw', ':=')",
-  "INSERT INTO system.radgroupreply VALUES (2, 'silver', 'Reply-Message', 'silver default', ':=')",
+  "INSERT INTO system.radreply VALUES (2, 'frank', 'Fall-Through', 'No', ':=')",
+  "INSERT INTO system.radcheck VALUES (6, 'gina', 'Cleartext-Password', 'pw', ':=')",
+  "INSERT INTO system.radcheck VALUES (7, 'gina', 'User-Profile', 'gold', ':=')",
+  "INSERT INTO system.radusergroup VALUES ('gold', 'goldgrp', 1)",
+  "INSERT INTO system.radgroupreply VALUES (1, 'goldgrp', 'Reply-Message', 'gold profile', ':=')",
+  "INSERT INTO system.radusergroup VALUES ('silver', 'silvergrp', 1)",
+  "INSERT INTO system.radgroupcheck VALUES (1, 'silvergrp', 'Cleartext-Password', 'silverpw', ':=')",
+  "INSERT INTO system.radgroupreply VALUES (2, 'silvergrp', 'Reply-Message', 'silver default', ':=')",
 ];
 
 async function lab(callSql = true, extra = '', users = 'zed Cleartext-Password := "pw"\n') {
@@ -95,14 +103,14 @@ describe('rlm_sql: profiles', () => {
     expect(accepted(await ask(client, 'plain'))).toBe(true);
   });
 
-  it('the User-Profile of the check items names a profile read like a group, once Fall-Through lets the chain go on', async () => {
+  it('the User-Profile of the check items names a profile: the groups of that name are read', async () => {
     const { client } = await lab();
     const output = await ask(client, 'erin');
     expect(accepted(output)).toBe(true);
     expect(message(output)).toBe('gold profile');
   });
 
-  it('without Fall-Through the user entry ends the chain: the profile is not read', async () => {
+  it('Fall-Through = No in the user reply ends the chain: the profile is not read', async () => {
     const { client } = await lab();
     const output = await ask(client, 'frank');
     expect(accepted(output)).toBe(true);
@@ -121,9 +129,19 @@ describe('rlm_sql: profiles', () => {
     expect(accepted(await ask(client, 'newcomer', 'silverpw'))).toBe(false);
   });
 
-  it('read_profiles = no ignores both the User-Profile and the default', async () => {
+  it('read_profiles = no ignores the User-Profile and the default of a user without Fall-Through', async () => {
     const { client } = await lab(true, '  read_profiles = no\n  default_user_profile = "silver"');
     expect(accepted(await ask(client, 'newcomer', 'silverpw'))).toBe(false);
+    expect(message(await ask(client, 'gina'))).toBeUndefined();
+  });
+
+  it('Fall-Through = Yes whose group step finds no group falls back to the default state: read_profiles = no then ends the chain', async () => {
+    const { client } = await lab(true, '  read_profiles = no');
     expect(message(await ask(client, 'erin'))).toBeUndefined();
+  });
+
+  it('a user without Fall-Through reads its profile by default, as read_profiles is yes', async () => {
+    const { client } = await lab();
+    expect(message(await ask(client, 'gina'))).toBe('gold profile');
   });
 });

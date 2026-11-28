@@ -1,4 +1,6 @@
 import type { Equipment } from '@/network';
+import { ReactiveRmanSubShell } from '../subshells/rman/ReactiveRmanSubShell';
+import { getOracleDatabase } from '@/terminal/commands/database';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { HostCommandRunner } from '@/database/oracle/commands/HostCommandRunner';
 
@@ -12,6 +14,20 @@ export function syncShellHostOf(device: Equipment): SyncShellHost | null {
 }
 
 export function wireSqlPlusSession(device: Equipment, session: SQLPlusSession): void {
+  session.setRecoveryRunner({
+    recover(rmanStatement: string): string[] {
+      const { subShell } = ReactiveRmanSubShell.create(device, ['target', '/']);
+      const result = subShell.processLine(rmanStatement);
+      subShell.dispose();
+      const text = result.output.join('\n');
+      if (/media recovery complete|Finished recover/i.test(text)) {
+        if (/\bUNTIL\b/i.test(rmanStatement)) getOracleDatabase(device.getId())?.instance.markIncompleteRecovery();
+        return ['Media recovery complete.'];
+      }
+      const oracleErrors = result.output.filter((line) => /^ORA-\d{5}/.test(line.trim()));
+      return oracleErrors.length > 0 ? oracleErrors : ['ORA-00283: recovery session canceled due to errors', ...result.output.filter((line) => /RMAN-\d{5}/.test(line)).slice(-1)];
+    },
+  });
   const host = syncShellHostOf(device);
   if (host) {
     const runner: HostCommandRunner = {

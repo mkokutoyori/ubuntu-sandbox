@@ -37,11 +37,11 @@ export async function shipScripts(bench: LabWorkbench, db: Equipment): Promise<v
 export async function loadShopSchema(bench: LabWorkbench, db: Equipment): Promise<void> {
   await bench.shell(
     db,
-    `sqlplus -s / as sysdba @${SCRIPT_DIR}/01_schema.sql`,
-    `sqlplus -s / as sysdba @${SCRIPT_DIR}/02_seed.sql`,
+    `su - oracle -c "sqlplus -s / as sysdba @${SCRIPT_DIR}/01_schema.sql"`,
+    `su - oracle -c "sqlplus -s / as sysdba @${SCRIPT_DIR}/02_seed.sql"`,
   );
 }
 
 export async function giveHomeToOracle(bench: LabWorkbench, db: Equipment): Promise<void> {
-  await bench.shell(db, "sqlplus -s / as sysdba <<'LAB_EOF'\nSELECT instance_name FROM v$instance;\nLAB_EOF", 'sudo mkdir -p /home/oracle/logs', 'sudo chown -R oracle:oinstall /home/oracle');
+  await bench.shell(db, 'su - oracle -c \'echo "SELECT instance_name FROM v\\$instance;" | sqlplus -s / as sysdba\'', 'sudo mkdir -p /home/oracle/logs', 'sudo chown -R oracle:oinstall /home/oracle');
 }

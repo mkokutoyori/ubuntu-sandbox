@@ -6,7 +6,7 @@ Ce lab est le terrain du tutoriel **[Oracle et RMAN : sauvegarder, restaurer, re
 
 ## Importer
 
-Barre d'outils → **Importer** → `topology.json`. Le fichier est généré par `src/labs/ecommerceLumiere/` : chaque équipement est configuré en tapant les mêmes commandes qu'un utilisateur (CLI FortiOS, IOS, VRP, PowerShell, bash, SQL*Plus). Rien n'est injecté dans les moteurs.
+Barre d'outils → **Importer** → `topology.json` : les 35 équipements et les 34 câbles se posent sans avertissement (un test de navigateur, `e2e/lumiere-lab-import.spec.ts`, le vérifie dans la vraie interface). Si un câble ne pouvait pas être restauré, l'import le dit désormais au lieu de l'omettre en silence. Le fichier est généré par `src/labs/ecommerceLumiere/` : chaque équipement est configuré en tapant les mêmes commandes qu'un utilisateur (CLI FortiOS, IOS, VRP, PowerShell, bash, SQL*Plus). Rien n'est injecté dans les moteurs.
 
 ## Plan d'adressage
 
@@ -35,7 +35,7 @@ Barre d'outils → **Importer** → `topology.json`. Le fichier est généré pa
 | Internet | DNS-PUB | Linux + BIND | zone publique `lumiere-boutique.com` |
 | Internet | PC-CLIENT, PAY-EXT | Linux | un client ; la passerelle de paiement (nginx) |
 | Siège | FGT-HQ | FortiGate | pare-feu, VIP et équilibrage HTTPS, tunnels IPsec, journaux syslog |
-| Siège | R-HQ | Cisco IOS (routeur) | routage entre serveurs, utilisateurs et bases ; relais DHCP |
+| Siège | R-HQ | Cisco IOS (routeur, 3 interfaces) | routage entre serveurs, utilisateurs et bases par un seul lien en trunk dot1Q (*routeur sur un bâton*, sous-interfaces `.10`, `.20`, `.30`) ; relais DHCP |
 | Siège | SW-HQ-SRV, SW-HQ-USR, SW-HQ-DB | Cisco IOS (commutateurs) | un VLAN par zone |
 | Siège | DC1 | Windows Server | Active Directory `lumiere.local`, DNS, DHCP |
 | Siège | LOG-HQ | Linux | collecteur rsyslog (UDP 514) et serveur FreeRADIUS (AAA) |

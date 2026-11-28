@@ -2,6 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { superuserAdmittedAsOsdba } from './OracleOsAuthentication';
 import { nssAddress, resolveHostnameFor } from '../NameResolution';
 import { mountUsageRefusal, umountBadUsage } from './commands/system/MountOptions';
 import { runFindmnt, type FindmntHost, type MountRow } from './commands/system/Findmnt';
@@ -1008,7 +1009,7 @@ export class LinuxCommandExecutor {
     return {
       osUser: users.currentUser,
       osGroup: users.gidToName(users.currentGid),
-      isDbaGroup: users.currentUid === 0 || users.getUserGroups(users.currentUser).some((group) => group.name === 'dba'),
+      isDbaGroup: (users.currentUid === 0 && superuserAdmittedAsOsdba()) || users.getUserGroups(users.currentUser).some((group) => group.name === 'dba'),
       hostname: host,
       terminal: 'pts/0',
       program: `${program}@${host}`,

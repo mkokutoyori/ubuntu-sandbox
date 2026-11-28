@@ -269,7 +269,13 @@ export class ReactiveRmanSubShell implements ISubShell {
         else if (e.emptyMessage) this._push(e.emptyMessage);
         break;
       case 'CROSSCHECK_PIECE':
-        this._push(`crosschecked ${e.kind}: found to be '${e.status}'`);
+        if (e.kind === 'archived log') {
+          this._push(e.status === 'AVAILABLE' ? 'validation succeeded for archived log' : 'validation failed for archived log');
+          this._push(`archived log file name=${e.path ?? ''} thread=${e.thread ?? 1} sequence=${e.sequence ?? 0}`);
+        } else {
+          this._push(`crosschecked backup piece: found to be '${e.status}'`);
+          if (e.path !== undefined) this._push(`backup piece handle=${e.path} RECID=${e.recid ?? 0} STAMP=${e.stamp ?? 0}`);
+        }
         break;
       case 'CROSSCHECK_DONE':
         this._push(`Crosschecked ${e.available + e.expired} objects`);

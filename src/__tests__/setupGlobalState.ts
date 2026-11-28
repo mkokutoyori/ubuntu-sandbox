@@ -8,6 +8,7 @@
 // by virtually every test regardless of subsystem — subsystem-specific
 // singletons (Oracle instances, PKI CA registry, AD forest registry, …)
 // stay the responsibility of the tests that actually use them.
+import { __setSuperuserIsOsdba } from '@/network/devices/linux/OracleOsAuthentication';
 import { beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/deviceNameCounters';
@@ -21,6 +22,8 @@ import { __resetFaultProjection } from '@/network/faults/FaultProjection';
 import {
   __assumeCarrierOnUncabledPorts, __setInterfacesBootShutdown, __setLegacyRouterPortCount,
 } from '@/network/devices/inspection/InterfaceStatusView';
+
+__setSuperuserIsOsdba(true);
 
 beforeEach(() => {
   resetCounters();
@@ -67,4 +70,5 @@ beforeEach(() => {
   // rend ici, une suite de fidélité appelant
   // `__setLegacyRouterPortCount(null)`.
   __setLegacyRouterPortCount(4);
+  __setSuperuserIsOsdba(true);
 });

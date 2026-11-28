@@ -8,8 +8,8 @@
  * known good password, Fall-Through, reply), so one grammar answers both; they cross a real Oracle Net session to another host, counted on its port. Still refused where
  * used: sql in post-auth and session, map sql, read_clients.
  *
+ * Group rules re-read from rlm_sql.c: groups are read when Fall-Through = Yes or (read_groups and no Fall-Through), and only Fall-Through = No stops them; earlier cases of this file that asserted the opposite were wrong and are replaced.
  * Startup failure added later: a database unreachable at start stops the service (1 of 15 falls on git stash of src/network; its witness passes either way).
- * Lazy group read added later: the last case (a broken group_membership_query is not sent for a user with its own entry and no Fall-Through) is the 1 case of 13 that falls on git stash of src/network.
  *
  * Discriminated with git stash on src/network: 7 of 12 fall before the fix (every case that needs a row of the database to be read, applied or refused for its operator). The five
  * that pass either way, with their reason: the witness (a users-file user, module not called); the wrong password, the unsatisfied check item, read_groups = no and the quoted
@@ -67,6 +67,9 @@ const ROWS = [
   "INSERT INTO system.radcheck VALUES (6, 'frank', 'Cleartext-Password', 'pw', ':=')",
   "INSERT INTO system.radusergroup VALUES ('frank', 'staff', 1)",
   "INSERT INTO system.radreply VALUES (3, 'frank', 'Reply-Message', 'frank only', ':=')",
+  "INSERT INTO system.radcheck VALUES (7, 'gina', 'Cleartext-Password', 'pw', ':=')",
+  "INSERT INTO system.radreply VALUES (4, 'gina', 'Fall-Through', 'No', ':=')",
+  "INSERT INTO system.radusergroup VALUES ('gina', 'staff', 1)",
 ];
 
 async function lab(callSql = true, extra = '', users = 'zed Cleartext-Password := "pw"\n') {
@@ -142,11 +145,18 @@ describe('rlm_sql: authorize', () => {
     expect(accepted(await ask(client, 'dave', 'grouppw'))).toBe(true);
   });
 
-  it('without Fall-Through the groups of a user that has its own entry are not read', async () => {
+  it('a user with its own entry and no Fall-Through still has its groups read, as read_groups is yes', async () => {
     const { client } = await lab();
     const output = await ask(client, 'frank');
     expect(accepted(output)).toBe(true);
-    expect(message(output)).toBe('frank only');
+    expect(output).toContain('staff group');
+  });
+
+  it('Fall-Through = No in the user reply ends the chain: the groups are not read', async () => {
+    const { client } = await lab();
+    const output = await ask(client, 'gina');
+    expect(accepted(output)).toBe(true);
+    expect(output).not.toContain('staff group');
   });
 
   it('read_groups = no never reads the groups', async () => {
@@ -171,11 +181,11 @@ describe('rlm_sql: authorize', () => {
     expect(await radius.executeCommand('cat /var/log/freeradius/radius.log')).not.toContain('SQL query failed');
   });
 
-  it('a group query that cannot run is never sent for a user with its own entry and no Fall-Through, and fails the module for one that falls through', async () => {
+  it('a group query that cannot run fails the module for a user whose groups are read, and is never sent when Fall-Through = No', async () => {
     const broken = '  group_membership_query = "SELECT groupname FROM system.no_such_table WHERE username = \'%{SQL-User-Name}\'"';
     const { client } = await lab(true, broken);
-    expect(accepted(await ask(client, 'alice'))).toBe(true);
-    expect(accepted(await ask(client, 'carl'))).toBe(false);
+    expect(accepted(await ask(client, 'gina'))).toBe(true);
+    expect(accepted(await ask(client, 'alice'))).toBe(false);
   });
 
   it('a database that cannot be reached at start refuses to instantiate the module: the service does not start, as FreeRADIUS refuses', async () => {

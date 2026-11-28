@@ -2,7 +2,7 @@ import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import { IPAddress } from '@/network/core/types';
 import {
   MOUNT_PROGRAM, MOUNT_V3, MountProcedure, MountStatus, NFS_PORT, NFS_PROGRAM, NFS_V3,
-  NfsProcedure, NfsStatus, StableHow, NFS3_MAXDATA, NFS3_COOKIEVERFSIZE, CreateMode3,
+  NfsProcedure, NfsStatus, TimeHow, StableHow, NFS3_MAXDATA, NFS3_COOKIEVERFSIZE, CreateMode3,
 } from './wire/NfsConstants';
 import {
   AUTH_NONE, RpcAcceptState, RpcReplyState, decodeRpcReply, encodeAuthSys, encodeRpcCall,
@@ -268,6 +268,18 @@ export class NfsClient {
     if (!answer) return NfsStatus.NFS3ERR_IO;
     const result = codec.decodeReadDirResult(answer);
     return result.status === NfsStatus.NFS3_OK ? result.entries : result.status;
+  }
+
+  setTimes(ip: IPAddress, handle: NfsFileHandle, times: { atimeMs?: number; mtimeMs?: number }): NfsStatus {
+    const atMs = (ms: number | undefined) => (ms === undefined
+      ? { how: TimeHow.DONT_CHANGE }
+      : { how: TimeHow.SET_TO_CLIENT_TIME, time: { seconds: Math.floor(ms / 1000), nseconds: 0 } });
+    const answer = this.nfs(ip, NfsProcedure.SETATTR, codec.encodeSetAttrArgs({
+      object: handle,
+      newAttributes: { atime: atMs(times.atimeMs), mtime: atMs(times.mtimeMs) },
+      guardCtime: null,
+    }));
+    return answer ? codec.decodeSetAttrResult(answer).status : NfsStatus.NFS3ERR_IO;
   }
 
   fsStat(ip: IPAddress, root: NfsFileHandle): ReturnType<typeof codec.decodeFsStatResult> | null {

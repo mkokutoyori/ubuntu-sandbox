@@ -1079,10 +1079,17 @@ export class RadiusdService {
       context.overlay.set('sql-user-name', expandForContext(sqlInstance.config.userName, context, unescaped));
       const expand = (template: string) => expandForContext(template, context, (value) => sqlInstance.escape(value));
       const userName = context.overlay.get('sql-user-name') ?? context.username;
-      const sqlEntries = sqlInstance.authorize(userName, expand, (template, group) => {
-        context.overlay.set('sql-group', group);
-        return expand(template);
-      }, () => context.control.get('user-profile'));
+      const view = requestViewOf(context, groupsOf);
+      const sqlEntries = sqlInstance.authorize(userName, {
+        expand: (subject, template, group) => {
+          context.overlay.set('sql-user-name', subject);
+          if (group !== undefined) context.overlay.set('sql-group', group);
+          return expand(template);
+        },
+        matches: (entry) => matchUsersEntries([entry], entry.name, view) !== null,
+        profileHint: () => context.control.get('user-profile'),
+      });
+      context.overlay.set('sql-user-name', userName);
       if (sqlEntries === 'fail') return { result: 'fail', messages };
       const match = matchUsersEntries(sqlEntries, userName, requestViewOf(context, groupsOf));
       if (match === null) return { result: 'notfound', messages };

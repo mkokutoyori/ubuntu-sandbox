@@ -54,6 +54,13 @@ export interface RemoteMountStat {
   readonly ctime: number;
 }
 
+export interface RemoteMountSpace {
+  readonly totalBytes: number;
+  readonly freeBytes: number;
+  readonly totalFiles: number;
+  readonly freeFiles: number;
+}
+
 export interface RemoteMountPort {
   readonly mountCount: number;
   covers(path: string): boolean;
@@ -64,6 +71,8 @@ export interface RemoteMountPort {
   makeDirectory(path: string, permissions: number, uid: number, gid: number): boolean;
   list(path: string): readonly string[] | null;
   rename(from: string, to: string): boolean;
+  setTimes(path: string, times: { atimeMs?: number; mtimeMs?: number }, uid: number, gid: number): boolean;
+  spaceOf(path: string): RemoteMountSpace | null;
 }
 
 export type FindTimeTest =
@@ -271,6 +280,11 @@ export class VirtualFileSystem {
 
   /** Is there an inode left for one more file or directory? */
   private fitsInode(): boolean { return this.usedInodes() < this.inodeCapacity; }
+
+  remoteSpaceOf(path: string): RemoteMountSpace | null {
+    const remote = this.remoteFor(path);
+    return remote === null ? null : remote.spaceOf(this.canonicalKey(path));
+  }
 
   setRemoteMountPort(port: RemoteMountPort | null): void {
     this.remoteMountPort = port;
@@ -875,7 +889,9 @@ export class VirtualFileSystem {
       || normalized === '/sys' || normalized.startsWith('/sys/');
   }
 
-  setTimes(path: string, times: { atime?: number; mtime?: number }): boolean {
+  setTimes(path: string, times: { atime?: number; mtime?: number }, uid = 0, gid = 0): boolean {
+    const remote = this.remoteFor(path);
+    if (remote) return remote.setTimes(this.canonicalKey(path), { atimeMs: times.atime, mtimeMs: times.mtime }, uid, gid);
     const inode = this.resolveInode(path);
     if (!inode) return false;
     if (times.atime !== undefined) inode.atime = times.atime;
@@ -887,7 +903,10 @@ export class VirtualFileSystem {
 
   touch(path: string, uid: number, gid: number, umask: number): boolean {
     const remote = this.remoteFor(path);
-    if (remote) return remote.stat(this.canonicalKey(path)) !== null || remote.write(this.canonicalKey(path), '', uid, gid);
+    if (remote) {
+      const key = this.canonicalKey(path);
+      return remote.stat(key) !== null || remote.write(key, '', uid, gid);
+    }
     const existing = this.resolveInode(path);
     if (existing) {
       existing.mtime = this.nowMs();

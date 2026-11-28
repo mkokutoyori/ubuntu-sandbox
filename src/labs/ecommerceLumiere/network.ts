@@ -139,9 +139,10 @@ export async function configureHqRouter(bench: LabWorkbench, router: Equipment, 
   await bench.shell(
     router, 'enable', 'configure terminal', 'hostname R-HQ',
     'interface GigabitEthernet0/0', `ip address ${HQ.routerTransit} 255.255.255.252`, 'description transit-FGT-HQ', 'no shutdown', 'exit',
-    'interface GigabitEthernet0/1', `ip address ${HQ.servers.gateway} 255.255.255.0`, 'description reseau-serveurs', 'no shutdown', 'exit',
-    'interface GigabitEthernet0/2', `ip address ${HQ.users.gateway} 255.255.255.0`, 'description reseau-utilisateurs', `ip helper-address ${helper}`, 'no shutdown', 'exit',
-    'interface GigabitEthernet0/3', `ip address ${HQ.db.gateway} 255.255.255.0`, 'description zone-bases-de-donnees', 'no shutdown', 'exit',
+    'interface GigabitEthernet0/1', 'description trunk-vers-SW-HQ-SRV', 'no shutdown', 'exit',
+    'interface GigabitEthernet0/1.10', 'encapsulation dot1Q 10', `ip address ${HQ.servers.gateway} 255.255.255.0`, 'description reseau-serveurs', 'exit',
+    'interface GigabitEthernet0/1.20', 'encapsulation dot1Q 20', `ip address ${HQ.users.gateway} 255.255.255.0`, 'description reseau-utilisateurs', `ip helper-address ${helper}`, 'exit',
+    'interface GigabitEthernet0/1.30', 'encapsulation dot1Q 30', `ip address ${HQ.db.gateway} 255.255.255.0`, 'description zone-bases-de-donnees', 'exit',
     `ip route 0.0.0.0 0.0.0.0 ${HQ.fgtTransit}`,
     `logging host ${syslogServer}`, 'logging trap informational', 'service timestamps log datetime msec',
     'end',
@@ -160,11 +161,19 @@ export async function configureDrRouter(bench: LabWorkbench, router: Equipment, 
   void syslogServer;
 }
 
-export async function configureCiscoSwitch(bench: LabWorkbench, device: Equipment, hostname: string, vlan: number, vlanName: string, accessPorts: readonly string[]): Promise<void> {
+export interface CiscoSwitchPlan {
+  readonly hostname: string;
+  readonly vlans: ReadonlyArray<readonly [number, string]>;
+  readonly access: ReadonlyArray<readonly [string, number]>;
+  readonly trunks: readonly string[];
+}
+
+export async function configureCiscoSwitch(bench: LabWorkbench, device: Equipment, plan: CiscoSwitchPlan): Promise<void> {
   await bench.shell(
-    device, 'enable', 'configure terminal', `hostname ${hostname}`,
-    `vlan ${vlan}`, `name ${vlanName}`, 'exit',
-    ...accessPorts.flatMap((port) => [`interface ${port}`, 'switchport mode access', `switchport access vlan ${vlan}`, 'spanning-tree portfast', 'exit']),
+    device, 'enable', 'configure terminal', `hostname ${plan.hostname}`,
+    ...plan.vlans.flatMap(([id, name]) => [`vlan ${id}`, `name ${name}`, 'exit']),
+    ...plan.access.flatMap(([port, vlan]) => [`interface ${port}`, 'switchport mode access', `switchport access vlan ${vlan}`, 'spanning-tree portfast', 'exit']),
+    ...plan.trunks.flatMap((port) => [`interface ${port}`, 'switchport mode trunk', 'exit']),
     'end',
   );
 }

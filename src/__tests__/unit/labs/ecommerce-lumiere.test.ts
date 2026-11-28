@@ -15,6 +15,8 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { __setSuperuserIsOsdba } from '@/network/devices/linux/OracleOsAuthentication';
+import { __setLegacyRouterPortCount, __setInterfacesBootShutdown } from '@/network/devices/inspection/InterfaceStatusView';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
 import type { Equipment } from '@/network';
 import { buildLumiere } from '@/labs/ecommerceLumiere/build';
@@ -24,6 +26,9 @@ import { PROJECT_NAME } from '@/labs/ecommerceLumiere/plan';
 const LAB_FILE = resolve(process.cwd(), 'labs/ecommerce-lumiere/topology.json');
 
 beforeEach(() => {
+  __setLegacyRouterPortCount(null);
+  __setSuperuserIsOsdba(false);
+  __setInterfacesBootShutdown(true);
   resetAllOracleInstances();
   resetCounters();
   resetDeviceCounters();
@@ -71,6 +76,8 @@ describe('Lab Lumiere Boutique', () => {
       const topology = JSON.parse(readFileSync(LAB_FILE, 'utf8')) as TopologyExport;
       const result = await importTopology(topology);
       expect(result.warnings).toEqual([]);
+      expect(result.connections).toHaveLength(topology.connections.length);
+      expect(result.deviceInstances.size).toBe(topology.devices.length);
       useNetworkStore.getState().replaceTopology(result.deviceInstances, result.connections);
       expect(await failedChecks(byName())).toEqual([]);
     }, 300000);

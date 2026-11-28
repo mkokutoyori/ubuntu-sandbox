@@ -6,6 +6,7 @@
  */
 
 
+import { superuserAdmittedAsOsdba } from '@/network/devices/linux/OracleOsAuthentication';
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
@@ -860,10 +861,10 @@ Completed: ALTER DATABASE OPEN
  * software owner. Runs through the device's own shell surface so
  * /etc/passwd, /etc/group and IAM events stay coherent.
  *
- * The pre-seeded operator cast (root, alice, bob, carl, dave) is added to
- * the dba group — this lab server is provisioned as if its admins were
- * DBA staff, so existing topologies keep working. Any *new* account is
- * outside dba and gets the real ORA-01031 on `sqlplus / as sysdba`.
+ * Only `oracle` joins dba, as the preinstall package does: root and every
+ * other account get the real ORA-01031 on `sqlplus / as sysdba`. The test
+ * suites written before this fidelity ask for the former admission of the
+ * pre-seeded cast through `__setSuperuserIsOsdba(true)`.
  */
 export const ORACLE_OS_UID = 54321;
 export const ORACLE_OS_GID = 54321;
@@ -878,6 +879,7 @@ function provisionOracleOsIdentity(device: import('@/network').HostCapableDevice
   run('groupadd -g 54321 oinstall');
   run('groupadd -g 54322 dba');
   run('useradd -u 54321 -g oinstall -G dba -m -d /home/oracle -s /bin/bash oracle');
+  if (!superuserAdmittedAsOsdba()) return;
   for (const u of ['root', 'alice', 'bob', 'carl', 'dave']) {
     run(`usermod -aG dba ${u}`);
   }

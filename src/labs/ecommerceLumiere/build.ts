@@ -16,13 +16,16 @@ export interface LumiereLab {
   readonly devices: ReadonlyMap<string, Equipment>;
 }
 
+const CANVAS_COMPRESSION = 0.78;
+const CANVAS_TOP_MARGIN = 50;
+
 export async function buildLumiere(): Promise<LumiereLab> {
   await loadDevicePlatform('firewall-fortinet');
   useNetworkStore.getState().clearAll();
   const bench = new LabWorkbench();
   const devices = new Map<string, Equipment>();
   const place = (type: Parameters<LabWorkbench['place']>[0], name: string, x: number, y: number): Equipment => {
-    const device = bench.place(type, name, x, y);
+    const device = bench.place(type, name, Math.round(40 + (x - 40) * CANVAS_COMPRESSION), y + CANVAS_TOP_MARGIN);
     devices.set(name, device);
     return device;
   };
@@ -52,11 +55,11 @@ export async function buildLumiere(): Promise<LumiereLab> {
   const fgtDr = place('firewall-fortinet', 'FGT-DR', 1000, 200);
   const rDr = place('router-huawei', 'R-DR', 1000, 340);
   const swDrSrv = place('switch-huawei', 'SW-DR-SRV', 1100, 460);
-  const swDrDb = place('switch-huawei', 'SW-DR-DB', 1300, 460);
+  const swDrDb = place('switch-huawei', 'SW-DR-DB', 1340, 460);
   const swDrDmz = place('switch-generic', 'SW-DR-DMZ', 1200, 340);
   const dc2 = place('windows-server', 'DC2', 1100, 580);
-  const oraStb = place('linux-server', 'ORA-STB', 1260, 580);
-  const bkpDr = place('linux-server', 'BKP-DR', 1380, 580);
+  const oraStb = place('linux-server', 'ORA-STB', 1300, 580);
+  const bkpDr = place('linux-server', 'BKP-DR', 1420, 580);
   const webDr = place('linux-server', 'WEB-DR', 1240, 460);
 
   const agencies = AGENCIES.map((agency, index) => {
@@ -78,8 +81,8 @@ export async function buildLumiere(): Promise<LumiereLab> {
   bench.connect(fgtHq, 'port1', rHq, 'GigabitEthernet0/0');
   bench.connect(fgtHq, 'port2', swDmz, 'eth0');
   bench.connect(rHq, 'GigabitEthernet0/1', swSrv, 'FastEthernet0/1');
-  bench.connect(rHq, 'GigabitEthernet0/2', swUsr, 'FastEthernet0/1');
-  bench.connect(rHq, 'GigabitEthernet0/3', swDb, 'FastEthernet0/1');
+  bench.connect(swSrv, 'FastEthernet0/4', swUsr, 'FastEthernet0/1');
+  bench.connect(swSrv, 'FastEthernet0/5', swDb, 'FastEthernet0/1');
   bench.connect(dc1, 'eth0', swSrv, 'FastEthernet0/2');
   bench.connect(log, 'eth0', swSrv, 'FastEthernet0/3');
   bench.connect(pcHq, 'eth0', swUsr, 'FastEthernet0/2');
@@ -111,12 +114,13 @@ export async function buildLumiere(): Promise<LumiereLab> {
   for (const { agency, fgt } of agencies) await configureFortiGateAgency(bench, fgt, agency, HQ.servers.log);
   await configureHqRouter(bench, rHq, HQ.servers.dc1, HQ.servers.log);
   await configureDrRouter(bench, rDr, HQ.servers.log);
-  await configureCiscoSwitch(bench, swSrv, 'SW-HQ-SRV', 10, 'SERVEURS', ['FastEthernet0/1', 'FastEthernet0/2', 'FastEthernet0/3']);
-  await configureCiscoSwitch(bench, swUsr, 'SW-HQ-USR', 20, 'UTILISATEURS', ['FastEthernet0/1', 'FastEthernet0/2']);
-  await configureCiscoSwitch(bench, swDb, 'SW-HQ-DB', 30, 'BASES', ['FastEthernet0/1', 'FastEthernet0/2', 'FastEthernet0/3']);
+  const hqVlans = [[10, 'SERVEURS'], [20, 'UTILISATEURS'], [30, 'BASES']] as const;
+  await configureCiscoSwitch(bench, swSrv, { hostname: 'SW-HQ-SRV', vlans: hqVlans, access: [['FastEthernet0/2', 10], ['FastEthernet0/3', 10]], trunks: ['FastEthernet0/1', 'FastEthernet0/4', 'FastEthernet0/5'] });
+  await configureCiscoSwitch(bench, swUsr, { hostname: 'SW-HQ-USR', vlans: hqVlans, access: [['FastEthernet0/2', 20]], trunks: ['FastEthernet0/1'] });
+  await configureCiscoSwitch(bench, swDb, { hostname: 'SW-HQ-DB', vlans: hqVlans, access: [['FastEthernet0/2', 30], ['FastEthernet0/3', 30]], trunks: ['FastEthernet0/1'] });
   await configureHuaweiSwitch(bench, swDrSrv, 'SW-DR-SRV', 10, ['GigabitEthernet0/0/0', 'GigabitEthernet0/0/1']);
   await configureHuaweiSwitch(bench, swDrDb, 'SW-DR-DB', 30, ['GigabitEthernet0/0/0', 'GigabitEthernet0/0/1', 'GigabitEthernet0/0/2']);
-  await configureCiscoSwitch(bench, agencies[0].sw, 'SW-AG1', 10, 'MAGASIN', ['FastEthernet0/1', 'FastEthernet0/2']);
+  await configureCiscoSwitch(bench, agencies[0].sw, { hostname: 'SW-AG1', vlans: [[10, 'MAGASIN']], access: [['FastEthernet0/1', 10], ['FastEthernet0/2', 10]], trunks: [] });
   await configureHuaweiSwitch(bench, agencies[1].sw, 'SW-AG2', 10, ['GigabitEthernet0/0/0', 'GigabitEthernet0/0/1']);
 
   const dnsInternal = [HQ.servers.dc1];
@@ -147,6 +151,8 @@ export async function buildLumiere(): Promise<LumiereLab> {
   await publishWebSite(bench, payment, 'Passerelle de paiement (simulee)');
   await bench.writeFile(pcHq, '/etc/netplan/01-lab.yaml', ['network:', '  version: 2', '  ethernets:', '    eth0:', '      dhcp4: true'].join('\n'), '600');
   await bench.shell(pcHq, 'sudo netplan apply', 'sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf');
+  await createOracleOsUser(bench, oraPrd);
+  await createOracleOsUser(bench, oraStb);
   await createOracleOsUser(bench, bkpHq);
   await createOracleOsUser(bench, bkpDr);
   await configureBackupServer(bench, bkpHq, BACKUP_EXPORT, [`${HQ.db.network}/24(rw,sync,no_root_squash)`, `${DR.db.network}/24(ro,sync,no_root_squash)`]);
