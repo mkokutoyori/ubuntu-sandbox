@@ -42,7 +42,7 @@ interface BrokerState {
   primaryIdentifier: string;
   divergenceScn: number;
   self: string;
-  fsfo: { enabled: boolean; threshold: number; target: string | null };
+  fsfo: { enabled: boolean; threshold: number; target: string | null; errors: number[]; health: Record<string, boolean> };
   observers: { name: string; host: string }[];
   protectionMode: ProtectionMode;
   members: Map<string, BrokerMember>;
@@ -50,7 +50,18 @@ interface BrokerState {
 
 const CONFIG_PARAMETER = '_dg_broker_config';
 
-const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', divergenceScn: 0, self: '', fsfo: { enabled: false, threshold: 30, target: null }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
+const DEFAULT_HEALTH_CONDITIONS: Record<string, boolean> = { 'Corrupted Controlfile': true, 'Corrupted Dictionary': true, 'Inaccessible Logfile': false, 'Stuck Archiver': false, 'Datafile Write Errors': true };
+
+const alertCursors = new WeakMap<OracleInstance, number>();
+
+function raisedCondition(instance: OracleInstance, state: BrokerState): boolean {
+  const log = instance.getAlertLog();
+  const from = alertCursors.get(instance) ?? log.length;
+  alertCursors.set(instance, log.length);
+  return log.slice(from).some((line) => [...line.matchAll(/ORA-0*(\d+)/g)].some((found) => state.fsfo.errors.includes(Number(found[1]))));
+}
+
+const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', divergenceScn: 0, self: '', fsfo: { enabled: false, threshold: 30, target: null, errors: [], health: { ...DEFAULT_HEALTH_CONDITIONS } }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
 
 function stateOf(instance: OracleInstance): BrokerState {
   const stored = instance.getParameter(CONFIG_PARAMETER);
@@ -216,13 +227,9 @@ function showFastStartFailover(instance: OracleInstance, state: BrokerState): st
     '  Observer Override:  FALSE',
     'Configurable Failover Conditions',
     '  Health Conditions:',
-    '    Corrupted Controlfile          YES',
-    '    Corrupted Dictionary           YES',
-    '    Inaccessible Logfile            NO',
-    '    Stuck Archiver                  NO',
-    '    Datafile Write Errors          YES',
+    ...Object.entries(state.fsfo.health).map(([condition, on]) => `    ${condition.padEnd(31)}${on ? 'YES' : ' NO'}`),
     '  Oracle Error Conditions:',
-    '    (none)',
+    ...(state.fsfo.errors.length === 0 ? ['    (none)'] : state.fsfo.errors.map((code) => `    ORA-${String(code).padStart(5, '0')}`)),
   ];
 }
 
@@ -362,7 +369,27 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   if (ping) {
     const registered = state.observers.some((observer) => observer.name === ping[1]);
     if (registered) instance.setParameter(`_dg_observer_${ping[1].toLowerCase()}`, `${nowMs},${ping[2]}`, 'BOTH');
+    if (registered && state.fsfo.enabled && raisedCondition(instance, state)) {
+      instance.logAlertEvent('Data Guard broker: a fast-start failover condition was raised, shutting down the primary');
+      instance.shutdown('ABORT');
+      return ['condition'];
+    }
     return [registered ? 'registered' : 'unknown'];
+  }
+  const condition = /^(ENABLE|DISABLE)\s+FAST_START\s+FAILOVER\s+CONDITION\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
+  if (condition) {
+    const on = condition[1].toUpperCase() === 'ENABLE';
+    const value = unquote(condition[2]);
+    if (/^\d+$/.test(value)) {
+      const code = Number(value);
+      state.fsfo.errors = on ? [...new Set([...state.fsfo.errors, code])] : state.fsfo.errors.filter((known) => known !== code);
+      if (on) alertCursors.set(instance, instance.getAlertLog().length);
+      return ['Succeeded.'];
+    }
+    const health = Object.keys(state.fsfo.health).find((known) => known.toLowerCase() === value.toLowerCase());
+    if (health === undefined) return [`Error: ${ORACLE_ERRORS.ORA_16524}`];
+    state.fsfo.health[health] = on;
+    return ['Succeeded.'];
   }
   if (upper === 'ENABLE FAST_START FAILOVER') {
     if (!state.enabled || state.members.size === 0) return [`Error: ${ORACLE_ERRORS.ORA_16844}`];

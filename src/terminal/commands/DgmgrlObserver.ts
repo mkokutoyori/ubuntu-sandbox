@@ -34,7 +34,8 @@ export function startObserver(deviceId: string, name: string, initialPrimaryIden
   const tick = (): void => {
     const reply = ports.ask(primaryIdentifier, `OBSERVER PING ${name} ${lastTargetPing}`);
     if (reply !== null && reply[0] === 'unknown') { stopObserver(deviceId, name); return; }
-    if (reply !== null) {
+    const raised = reply !== null && reply[0] === 'condition';
+    if (reply !== null && !raised) {
       unreachableMs = 0;
       view = parse(ports.ask(primaryIdentifier, 'EXPORT CONFIGURATION')) ?? view;
       const target = view?.members.find(([name]) => name === view?.fsfo.target) ?? view?.members[0];
@@ -49,7 +50,7 @@ export function startObserver(deviceId: string, name: string, initialPrimaryIden
       return;
     }
     unreachableMs += OBSERVER_PING_INTERVAL_MS;
-    if (view === null || !view.fsfo.enabled || unreachableMs < view.fsfo.threshold * 1000) return;
+    if (view === null || !view.fsfo.enabled || (!raised && unreachableMs < view.fsfo.threshold * 1000)) return;
     const target = view.members.find(([name]) => name === view?.fsfo.target) ?? view.members[0];
     if (target === undefined || ports.ask(target[1].identifier, 'EXPORT CONFIGURATION') === null) return;
     ports.ask(target[1].identifier, `OBSERVER FAILOVER TO '${target[0]}'`);
