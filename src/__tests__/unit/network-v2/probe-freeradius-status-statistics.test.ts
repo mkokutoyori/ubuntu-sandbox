@@ -4,11 +4,12 @@
  * request_stats_addvp walks authvp / acctvp in order) and share/dictionary.freeradius (vendor 11344, attribute numbers 127 and 128-137, 148-154, 191, 192, the value
  * names of FreeRADIUS-Statistics-Type). The simulator's dictionary had no FreeRADIUS attribute, so a Status-Server answered only a Message-Authenticator.
  * The counters are the ones radmin already reads (`stats auth`): one store, two views. Not served: the elapsed histogram (vendor attribute 198 is a TLV in 3.x), the
- * home-server statistics. Flag 0x40 with FreeRADIUS-Stats-Server-IP-Address and -Port returns the counters of that listener (the ones `radmin stats socket` reads) after echoing both,
+ * Flag 0x80 with a home server address and port returns outstanding requests, the state (Idle until the server has answered or been probed) and the proxy counters of the kinds asked, or
+ * "Failed to find home server IP" / "No home server port supplied" / "Home server is not acct"; the times of life and death, the EMA window and the last packet times are not served. Flag 0x40 with FreeRADIUS-Stats-Server-IP-Address and -Port returns the counters of that listener (the ones `radmin stats socket` reads) after echoing both,
  * or "No such listener" / "No listener IP address supplied" in FreeRADIUS-Stats-Error. Flag 0x20 with FreeRADIUS-Stats-Client-IP-Address returns that client's own counters (client_authvp / client_acctvp: no conflicts counter) after an echo of the
  * address, or FreeRADIUS-Stats-Error "No such client"; lookup by client number and the netmask echo are not served. Flag 0x10 (internal) returns the start and HUP times, the five queue lengths and PPS (zero: no queue is modelled) and the thread counts radmin `stats threads` prints. Flags 4 and 8 return the proxy counters (the home servers' global store), masked out by 0x20 as stats.c does.
  *
- * Discriminated with git stash on src/network against the tree before any statistics: 10 of 13 fall (4 for the Authentication/Accounting counters, 1 for the proxy mask, 1 for the internal mask, 2 for the client mask, 3 for the server mask, the last four measured separately
+ * Discriminated with git stash on src/network against the tree before any statistics: 14 of 17 fall (4 for the Authentication/Accounting counters, 1 for the proxy mask, 1 for the internal mask, 2 for the client mask, 4 for the home-server mask, the last five measured separately
  * against the version without them). Two pass either way and are named: the witness (a Status-Server without the attribute is answered with no counter) and the 0x20 mask case, a
  * non-regression that is vacuously true until a counter is served.
  */
@@ -31,7 +32,9 @@ const ENABLED = '/etc/freeradius/3.0/sites-enabled';
 const ALICE = `printf 'User-Name = "alice"\\nUser-Password = "wonderland"\\n'`;
 const ask = (flag: string) => `printf 'Message-Authenticator = 0x00\\n${flag === '' ? '' : `FreeRADIUS-Statistics-Type = ${flag}\\n`}'`;
 
-async function lab() {
+const PROXY = '/etc/freeradius/3.0/proxy.conf';
+
+async function lab(proxy = '') {
   const bus = new EventBus();
   const client = new LinuxServer('linux-server', 'CLIENT');
   const target = new LinuxServer('linux-server', 'TARGET');
@@ -43,6 +46,7 @@ async function lab() {
   target.configureInterface('eth0', new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
   write(target, CLIENTS_CONF_PATH, 'client lab {\n  ipaddr = 10.0.0.1\n  secret = shared\n}\n');
   write(target, USERS_FILE_PATH, 'alice Cleartext-Password := "wonderland"\n');
+  if (proxy !== '') write(target, PROXY, proxy);
   await target.executeCommand(`ln -s ../sites-available/status ${ENABLED}/status`);
   await target.executeCommand('systemctl restart freeradius');
   await client.executeCommand(`${ALICE} | radclient 10.0.0.2 auth shared`);
@@ -152,5 +156,34 @@ describe('Status-Server statistics', () => {
     const { target } = await lab();
     const out = await withServer(target, '65', 'FreeRADIUS-Stats-Server-Port = 1812\\n');
     expect(out).toContain('FreeRADIUS-Stats-Error = "No listener IP address supplied"');
+  });
+
+  const HOME = 'home_server home1 {\n  ipaddr = 10.0.0.3\n  port = 1812\n  type = auth\n  secret = homesecret\n}\n';
+  const withHome = (target: LinuxServer, flag: string, extra: string) =>
+    target.executeCommand(`printf 'Message-Authenticator = 0x00\\nFreeRADIUS-Statistics-Type = ${flag}\\n${extra}' | radclient -x 127.0.0.1:18121 status adminsecret`);
+  const HOME_ID = 'FreeRADIUS-Stats-Server-IP-Address = 10.0.0.3\\nFreeRADIUS-Stats-Server-Port = 1812\\n';
+
+  it('a home server mask returns outstanding requests, its state and the proxy counters', async () => {
+    const { target } = await lab(HOME);
+    const out = await withHome(target, '129', HOME_ID);
+    expect(out).toContain('FreeRADIUS-Stats-Server-Outstanding-Requests = 0');
+    expect(out).toContain('FreeRADIUS-Stats-Server-State = Idle');
+    expect(out).toContain('FreeRADIUS-Total-Proxy-Access-Requests = 0');
+    expect(out).not.toContain('FreeRADIUS-Stats-Error');
+  });
+
+  it('an address that is no home server gets "Failed to find home server IP"', async () => {
+    const { target } = await lab(HOME);
+    expect(await withHome(target, '129', 'FreeRADIUS-Stats-Server-IP-Address = 10.9.9.9\\nFreeRADIUS-Stats-Server-Port = 1812\\n')).toContain('FreeRADIUS-Stats-Error = "Failed to find home server IP"');
+  });
+
+  it('asking accounting counters of an auth home server says it is not acct', async () => {
+    const { target } = await lab(HOME);
+    expect(await withHome(target, '130', HOME_ID)).toContain('FreeRADIUS-Stats-Error = "Home server is not acct"');
+  });
+
+  it('a home server mask without a port says so', async () => {
+    const { target } = await lab(HOME);
+    expect(await withHome(target, '129', 'FreeRADIUS-Stats-Server-IP-Address = 10.0.0.3\\n')).toContain('FreeRADIUS-Stats-Error = "No home server port supplied"');
   });
 });

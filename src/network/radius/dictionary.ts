@@ -166,6 +166,8 @@ export const FREERADIUS_STATS_CLIENT_ADDRESS = 167;
 export const FREERADIUS_STATS_ERROR = 187;
 export const FREERADIUS_STATS_SERVER_ADDRESS = 170;
 export const FREERADIUS_STATS_SERVER_PORT = 171;
+export const FREERADIUS_STATS_SERVER_OUTSTANDING = 172;
+export const FREERADIUS_STATS_SERVER_STATE = 173;
 
 export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   // Cisco (vendor 9): the single catch-all AV-pair sub-attribute (type 1),
@@ -189,6 +191,8 @@ export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   { vendorId: FREERADIUS_VENDOR_ID, vendorType: FREERADIUS_STATS_CLIENT_ADDRESS, name: 'freeradius-stats-client-ip-address', displayName: 'FreeRADIUS-Stats-Client-IP-Address', valueType: 'address' },
   { vendorId: FREERADIUS_VENDOR_ID, vendorType: FREERADIUS_STATS_SERVER_ADDRESS, name: 'freeradius-stats-server-ip-address', displayName: 'FreeRADIUS-Stats-Server-IP-Address', valueType: 'address' },
   freeradiusCounter(FREERADIUS_STATS_SERVER_PORT, 'FreeRADIUS-Stats-Server-Port'),
+  freeradiusCounter(FREERADIUS_STATS_SERVER_OUTSTANDING, 'FreeRADIUS-Stats-Server-Outstanding-Requests'),
+  freeradiusCounter(FREERADIUS_STATS_SERVER_STATE, 'FreeRADIUS-Stats-Server-State', { 'alive': 0, 'zombie': 1, 'dead': 2, 'idle': 3, 'admin-down': 4, 'connection-fail': 5 }),
   { vendorId: FREERADIUS_VENDOR_ID, vendorType: FREERADIUS_STATS_ERROR, name: 'freeradius-stats-error', displayName: 'FreeRADIUS-Stats-Error', valueType: 'text' },
   ...FREERADIUS_INTERNAL_COUNTERS.map(([type, name, valueType]) => ({ ...freeradiusCounter(type, name), valueType })),
 ];

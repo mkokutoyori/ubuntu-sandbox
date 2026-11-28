@@ -1352,6 +1352,12 @@ export class RadiusdService {
     this.radiusServer.setAuthenticateHook((info) => this.runAuthenticate(info));
     this.radiusServer.setSessionHook((info) => this.runSession(info));
     this.radiusServer.setStatusHook((info) => this.runStatus(info));
+    this.radiusServer.setHomeServerLookup((address, port) => {
+      const found = this.findHomeServer(address, port);
+      if (found === null) return null;
+      const { server } = found;
+      return { state: this.radiusServer.homeServerState(server.address, port, server).state, type: server.type, authPort: server.port, acctPort: server.acctPort ?? server.port };
+    });
     this.radiusServer.setListenerLookup((address, port) => this.listenerAt(address, port) !== undefined);
     this.radiusServer.setInternalStatistics(() => {
       const [, total, max] = this.threadStatisticsListing().map((line) => Number(line.split('\t').pop()));
