@@ -141,6 +141,19 @@ export const FREERADIUS_ACCT_COUNTERS: readonly FreeradiusCounter[] = [
   [153, 'FreeRADIUS-Total-Acct-Dropped-Requests', 'dropped'], [154, 'FreeRADIUS-Total-Acct-Unknown-Types', 'unknownTypes'], [192, 'FreeRADIUS-Total-Acct-Conflicts', 'conflicts'],
 ];
 
+export const FREERADIUS_PROXY_AUTH_COUNTERS: readonly FreeradiusCounter[] = [
+  [138, 'FreeRADIUS-Total-Proxy-Access-Requests', 'requests'], [139, 'FreeRADIUS-Total-Proxy-Access-Accepts', 'accepts'], [140, 'FreeRADIUS-Total-Proxy-Access-Rejects', 'rejects'],
+  [141, 'FreeRADIUS-Total-Proxy-Access-Challenges', 'challenges'], [142, 'FreeRADIUS-Total-Proxy-Auth-Responses', 'responses'], [143, 'FreeRADIUS-Total-Proxy-Auth-Duplicate-Requests', 'dup'],
+  [144, 'FreeRADIUS-Total-Proxy-Auth-Malformed-Requests', 'malformed'], [145, 'FreeRADIUS-Total-Proxy-Auth-Invalid-Requests', 'badAuthenticator'],
+  [146, 'FreeRADIUS-Total-Proxy-Auth-Dropped-Requests', 'dropped'], [147, 'FreeRADIUS-Total-Proxy-Auth-Unknown-Types', 'unknownTypes'],
+];
+
+export const FREERADIUS_PROXY_ACCT_COUNTERS: readonly FreeradiusCounter[] = [
+  [155, 'FreeRADIUS-Total-Proxy-Accounting-Requests', 'requests'], [156, 'FreeRADIUS-Total-Proxy-Accounting-Responses', 'responses'], [157, 'FreeRADIUS-Total-Proxy-Acct-Duplicate-Requests', 'dup'],
+  [158, 'FreeRADIUS-Total-Proxy-Acct-Malformed-Requests', 'malformed'], [159, 'FreeRADIUS-Total-Proxy-Acct-Invalid-Requests', 'badAuthenticator'],
+  [160, 'FreeRADIUS-Total-Proxy-Acct-Dropped-Requests', 'dropped'], [161, 'FreeRADIUS-Total-Proxy-Acct-Unknown-Types', 'unknownTypes'],
+];
+
 export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   // Cisco (vendor 9): the single catch-all AV-pair sub-attribute (type 1),
   // e.g. "shell:priv-lvl=15" for privilege-level authorization.
@@ -158,6 +171,8 @@ export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   }),
   ...FREERADIUS_AUTH_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
   ...FREERADIUS_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
+  ...FREERADIUS_PROXY_AUTH_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
+  ...FREERADIUS_PROXY_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
 ];
 
 const VSA_BY_VENDOR_AND_TYPE = new Map<string, RadiusVsaDef>(

@@ -4,9 +4,11 @@
  * request_stats_addvp walks authvp / acctvp in order) and share/dictionary.freeradius (vendor 11344, attribute numbers 127 and 128-137, 148-154, 191, 192, the value
  * names of FreeRADIUS-Statistics-Type). The simulator's dictionary had no FreeRADIUS attribute, so a Status-Server answered only a Message-Authenticator.
  * The counters are the ones radmin already reads (`stats auth`): one store, two views. Not served: the elapsed histogram (vendor attribute 198 is a TLV in 3.x), the
- * proxy counters (flags 4 and 8), internal, client, server and home-server statistics.
+ * internal, client, server and home-server statistics. Flags 4 and 8 return the proxy counters (the home servers' global store), masked out by 0x20 as stats.c does.
  *
- * Discriminated with git stash on src/network: 4 of 5 fall before the fix. The witness (a Status-Server without the attribute is still answered with no counter) passes either way.
+ * Discriminated with git stash on src/network against the tree before any statistics: 5 of 7 fall (4 for the Authentication/Accounting counters, 1 for the proxy mask, measured separately
+ * against the proxy-less version). Two pass either way and are named: the witness (a Status-Server without the attribute is answered with no counter) and the 0x20 mask case, a
+ * non-regression that is vacuously true until a counter is served.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -82,5 +84,17 @@ describe('Status-Server statistics', () => {
     const out = await viaTarget(target, '3');
     expect(out).toContain('FreeRADIUS-Total-Access-Requests = 2');
     expect(out).toContain('FreeRADIUS-Total-Accounting-Requests = 0');
+  });
+
+  it('Proxy-Authentication returns the proxy auth counters, none of the local ones', async () => {
+    const { target } = await lab();
+    const out = await viaTarget(target, 'Proxy-Authentication');
+    expect(out).toContain('FreeRADIUS-Total-Proxy-Access-Requests = 0');
+    expect(out).not.toContain('FreeRADIUS-Total-Access-Requests');
+  });
+
+  it('a client bit (0x20) takes the proxy counters out, as stats.c masks them', async () => {
+    const { target } = await lab();
+    expect(await viaTarget(target, '36')).not.toContain('FreeRADIUS-Total-Proxy');
   });
 });
