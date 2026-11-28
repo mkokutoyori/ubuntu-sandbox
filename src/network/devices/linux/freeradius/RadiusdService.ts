@@ -216,6 +216,7 @@ export class RadiusdService {
 
   setSqlConnector(connector: SqlConnector | null): void { this.sqlConnector = connector; }
   private threadPoolStartedMs = 0;
+  private daemonStartedMs = 0;
 
   threadStatisticsListing(): string[] {
     const pool = this.threadPool;
@@ -481,6 +482,7 @@ export class RadiusdService {
       `Ignoring request to ${this.listenerNamed(event.kind, event.port)} from unknown client ${event.clientIp} port ${event.clientPort} proto udp`));
     this.boundPorts = bound;
     this.running = true;
+    this.daemonStartedMs = this.wallClock.nowMs();
     this.debugMode = listen.debug === true;
     if (!this.debugMode) this.writeLogLine('Info', 'Ready to process requests');
     return { ok: true };
@@ -1346,6 +1348,10 @@ export class RadiusdService {
     this.radiusServer.setAuthenticateHook((info) => this.runAuthenticate(info));
     this.radiusServer.setSessionHook((info) => this.runSession(info));
     this.radiusServer.setStatusHook((info) => this.runStatus(info));
+    this.radiusServer.setInternalStatistics(() => {
+      const [, total, max] = this.threadStatisticsListing().map((line) => Number(line.split('\t').pop()));
+      return { 176: Math.floor(this.daemonStartedMs / 1000), 177: Math.floor(this.threadPoolStartedMs / 1000), 193: 0, 194: total, 195: max };
+    });
     this.radiusServer.setRadSecClient((address, port, request) => this.radSecRequest(address, port, request));
     this.radiusServer.setAccountingRunner((info) => this.runAccounting(info));
     this.radiusServer.setProxyHooks({

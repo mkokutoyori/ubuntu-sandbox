@@ -27,7 +27,7 @@ import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
 import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, encodeEapPacket, verifyEapMd5Response } from './eap';
-import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, FREERADIUS_PROXY_AUTH_COUNTERS, FREERADIUS_PROXY_ACCT_COUNTERS, type FreeradiusCounter } from './dictionary';
+import { MICROSOFT_VENDOR_ID, FREERADIUS_VENDOR_ID, FREERADIUS_AUTH_COUNTERS, FREERADIUS_ACCT_COUNTERS, FREERADIUS_PROXY_AUTH_COUNTERS, FREERADIUS_PROXY_ACCT_COUNTERS, FREERADIUS_INTERNAL_COUNTERS, type FreeradiusCounter } from './dictionary';
 import {
   ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
   deriveMppeKeys, encryptMppeKey,
@@ -1069,6 +1069,15 @@ export class RadiusServerAgent {
     this.sendRadiusFrame(inPort, port, localIp, srcIp, udp.sourcePort, udp.destinationPort, response);
   }
 
+  private internalStatistics: (() => Readonly<Record<number, number>>) | null = null;
+
+  setInternalStatistics(provider: (() => Readonly<Record<number, number>>) | null): void { this.internalStatistics = provider; }
+
+  private internalAttributes(): RadiusAttribute[] {
+    const values = this.internalStatistics?.() ?? {};
+    return FREERADIUS_INTERNAL_COUNTERS.map(([type]): RadiusAttribute => ({ type: 'vendor-specific', value: values[type] ?? 0, vendor: { id: FREERADIUS_VENDOR_ID, type } }));
+  }
+
   private statisticsAttributes(request: RadiusPacket): RadiusAttribute[] {
     const asked = request.attributes.find((attribute) => attribute.type === 'vendor-specific' && attribute.vendor?.id === FREERADIUS_VENDOR_ID && attribute.vendor.type === 127);
     const flag = asked === undefined ? 0 : Number(asked.value);
@@ -1078,12 +1087,14 @@ export class RadiusServerAgent {
       { kind: 'auth', bit: 0x04, mask: 0x20, proxied: true, counters: FREERADIUS_PROXY_AUTH_COUNTERS },
       { kind: 'acct', bit: 0x08, mask: 0x20, proxied: true, counters: FREERADIUS_PROXY_ACCT_COUNTERS },
     ];
+    const internal = (flag & 0x10) !== 0 ? this.internalAttributes() : [];
     return kinds
       .filter(({ bit, mask }) => (flag & bit) !== 0 && (flag & mask) === 0)
       .flatMap(({ kind, proxied, counters }) => {
         const stats = (proxied ? this.homeStatistics : this.statistics).get(`${kind}:*`) ?? emptyStats();
         return counters.map(([type, , field]): RadiusAttribute => ({ type: 'vendor-specific', value: stats[field], vendor: { id: FREERADIUS_VENDOR_ID, type } }));
-      });
+      })
+      .concat(internal);
   }
 
   private withSessionTimeout(user: RadiusUser, secondsLeft: number): RadiusUser {

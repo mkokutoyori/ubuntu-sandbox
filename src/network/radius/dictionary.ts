@@ -154,6 +154,14 @@ export const FREERADIUS_PROXY_ACCT_COUNTERS: readonly FreeradiusCounter[] = [
   [160, 'FreeRADIUS-Total-Proxy-Acct-Dropped-Requests', 'dropped'], [161, 'FreeRADIUS-Total-Proxy-Acct-Unknown-Types', 'unknownTypes'],
 ];
 
+export const FREERADIUS_INTERNAL_COUNTERS: readonly (readonly [type: number, displayName: string, valueType: RadiusValueType])[] = [
+  [176, 'FreeRADIUS-Stats-Start-Time', 'time'], [177, 'FreeRADIUS-Stats-HUP-Time', 'time'],
+  [162, 'FreeRADIUS-Queue-Len-Internal', 'integer'], [163, 'FreeRADIUS-Queue-Len-Proxy', 'integer'], [164, 'FreeRADIUS-Queue-Len-Auth', 'integer'],
+  [165, 'FreeRADIUS-Queue-Len-Acct', 'integer'], [166, 'FreeRADIUS-Queue-Len-Detail', 'integer'],
+  [181, 'FreeRADIUS-Queue-PPS-In', 'integer'], [182, 'FreeRADIUS-Queue-PPS-Out', 'integer'],
+  [193, 'FreeRADIUS-Stats-Threads-Active', 'integer'], [194, 'FreeRADIUS-Stats-Threads-Total', 'integer'], [195, 'FreeRADIUS-Stats-Threads-Max', 'integer'],
+];
+
 export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   // Cisco (vendor 9): the single catch-all AV-pair sub-attribute (type 1),
   // e.g. "shell:priv-lvl=15" for privilege-level authorization.
@@ -173,6 +181,7 @@ export const RADIUS_VSA_DICTIONARY: readonly RadiusVsaDef[] = [
   ...FREERADIUS_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
   ...FREERADIUS_PROXY_AUTH_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
   ...FREERADIUS_PROXY_ACCT_COUNTERS.map(([type, name]) => freeradiusCounter(type, name)),
+  ...FREERADIUS_INTERNAL_COUNTERS.map(([type, name, valueType]) => ({ ...freeradiusCounter(type, name), valueType })),
 ];
 
 const VSA_BY_VENDOR_AND_TYPE = new Map<string, RadiusVsaDef>(
