@@ -278,7 +278,10 @@ export class OracleFilesystemSync {
         }
       }),
 
-      this.bus.subscribe('oracle.transaction.committed', (e) => this.recordFlashbackLog(e.payload.deviceId)),
+      this.bus.subscribe('oracle.transaction.committed', (e) => {
+        this.writeCurrentRedoGroup(e.payload.deviceId);
+        this.recordFlashbackLog(e.payload.deviceId);
+      }),
       this.bus.subscribe('oracle.ddl.executed', (e) => this.recordFlashbackLog(e.payload.deviceId)),
 
       this.bus.subscribe('oracle.flashback.mode-changed', (e) => {
@@ -657,6 +660,19 @@ export class OracleFilesystemSync {
     for (const stale of instance.noteFlashbackLog({ seq, scn: instance.getCurrentScn(), timeMs: hostNowMs(), bytes: body.length, file })) {
       dev.deleteFileFromEditor?.(stale.file);
     }
+  }
+
+  private writeCurrentRedoGroup(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const instance = this.ctx.resolveDatabase(deviceId)?.instance;
+    const group = instance?.getRedoLogGroups().find((candidate) => candidate.status === 'CURRENT');
+    if (!dev || !instance || !group) return;
+    const label = `[ORACLE REDO LOG - Group ${group.group} - ${Math.round(group.sizeBytes / 1048576)}M]`;
+    const writable = group.members.filter((member) => this.fileExists(dev, member) && writeAsOracle(dev, member, label));
+    instance.setLogfileInaccessible(writable.length === 0);
+    if (writable.length > 0) return;
+    instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00345, '1', '1'));
+    for (const member of group.members) instance.logAlertEvent(oracleError(ORACLE_ERRORS.ORA_00312, String(group.group), '1', member));
   }
 
   private segmentImages(deviceId: string): Record<string, string> {

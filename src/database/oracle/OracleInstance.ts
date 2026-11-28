@@ -534,6 +534,12 @@ export class OracleInstance {
     return this._transportState.get(destId);
   }
 
+  private _logfileInaccessible = false;
+
+  get logfileInaccessible(): boolean { return this._logfileInaccessible; }
+
+  setLogfileInaccessible(failed: boolean): void { this._logfileInaccessible = failed; }
+
   private _datafileWriteError = false;
 
   get datafileWriteError(): boolean { return this._datafileWriteError; }
