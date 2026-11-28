@@ -96,6 +96,8 @@ On parle à une base dans un langage qui s'appelle **SQL** : on lui **pose des q
 
 {{step:zero-clients}}
 
+> 💡 **Deux conventions de ce tutoriel.** `WHERE ROWNUM <= 3` veut dire *« ne garde que les 3 premières lignes »* (`ROWNUM` est le numéro de ligne que fournit Oracle). Et quand un bloc contient **plusieurs commandes**, il les affiche d'abord, puis tous leurs résultats **dans le même ordre**.
+
 👀 **Lire la sortie.** La première ligne, c'est ce que tu as demandé : *« donne-moi ces colonnes, dans la table `customers` du **schéma** `shop` »*. Un **schéma** est le « dossier » d'un utilisateur de la base : `shop` est le compte de l'application de la boutique. Ensuite, la réponse est un petit tableau (une ligne par client), puis un compte rendu (`3 rows selected.`).
 
 ✅ **À retenir.** Une base de données n'est pas un fichier que l'on ouvre avec un éditeur : c'est un **logiciel** (ici **Oracle**) qui gère des fichiers pour toi, protège les données quand plusieurs personnes écrivent en même temps, et sait refaire le travail après une panne. Ce tutoriel t'apprend à **lui faire survivre aux pannes**.
@@ -554,7 +556,7 @@ On relit pour **vérifier** que la configuration a été prise en compte :
 
 ### 7.1 La commande
 
-🧠 **Comprendre.** `BACKUP DATABASE PLUS ARCHIVELOG` sauvegarde les **fichiers de données** *et* les **journaux archivés** : c'est le strict minimum pour pouvoir récupérer jusqu'à la dernière transaction. `TAG 'PREMIERE'` est une **étiquette** pour s'y retrouver.
+🧠 **Comprendre.** `BACKUP DATABASE PLUS ARCHIVELOG` sauvegarde les **fichiers de données** *et* les **journaux archivés** : c'est le strict minimum pour pouvoir récupérer jusqu'à la dernière transaction. `TAG 'PREMIERE'` est une **étiquette** pour s'y retrouver : elle ne s'applique qu'à la sauvegarde des **fichiers de données** ; RMAN en invente une (`TAG2026…`) pour la sauvegarde des journaux, et nomme `AUTOBACKUP` celle du fichier de contrôle.
 
 🔧 **Manipuler.**
 
@@ -796,7 +798,7 @@ L'**ouverture** échoue seulement parce qu'un fichier manque. Et c'est exactemen
 
 {{step:a-restauration}}
 
-👀 **Lire la sortie.** `restoring datafile 00005` : le fichier est recopié. `media recovery complete` : les journaux sont rejoués. Aucune ligne `RMAN-06054` (journal manquant) : la chaîne est complète.
+👀 **Lire la sortie.** `restoring datafile 00005` : le fichier est recopié. `starting archived log restore` / `reading from backup piece` : les journaux avaient été supprimés du disque après leur sauvegarde, RMAN les **ressort de la sauvegarde** ; `media recovery complete` : les journaux sont rejoués. Aucune ligne `RMAN-06054` (journal manquant) : la chaîne est complète.
 
 ⚠️ **Piège.** `RESTORE` ramène un état **ancien** ; `RECOVER` le **met à jour**. Sans `RECOVER`, le fichier est trop vieux par rapport au reste de la base et Oracle **refuse de l'ouvrir**.
 
@@ -810,7 +812,7 @@ L'**ouverture** échoue seulement parce qu'un fichier manque. Et c'est exactemen
 
 ### Variante : réparer pendant que la boutique tourne
 
-🧠 **Comprendre.** Si **seul un tablespace** est en cause, on n'est pas obligé d'arrêter la base : on met **uniquement** `SHOP_DATA` **hors ligne**, on le restaure, on le remet en ligne. Les autres tablespaces continuent de fonctionner.
+🧠 **Comprendre.** Si **seul un tablespace** est en cause, on n'est pas obligé d'arrêter la base : on met **uniquement** `SHOP_DATA` **hors ligne**, on le restaure, on le remet en ligne. Les autres tablespaces continuent de fonctionner. (Ici le fichier vient d'être restauré ; on met tout de même le tablespace hors ligne **comme si** son fichier était de nouveau perdu : c'est le geste à connaître.)
 
 🔧 **Manipuler.**
 
@@ -935,7 +937,7 @@ Trois réflexes qui sauvent : **noter le DBID hors de la base**, **activer l'aut
 
 ### Noter l'instant juste avant
 
-🔧 **Manipuler.** Ici, on le relève juste avant l'erreur :
+🔧 **Manipuler.** On crée d'abord une commande **témoin** (la `2001`) : si elle réapparaît à la fin, c'est la preuve que l'on est revenu **après** elle et **avant** l'erreur. On relève aussi le nombre de paiements et le SCN :
 
 {{step:b-avant}}
 
@@ -1223,6 +1225,8 @@ La base répond-elle ?
 
 ### Niveau 3 — Raisonner
 
+*Ces exercices sont ouverts : il n'y a pas de corrigé unique, mais chacun se vérifie par une sortie que tu sais maintenant lire (voir le chapitre indiqué dans l'arbre de décision, chapitre 15).*
+
 8. **Heure plutôt que SCN.** Refais le chapitre 12 avec `SET UNTIL TIME`. *Indice : `SELECT SYSDATE FROM dual` ; le format dépend de `NLS_DATE_FORMAT`.*
 9. **Qui a lancé cette sauvegarde ?** Donne à `stagiaire` le groupe `dba` (`usermod -aG dba stagiaire`) et fais-lui lancer `rman target /`. Qu'est-ce qui change ? Et dans les journaux de `LOG-HQ` ? *Indice : il faut une nouvelle session pour que les groupes soient pris en compte.*
 10. **Repartir à zéro.** Après la bascule du chapitre 14, que faudrait-il pour que le siège reconstruit redevienne un site de secours de `ORA-STB` ? *Indice : le même `DUPLICATE`, dans l'autre sens.*
@@ -1243,17 +1247,19 @@ La base répond-elle ?
 | `ORA-01589` | must use RESETLOGS or NORESETLOGS option | Récupération incomplète ou fichier de contrôle restauré | `ALTER DATABASE OPEN RESETLOGS` |
 | `ORA-01139` | RESETLOGS option only valid after an incomplete recovery | `OPEN RESETLOGS` sans récupération incomplète | `ALTER DATABASE OPEN` simplement |
 | `ORA-01031` | insufficient privileges | L'utilisateur du système n'est pas dans le groupe `dba` | Se connecter en `oracle` (ne pas élargir `dba` à la légère) |
-| `ORA-01124` | cannot recover data file *n* - file is in use or recovery | `RECOVER` lancé base **ouverte** | Remettre la base en `MOUNT` |
+| `ORA-01124` ¹ | cannot recover data file *n* - file is in use or recovery | `RECOVER` lancé base **ouverte** | Remettre la base en `MOUNT` |
 | `RMAN-06149` | cannot BACKUP DATABASE in NOARCHIVELOG mode | Sauvegarde d'une base **ouverte** sans journaux archivés | Passer en `ARCHIVELOG` (chapitre 5), ou sauvegarder à froid en `MOUNT` |
 | `RMAN-06172` | no autobackup found | `RESTORE CONTROLFILE FROM AUTOBACKUP` sans `SET DBID` ou mauvais format | `SET DBID`, `SET CONTROLFILE AUTOBACKUP FORMAT … %F` |
 | `RMAN-06026` | no backup … to satisfy the requested SET UNTIL bound | Aucune sauvegarde **antérieure** au SCN demandé | Un SCN plus récent, ou une sauvegarde plus ancienne |
 | `RMAN-06023` | no backup found to restore | Le catalogue ne connaît aucune sauvegarde | `LIST BACKUP` ; `CATALOG START WITH '/backup'` |
 | `RMAN-06053` / `RMAN-06025` | unable to perform media recovery because of missing log | Un journal est absent **et** introuvable dans une sauvegarde | Vérifier que `BACKUP ARCHIVELOG … DELETE INPUT` a réussi *avant* de supprimer |
 | `RMAN-04005` / `RMAN-00554` | error from target database | La connexion à la cible a échoué (privilèges, instance arrêtée) | Lire **la ligne `ORA-` qui suit** |
-| `ORA-00257` | archiver error | La zone d'archivage est pleine | `BACKUP ARCHIVELOG ALL DELETE INPUT` |
+| `ORA-00257` ¹ | archiver error | La zone d'archivage est pleine | `BACKUP ARCHIVELOG ALL DELETE INPUT` |
 | `ORA-16072` | a minimum of one standby database destination is required | Mode de protection synchrone sans destination `SYNC` | Déclarer la destination en `SYNC AFFIRM` |
 | `ORA-16627` | operation disallowed since no standby databases would remain to support protection mode | Mode synchrone demandé avec un membre `ASYNC` | `EDIT DATABASE … SET PROPERTY LogXptMode='SYNC'` |
 | `ORA-03113` | end-of-file on communication channel | La session est coupée (ici, la primaire s'est arrêtée sous `MAXIMUM PROTECTION`) | Réparer la standby ou le lien, redémarrer la primaire |
+
+¹ *Erreur réelle d'Oracle, décrite ici pour que tu la reconnaisses, mais que le simulateur ne produit pas (il n'a ni zone d'archivage limitée ni `RECOVER` base ouverte refusé).*
 
 ---
 
