@@ -269,6 +269,15 @@ export class OracleFilesystemSync {
         this.refreshControlFiles(e.payload.deviceId);
       }),
 
+      this.bus.subscribe('oracle.redo.standby-log-changed', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        for (const member of e.payload.members) {
+          if (e.payload.dropped) dev.deleteFileFromEditor?.(member);
+          else writeAsOracle(dev, member, `[ORACLE STANDBY REDO LOG - Group ${e.payload.group} - ${Math.round(e.payload.sizeBytes / 1048576)}M]`);
+        }
+      }),
+
       this.bus.subscribe('oracle.asm.disk-added', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;

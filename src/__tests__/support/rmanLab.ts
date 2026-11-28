@@ -97,3 +97,9 @@ export async function buildRmanLab(): Promise<RmanLab> {
     sh, sql, rman,
   };
 }
+
+export function addStandbyRedoLogs(lab: RmanLab): void {
+  for (const device of [lab.prod, lab.dr]) {
+    lab.sql(device, "ALTER DATABASE ADD STANDBY LOGFILE GROUP 11 ('/u01/app/oracle/oradata/ORCL/srl11.log') SIZE 50M;");
+  }
+}

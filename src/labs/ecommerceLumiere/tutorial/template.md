@@ -566,7 +566,7 @@ On relit pour **vérifier** que la configuration a été prise en compte :
 
 - `Starting backup … / Finished backup …` : **trois blocs** — les fichiers de données, les journaux archivés, puis l'**auto-sauvegarde du fichier de contrôle** ;
 - `piece handle=/backup/ORCL_….bkp tag=PREMIERE` : **le fichier créé** (la *pièce*) et son étiquette ;
-- `elapsed time` : la durée (simulée dans le lab).
+- `elapsed time` : la durée, **calculée** à partir de la taille du fichier (50 Mo/s, voir le chapitre 19) ; l'horloge de la machine avance d'autant, donc `Finished backup at` − `Starting backup at` = `elapsed time`.
 
 ### 7.2 Ce qu'il y a dans le catalogue
 
@@ -1105,6 +1105,20 @@ Sur `ORA-STB` :
 
 {{step:dr-application}}
 
+### 14.4 bis — Préparer la réception : les *standby redo logs*
+
+🧠 **Comprendre.** Quand la production envoie son redo en direct (modes `SYNC` et `ASYNC`), la standby a besoin d'un endroit où le **recevoir au fil de l'eau** : des **journaux de réception** (*standby redo logs*, SRL), distincts des journaux en ligne. Sans eux, le broker refuse de dire que tout va bien : il signale `ORA-16789: standby redo logs configured incorrectly`. On en crée un groupe sur **chaque** base (la primaire en aura besoin le jour où elle deviendra standby à son tour), de la même taille que les journaux en ligne.
+
+🔧 **Manipuler.** Sur la production :
+
+{{step:dr-journaux-standby-prd}}
+
+Et sur la standby :
+
+{{step:dr-journaux-standby-stb}}
+
+👀 **Lire la sortie.** `Database altered.` : le groupe 11 existe, avec son fichier (`srl11.log`) sur le disque. `V$STANDBY_LOG` le montre `UNASSIGNED` : il n'est affecté à aucune primaire tant qu'aucun redo n'arrive. Dès qu'un `COMMIT` synchrone envoie le sien, le groupe passe `ACTIVE` (avec le DBID de la primaire et les octets utilisés) ; quand l'archive de ce journal arrive, il se libère.
+
 ### 14.5 Le broker : la même chose, gérée pour toi
 
 🧠 **Comprendre.** Ces deux commandes, le **Data Guard Broker** les exécute à ta place. Son interface est un programme, **`dgmgrl`**, qui garde une **configuration** : *qui est la primaire, quelles sont les standbys, comment les journaux circulent*. `CREATE CONFIGURATION` la nomme, `ADD DATABASE` déclare la standby **par son identifiant de connexion**, `ENABLE CONFIGURATION` l'active (le broker pose la destination d'archivage et démarre l'application sur la standby par une session Oracle Net).
@@ -1119,7 +1133,7 @@ Le broker **copie la configuration sur chaque membre** : tu peux la relire depui
 
 {{step:dr-broker-standby}}
 
-👀 **Lire la sortie.** Même configuration, vue de l'autre côté : `ORCL` est la primaire, `ORCL_STB` la standby. Si le site de production brûle, c'est ici que tu retrouves *qui était qui*. Les **changements** (`EDIT`, `ADD`...) se tapent, eux, sur la primaire.
+👀 **Lire la sortie.** Même configuration, vue de l'autre côté : `ORCL` est la primaire, `ORCL_STB` la standby. Si le site de production brûle, c'est ici que tu retrouves *qui était qui*. Un **changement** (`EDIT`, `ADD`...) tapé ici est **routé vers la primaire** par le broker, qui l'applique et le replique.
 
 ### 14.6 Les trois modes de protection
 
@@ -1140,6 +1154,22 @@ Le broker ne laisse activer un mode synchrone que si un membre est lui-même **s
 {{step:dr-niveau}}
 
 👀 **Lire la sortie.** `PROTECTION_MODE` est le mode **demandé**, `PROTECTION_LEVEL` celui qui est **effectivement tenu** à cet instant (il passerait à `RESYNCHRONIZATION` si la standby se taisait, et à `UNPROTECTED` sans destination synchrone). `MAXIMUM PROTECTION` se règle de la même façon, mais base **montée** (`ORA-01126` sinon) : la production **s'arrêterait** à la première validation sans accusé.
+
+### 14.6 bis — Armer la bascule automatique (*fast-start failover*)
+
+🧠 **Comprendre.** Plus loin (14.8) c'est **toi** qui taperas `FAILOVER`. En production, personne n'est là à 3 h du matin : le **fast-start failover** confie la décision à un petit programme, l'**observateur** (*observer*), lancé sur une **troisième machine** pour qu'il ne tombe pas avec le siège. Il sonde la primaire toutes les 3 secondes ; si elle se tait depuis `FastStartFailoverThreshold` secondes (**30** par défaut) **et** que la standby répond, il fait lui-même le `FAILOVER` et ouvre la nouvelle primaire. Les commandes, dans l'ordre. L'observateur tourne ici sur `BKP-HQ`, une machine **qui ne porte pas la base** : la production peut brûler, lui reste debout.
+
+🔧 **Manipuler.**
+
+{{step:dr-fsfo}}
+
+👀 **Lire la sortie.** `Enabled in Zero Data Loss Mode.` : la bascule automatique est armée, *sans perte possible* puisque la standby est en `SYNC`. `Observer started` : l'observateur surveille. Dans `SHOW FAST_START FAILOVER`, retiens `Threshold: 30 seconds` (le silence toléré), `Active Target: ORCL_STB` (qui sera promue) et `Observer:` (qui surveille). Quelques secondes plus tard, l'observateur est enregistré et il a déjà sondé les deux bases :
+
+{{step:dr-observateur}}
+
+Deux conditions, que le simulateur vérifie : le mode de protection doit être `MaxAvailability` et la standby doit être en `SYNC` (sinon `ORA-16693`). Tant qu'aucun observateur n'est démarré, `SHOW CONFIGURATION` affiche `ORA-16819: fast-start failover observer not started` sous chaque membre. `STOP OBSERVER` et `DISABLE FAST_START FAILOVER` ferment la porte.
+
+> ℹ️ Le **déclenchement** (la primaire se tait 30 secondes, l'observateur bascule seul) n'est pas rejoué ici : le 14.8 bascule à la main juste après, et la base ne peut tomber qu'une fois. C'est le test `oracle-dgmgrl-observer` du dépôt qui le rejoue de bout en bout : la bascule au bout du seuil, rien avant, l'arrêt de l'observateur, la désactivation et le refus d'un quatrième observateur.
 
 ### 14.7 Une commande tombe, elle arrive de l'autre côté
 
@@ -1338,7 +1368,7 @@ dgmgrl /  ->  CREATE CONFIGURATION 'nom' AS PRIMARY DATABASE IS 'ORCL' CONNECT I
 
 ## 19. Ce que le simulateur fait comme Oracle — et ce qu'il ne fait pas
 
-Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **huit écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **huit sont fermés** et le tutoriel s'appuie sur leur comportement réel :
+Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce tutoriel, **onze écarts** entre le simulateur et un vrai Oracle ont été mesurés ; **onze sont fermés** et le tutoriel s'appuie sur leur comportement réel :
 
 | Ce qu'un vrai Oracle fait | Où le voir |
 |---|---|
@@ -1349,14 +1379,17 @@ Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce 
 | `CROSSCHECK BACKUP` couvre toutes les sauvegardes (journaux compris) ; `CROSSCHECK ARCHIVELOG ALL` contrôle les **fichiers** de journaux | chapitres 8 et 9 |
 | Un journal archivé retiré du disque est signalé par `CROSSCHECK ARCHIVELOG ALL` et marqué `EXPIRED` (`STATUS = 'X'` dans `V$ARCHIVED_LOG`) | exercice 7 |
 | Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | chapitre 14 |
+| Les **standby redo logs** existent (`ALTER DATABASE ADD STANDBY LOGFILE`, `V$STANDBY_LOG`, un fichier par membre) et le broker les exige : `ORA-16789` sans eux, et le *fast-start failover* ne s'active pas | chapitre 14.4 bis |
 | La configuration du broker est **répliquée** sur chaque membre : `SHOW CONFIGURATION` la lit aussi sur la standby | chapitre 14 |
+| Un changement tapé sur une standby, ou dans une session `dgmgrl` distante, est **routé vers la primaire** par le broker | chapitre 14.5 |
+| Le **fast-start failover** : `ENABLE FAST_START FAILOVER`, un **observateur** (`START OBSERVER`) qui sonde la primaire et bascule seul au bout du seuil | chapitre 14.6 bis (armement et observation rejoués) et test `oracle-dgmgrl-observer` (déclenchement) |
 
 Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| Le broker (`dgmgrl`) | Le broker surveille et peut basculer seul (*fast-start failover*, avec un **observateur**), et accepte les changements depuis n'importe quel membre | Pas d'observateur ni de bascule automatique ; les changements (`EDIT`, `ADD`...) se tapent sur la **primaire** (une standby les refuse en le disant) |
-| Temps de sauvegarde | Dépend du disque et du réseau | Durées simulées (indicatives) |
+| Le broker : mode **Potential Data Loss** (`MaxPerformance` avec une limite de retard), réinstallation automatique de l'ancienne primaire (*auto-reinstate*), observateurs multiples avec bascule du maître | Fonctionnent | Le *fast-start failover* en mode **Zero Data Loss** est réel (voir le chapitre 14.6 bis) ; les autres modes ne sont pas implémentés, l'ancienne primaire n'est pas réinstallée et `START OBSERVER` rend la main au lieu de bloquer |
+| Temps de sauvegarde et de restauration | Dépend du disque, du réseau et de la charge | Une **seule règle** : taille du fichier ÷ **50 Mo/s** (minimum 1 s), la même pour `BACKUP`, `RESTORE` et `RECOVER`, et l'horloge de la machine avance d'autant. Le débit est un **modèle**, pas une mesure de disque : compare les durées entre elles, pas à ta production |
 
 ---
 

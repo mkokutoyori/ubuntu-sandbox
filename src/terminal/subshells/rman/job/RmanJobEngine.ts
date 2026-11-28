@@ -476,6 +476,15 @@ export class RmanJobEngine implements IRmanJobEngine {
     return out;
   }
 
+  private _bytesOf(paths: ReadonlyArray<string>): number {
+    let total = 0;
+    for (const path of paths) {
+      const read = this._ctx.vfs.readFile(path);
+      if (read.ok) total += read.value.length;
+    }
+    return total;
+  }
+
   private _restoreArchivedLogFromBackup(path: string): string | null {
     const snap = this._catalog.listAll();
     if (snap.ok === false) return null;
@@ -759,9 +768,11 @@ export class RmanJobEngine implements IRmanJobEngine {
       this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(
         saved ?? `[ORACLE DATAFILE - ${df.tablespace} tablespace - ${sizeMb}M]`));
       this._ctx.setDatafileNeedsRecovery?.(df.fileNo, true);
+      const restoreMs = simulateBackupElapsedMs(df.sizeBytes);
+      this._ctx.spendHostTime?.(restoreMs);
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
-        fileNo: df.fileNo, elapsedMs: 5_000,
+        fileNo: df.fileNo, elapsedMs: restoreMs,
       });
     }
     this._pendingRecoveryGap = true;
@@ -795,9 +806,11 @@ export class RmanJobEngine implements IRmanJobEngine {
       const written = target.vfs.writeFile(
         dest, new TextEncoder().encode(body ?? `[ORACLE DATAFILE - ${aux} duplicate]`));
       if (written.ok === false) return written;
+      const restoreMs = simulateBackupElapsedMs(df.sizeBytes);
+      this._ctx.spendHostTime?.(restoreMs);
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
-        fileNo: df.fileNo, elapsedMs: 4_000,
+        fileNo: df.fileNo, elapsedMs: restoreMs,
       });
     }
     return ok(undefined);
@@ -867,9 +880,11 @@ export class RmanJobEngine implements IRmanJobEngine {
         fromDbUniqueName: dbUniqueName, kind: 'DATAFILE',
       });
       if (sent.ok === false) return sent;
+      const restoreMs = simulateBackupElapsedMs(df.sizeBytes);
+      this._ctx.spendHostTime?.(restoreMs);
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
-        fileNo: df.fileNo, elapsedMs: 4_000,
+        fileNo: df.fileNo, elapsedMs: restoreMs,
       });
     }
     const mounted = aux.runSqlStatement?.('ALTER DATABASE MOUNT STANDBY DATABASE');
@@ -1007,7 +1022,9 @@ export class RmanJobEngine implements IRmanJobEngine {
           : true;
       if (targeted) this._ctx.setDatafileNeedsRecovery?.(df.fileNo, false);
     }
-    this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
+    const recoverMs = simulateBackupElapsedMs(this._bytesOf(arcPaths));
+    this._ctx.spendHostTime?.(recoverMs);
+    this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: recoverMs });
     this._pendingRecoveryGap = false;
     return ok(undefined);
   }

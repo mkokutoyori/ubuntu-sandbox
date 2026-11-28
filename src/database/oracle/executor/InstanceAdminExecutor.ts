@@ -39,6 +39,10 @@ export interface InstanceAdminDeps {
   killSession?(sid: number, serial: number, immediate: boolean): boolean | null;
 }
 
+import { decodeBrokerCommand } from '../dataguard/BrokerCommandCodec';
+
+export const BROKER_COMMAND_PARAMETER = '_dg_broker_command';
+
 export class InstanceAdminExecutor {
   constructor(private readonly deps: InstanceAdminDeps) {}
 
@@ -67,6 +71,9 @@ export class InstanceAdminExecutor {
       const scope = stmt.scope as 'MEMORY' | 'SPFILE' | 'BOTH' | undefined;
       if (isStaticParameter(stmt.parameter) && scope !== 'SPFILE') {
         throw new OracleError(2095, 'specified initialization parameter cannot be modified');
+      }
+      if (stmt.parameter.replace(/"/g, '').toLowerCase() === BROKER_COMMAND_PARAMETER) {
+        return emptyResult(this.instance.requestBrokerCommand(decodeBrokerCommand(stmt.value)));
       }
       this.instance.setParameter(stmt.parameter, stmt.value, scope);
       return emptyResult('System altered.');
@@ -123,6 +130,20 @@ export class InstanceAdminExecutor {
     if (stmt.action === 'MOUNT') {
       this.instance.mountDatabase(stmt.details === 'STANDBY');
       return emptyResult('Database altered.');
+    }
+    const addStandbyLog = /^\s*ADD\s+STANDBY\s+LOGFILE\s+(?:THREAD\s+(\d+)\s+)?(?:GROUP\s+(\d+)\s+)?\(?\s*((?:'[^']*'\s*,?\s*)+)\)?\s*SIZE\s+(\d+)\s*([KMG])?\s*$/i.exec(stmt.action);
+    if (addStandbyLog) {
+      const members = [...addStandbyLog[3].matchAll(/'([^']*)'/g)].map((match) => match[1]);
+      const unit = { K: 1024, M: 1048576, G: 1073741824 }[(addStandbyLog[5] ?? '').toUpperCase() as 'K' | 'M' | 'G'] ?? 1;
+      const answer = this.instance.addStandbyLog(addStandbyLog[1] === undefined ? 1 : Number(addStandbyLog[1]), addStandbyLog[2] === undefined ? null : Number(addStandbyLog[2]), members, Number(addStandbyLog[4]) * unit);
+      if (answer !== 'Database altered.') throw new OracleError(Number(/ORA-(\d+)/.exec(answer)?.[1] ?? 0), answer.replace(/^ORA-\d+:\s*/, ''));
+      return emptyResult(answer);
+    }
+    const dropStandbyLog = /^\s*DROP\s+STANDBY\s+LOGFILE\s+GROUP\s+(\d+)\s*$/i.exec(stmt.action);
+    if (dropStandbyLog) {
+      const answer = this.instance.dropStandbyLog(Number(dropStandbyLog[1]));
+      if (answer !== 'Database altered.') throw new OracleError(Number(/ORA-(\d+)/.exec(answer)?.[1] ?? 0), answer.replace(/^ORA-\d+:\s*/, ''));
+      return emptyResult(answer);
     }
     const forcedLogging = /^\s*(NO\s+)?FORCE\s+LOGGING\s*$/i.exec(stmt.action);
     if (forcedLogging) {

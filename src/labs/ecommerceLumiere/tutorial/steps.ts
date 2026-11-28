@@ -8,7 +8,7 @@ const LOGS = '/home/oracle/logs';
 const ALERT_LOG = '/u01/app/oracle/diag/rdbms/orcl/ORCL/trace/alert_ORCL.log';
 const CF_FORMAT = '/backup/cf_%F';
 
-type Extra = Pick<TutorialStep, 'forbids' | 'capture' | 'head' | 'tail'>;
+type Extra = Pick<TutorialStep, 'forbids' | 'capture' | 'head' | 'tail' | 'advanceMs'>;
 
 function step(kind: StepKind, id: string, device: string, user: 'root' | 'oracle', input: string, expects: readonly RegExp[], extra: Extra = {}): TutorialStep {
   return { id, device, user, kind, input, expects, ...extra };
@@ -133,10 +133,14 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   sql('dr-role', 'SELECT database_role, open_mode, log_mode FROM v$database;\nSELECT file#, name FROM v$datafile ORDER BY 1;', [/PHYSICAL STANDBY\s+MOUNTED\s+ARCHIVELOG/, /shop_data01\.dbf/], undefined, STB),
   sql('dr-expedition', "ALTER SYSTEM SET log_archive_dest_2='SERVICE=10.20.30.10:1521/ORCL ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=ORCL_STB' SCOPE=BOTH;\nALTER SYSTEM SET log_archive_dest_state_2=ENABLE SCOPE=BOTH;", [/System altered/]),
   sql('dr-application', 'ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION;', [/Database altered/], undefined, STB),
+  sql('dr-journaux-standby-prd', "ALTER DATABASE ADD STANDBY LOGFILE GROUP 11 ('/u01/app/oracle/oradata/ORCL/srl11.log') SIZE 50M;\nSELECT group#, thread#, bytes, status FROM v$standby_log;", [/Database altered/, /11\s+1\s+52428800\s+UNASSIGNED/]),
+  sql('dr-journaux-standby-stb', "ALTER DATABASE ADD STANDBY LOGFILE GROUP 11 ('/u01/app/oracle/oradata/ORCL/srl11.log') SIZE 50M;\nSELECT group#, thread#, bytes, status FROM v$standby_log;", [/Database altered/, /11\s+1\s+52428800\s+UNASSIGNED/], undefined, STB),
   oracle('dr-broker', PRD, "dgmgrl / <<'E'\nCREATE CONFIGURATION 'lumiere_dg' AS PRIMARY DATABASE IS 'ORCL' CONNECT IDENTIFIER IS orcl;\nADD DATABASE 'ORCL_STB' AS CONNECT IDENTIFIER IS 10.20.30.10:1521/ORCL MAINTAINED AS PHYSICAL;\nENABLE CONFIGURATION;\nSHOW CONFIGURATION;\nE", [/Configuration "lumiere_dg" created/, /Database "ORCL_STB" added/, /Enabled\./, /SUCCESS/]),
   oracle('dr-broker-standby', STB, "dgmgrl / <<'E'\nSHOW CONFIGURATION;\nE", [/Configuration - lumiere_dg/, /ORCL - Primary database/, /ORCL_STB - Physical standby database/, /SUCCESS/]),
   oracle('dr-protection', PRD, "dgmgrl / <<'E'\nEDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;\nEDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='SYNC';\nEDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;\nSHOW CONFIGURATION;\nE", [/ORA-16627/, /Succeeded\./, /Protection Mode: MaxAvailability/]),
   sql('dr-niveau', 'SELECT protection_mode, protection_level FROM v$database;', [/MAXIMUM AVAILABILITY\s+MAXIMUM AVAILABILITY/]),
+  oracle('dr-fsfo', 'BKP-HQ', "dgmgrl sys/oracle@10.10.30.10:1521/ORCL <<'E'\nENABLE FAST_START FAILOVER;\nSTART OBSERVER observateur1;\nSHOW FAST_START FAILOVER;\nE", [/Enabled in Zero Data Loss Mode\./, /Observer started/, /Active Target:\s+ORCL_STB/, /Threshold:\s+30 seconds/]),
+  oracle('dr-observateur', 'BKP-HQ', "dgmgrl sys/oracle@10.10.30.10:1521/ORCL <<'E'\nSHOW OBSERVER;\nE", [/Observer "observateur1" - Master/, /Last Ping to Primary:\s+\d+ seconds? ago/], { advanceMs: 9000 }),
   sql('dr-commande', "INSERT INTO shop.orders VALUES (3001, 2, SYSDATE, 'NEW', 42);\nCOMMIT;\nALTER SYSTEM SWITCH LOGFILE;\nINSERT INTO shop.orders VALUES (3002, 3, SYSDATE, 'NEW', 17);\nCOMMIT;\nSELECT dest_id, status, destination FROM v$archive_dest WHERE dest_id <= 2;", [/10\.20\.30\.10:1521\/ORCL/, /VALID/]),
   sql('dr-lecture', 'SELECT COUNT(*) AS logs_appliques FROM v$archived_log WHERE applied = \'YES\';\nALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;\nALTER DATABASE OPEN READ ONLY;\nSELECT COUNT(*) AS commande_3001 FROM shop.orders WHERE order_id = 3001;\nSELECT COUNT(*) AS commande_3002 FROM shop.orders WHERE order_id = 3002;', [/LOGS_APPLIQUES/, /COMMANDE_3001/, /COMMANDE_3002/, /READ ONLY|Database altered/], undefined, STB),
   sql('dr-sinistre', 'SHUTDOWN ABORT', [/ORACLE instance shut down/]),

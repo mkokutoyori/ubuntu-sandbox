@@ -232,6 +232,11 @@ export interface OracleDataGuardSwitchoverRequestedPayload extends OracleDeviceR
   accept(issue: string): void;
 }
 
+export interface OracleBrokerCommandRequestedPayload extends OracleDeviceRef {
+  command: string;
+  accept(output: string): void;
+}
+
 export interface OracleStandbyManagedRecoveryChangedPayload extends OracleDeviceRef {
   active: boolean;
 }
@@ -355,6 +360,13 @@ export interface OracleDatafileAddedPayload extends OracleDeviceRef {
   path: string;
   size: string;
   autoextend: boolean;
+}
+
+export interface OracleStandbyLogChangedPayload extends OracleDeviceRef {
+  group: number;
+  members: readonly string[];
+  sizeBytes: number;
+  dropped: boolean;
 }
 
 export interface OracleTablespaceStatusChangedPayload extends OracleDeviceRef {
@@ -641,6 +653,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.standby.datafile-received';          payload: OracleStandbyDatafileReceivedPayload }
   | { topic: 'oracle.standby.managed-recovery-changed';  payload: OracleStandbyManagedRecoveryChangedPayload }
   | { topic: 'oracle.dataguard.switchover-requested';    payload: OracleDataGuardSwitchoverRequestedPayload }
+  | { topic: 'oracle.dataguard.broker-command-requested'; payload: OracleBrokerCommandRequestedPayload }
   | { topic: 'oracle.nonlogged-block.recorded';          payload: OracleNonloggedBlockRecordedPayload }
   | { topic: 'oracle.nonlogged-block.cleared';           payload: OracleNonloggedBlockClearedPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }
@@ -655,6 +668,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
   | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
   | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
+  | { topic: 'oracle.redo.standby-log-changed';          payload: OracleStandbyLogChangedPayload }
   | { topic: 'oracle.storage.checkpoint-completed';      payload: OracleCheckpointCompletedPayload }
   | { topic: 'oracle.storage.tablespace-encrypted';      payload: OracleTablespaceEncryptedPayload }
   | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }

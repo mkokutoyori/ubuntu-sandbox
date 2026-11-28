@@ -219,7 +219,7 @@ export class ReactiveRmanSubShell implements ISubShell {
       case 'RESTORE_DATAFILE_COMPLETED':
         // We emit one "restore complete" line per file; collapsing later
         // is the SubShell's prerogative if needed.
-        this._push(`channel ORA_DISK_1: restore complete, elapsed time: 00:00:25`);
+        this._push(`channel ORA_DISK_1: restore complete, elapsed time: ${formatElapsed(e.elapsedMs)}`);
         break;
       case 'RECOVER_STARTED':
         // Le PROGRESS_UPDATED 'start_recover' a déjà imprimé
@@ -242,7 +242,7 @@ export class ReactiveRmanSubShell implements ISubShell {
         );
         break;
       case 'RECOVER_COMPLETED':
-        this._push('media recovery complete, elapsed time: 00:00:03');
+        this._push(`media recovery complete, elapsed time: ${formatElapsed(e.elapsedMs)}`);
         break;
       case 'VALIDATION_REPORT':
         if (e.files.length > 0) {

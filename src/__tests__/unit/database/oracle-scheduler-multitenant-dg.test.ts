@@ -152,15 +152,15 @@ describe('Data Guard', () => {
     sh.dispose();
   });
 
-  it('V$STANDBY_LOG surfaces the standby redo group', () => {
+  it('V$STANDBY_LOG lists standby redo log groups, not standby databases', () => {
     const { sh, deviceId } = newSession('dg-3');
     const db = getOracleDatabase(deviceId);
     db.instance.dataGuard.addStandby(new StandbyDatabase({
       dbUniqueName: 'ORCL_STBY2', host: 'dr2', role: 'PHYSICAL STANDBY', applyMode: 'APPLYING',
     }));
-    const out = run(sh, 'SELECT GROUP#, STATUS, DBID FROM V$STANDBY_LOG;');
-    expect(out).toMatch(/ORCL_STBY2/);
-    expect(out).toMatch(/ACTIVE/);
+    expect(run(sh, 'SELECT GROUP#, STATUS, DBID FROM V$STANDBY_LOG;')).toMatch(/no rows selected/);
+    expect(run(sh, "ALTER DATABASE ADD STANDBY LOGFILE GROUP 11 ('/u01/app/oracle/oradata/ORCL/srl11.log') SIZE 50M;")).toMatch(/Database altered/);
+    expect(run(sh, 'SELECT GROUP#, STATUS, DBID FROM V$STANDBY_LOG;')).toMatch(/11\s+UNASSIGNED\s+UNASSIGNED/);
     sh.dispose();
   });
 });
