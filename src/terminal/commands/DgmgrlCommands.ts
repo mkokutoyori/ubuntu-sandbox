@@ -28,27 +28,34 @@ const PROTECTION_LABEL: Readonly<Record<ProtectionMode, string>> = {
 
 const IDENTITY = { osUser: 'oracle', osGroup: 'dba', hostname: 'primary', terminal: 'unknown', program: 'dgmgrl' };
 
+interface BrokerMember {
+  identifier: string;
+  logXptMode: 'SYNC' | 'ASYNC';
+  needsReinstate?: boolean;
+}
+
 interface BrokerState {
   created: boolean;
   enabled: boolean;
   configurationName: string;
   primaryName: string;
   primaryIdentifier: string;
+  divergenceScn: number;
   self: string;
   fsfo: { enabled: boolean; threshold: number; target: string | null };
   observers: { name: string; host: string }[];
   protectionMode: ProtectionMode;
-  members: Map<string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }>;
+  members: Map<string, BrokerMember>;
 }
 
 const CONFIG_PARAMETER = '_dg_broker_config';
 
-const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', self: '', fsfo: { enabled: false, threshold: 30, target: null }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
+const emptyState = (): BrokerState => ({ created: false, enabled: false, configurationName: '', primaryName: '', primaryIdentifier: '', divergenceScn: 0, self: '', fsfo: { enabled: false, threshold: 30, target: null }, observers: [], protectionMode: 'MAXIMUM PERFORMANCE', members: new Map() });
 
 function stateOf(instance: OracleInstance): BrokerState {
   const stored = instance.getParameter(CONFIG_PARAMETER);
   if (stored === undefined || stored === '') return emptyState();
-  const parsed = JSON.parse(stored) as Omit<BrokerState, 'members'> & { members: [string, { identifier: string; logXptMode: 'SYNC' | 'ASYNC' }][] };
+  const parsed = JSON.parse(stored) as Omit<BrokerState, 'members'> & { members: [string, BrokerMember][] };
   return { ...emptyState(), ...parsed, fsfo: { ...emptyState().fsfo, ...parsed.fsfo }, members: new Map(parsed.members) };
 }
 
@@ -71,7 +78,7 @@ function save(device: HostCapableDevice, instance: OracleInstance, state: Broker
   return failures;
 }
 
-const MUTATING = /^(CREATE|ADD|ENABLE|DISABLE|REMOVE|EDIT|STOP|REGISTER|OBSERVER)\b/i;
+const MUTATING = /^(CREATE|ADD|ENABLE|DISABLE|REMOVE|EDIT|STOP|REGISTER|OBSERVER|REINSTATE)\b/i;
 
 export function __resetBrokers(): void { /* the configuration lives in each instance's parameters */ }
 
@@ -120,10 +127,12 @@ function roleOf(instance: OracleInstance, state: BrokerState, name: string): str
 const FSFO_MODE_LABEL = (state: BrokerState): string => (state.protectionMode === 'MAXIMUM PERFORMANCE' ? 'Enabled' : 'Enabled in Zero Data Loss Mode');
 
 function showConfiguration(device: HostCapableDevice, instance: OracleInstance, state: BrokerState): string[] {
-  const lacking = new Set([...state.members.keys()].filter((name) => standbyLogsOf(device, instance, state, name) === 0));
+  const needing = [...state.members].some(([, member]) => member.needsReinstate === true);
+  const lacking = new Set([...state.members].filter(([name, member]) => member.needsReinstate !== true && standbyLogsOf(device, instance, state, name) === 0).map(([name]) => name));
   const lines = ['', `Configuration - ${state.configurationName.toLowerCase()}`, '', `  Protection Mode: ${PROTECTION_LABEL[instance.databaseRole === 'PRIMARY' ? instance.protectionMode : state.protectionMode]}`, '  Members:'];
   for (const name of [state.primaryName, ...state.members.keys()]) {
     lines.push(`  ${name} - ${roleLabel(roleOf(instance, state, name))}`);
+    if (state.members.get(name)?.needsReinstate === true) lines.push(`    Error: ${ORACLE_ERRORS.ORA_16661}`);
     if (lacking.has(name)) lines.push(`    Error: ${SRL_MESSAGE}`);
     if (state.fsfo.enabled && state.observers.length === 0 && (name === state.primaryName || state.members.has(name))) lines.push(`    Warning: ${ORACLE_ERRORS.ORA_16819}`);
   }
@@ -135,6 +144,7 @@ function showConfiguration(device: HostCapableDevice, instance: OracleInstance, 
   const unobserved = state.fsfo.enabled && state.observers.length === 0;
   lines.push('', 'Configuration Status:');
   if (!state.enabled) lines.push('DISABLED');
+  else if (needing) lines.push('ERROR');
   else if (lacking.size > 0) lines.push(SRL_MESSAGE, 'ERROR');
   else if (unobserved) lines.push('WARNING');
   else if (failing) lines.push(`${ORACLE_ERRORS.ORA_16778}`, 'ERROR');
@@ -253,7 +263,7 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     instance.dataGuard.configurationName = state.configurationName;
     return [`Configuration "${unquote(create[1]).toLowerCase()}" created with primary database "${primary}"`];
   }
-  if (!/^(CREATE|ADD|ENABLE|DISABLE|REMOVE|SHOW|EDIT|SWITCHOVER|FAILOVER|STOP|REGISTER|OBSERVER|EXPORT)\b/.test(upper)) return [`DGM-16905: syntax error at or near "${text.split(/\s+/)[0]}"`];
+  if (!/^(CREATE|ADD|ENABLE|DISABLE|REMOVE|SHOW|EDIT|SWITCHOVER|FAILOVER|STOP|REGISTER|OBSERVER|EXPORT|REINSTATE)\b/.test(upper)) return [`DGM-16905: syntax error at or near "${text.split(/\s+/)[0]}"`];
   if (upper.startsWith('CREATE ')) return [`DGM-16905: syntax error`];
   const failover = /^FAILOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (failover) {
@@ -263,7 +273,10 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
     if (answer !== 'Database altered.') return ['Performing failover NOW, please wait...', `Error: ${answer}`];
     if (state.created) {
       state.members.delete(target);
+      state.members.set(state.primaryName, { identifier: state.primaryIdentifier, logXptMode: 'ASYNC', needsReinstate: true });
       state.primaryName = target;
+      state.primaryIdentifier = `${primaryIpv4(device) ?? 'localhost'}:1521/${instance.config.sid.toUpperCase()}`;
+      state.divergenceScn = instance.getCurrentScn();
       state.self = target;
       state.fsfo.enabled = false;
       instance.setParameter(CONFIG_PARAMETER, serialize(state, target), 'BOTH');
@@ -395,6 +408,31 @@ function execute(device: HostCapableDevice, instance: OracleInstance, state: Bro
   }
   if (upper === 'SHOW FAST_START FAILOVER') return showFastStartFailover(instance, state);
   if (upper === 'SHOW OBSERVER') return showObserver(instance, state, nowMs);
+  const reinstate = /^REINSTATE\s+DATABASE\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
+  if (reinstate) {
+    const name = unquote(reinstate[1]).toUpperCase();
+    const member = state.members.get(name);
+    if (member === undefined) return [`Error: ${ORACLE_ERRORS.ORA_16541}`];
+    const lines = [`Reinstating database "${name}", please wait...`];
+    if (member.needsReinstate !== true) return [...lines, `Error: ${ORACLE_ERRORS.ORA_16653}`];
+    for (const statement of [`FLASHBACK DATABASE TO BEFORE SCN ${state.divergenceScn}`, 'ALTER DATABASE CONVERT TO PHYSICAL STANDBY']) {
+      const done = remoteExecute(device, member.identifier, [statement]);
+      if (done.ok === false) {
+        instance.logAlertEvent(`Data Guard broker: REINSTATE DATABASE ${name} failed on "${statement}": ${done.error}`);
+        return [...lines, `Error: ${ORACLE_ERRORS.ORA_16653}`];
+      }
+      const refused = done.outputs[0].split('\n').find((line) => /^ORA-\d+/.test(line.trim()));
+      if (refused !== undefined) {
+        instance.logAlertEvent(`Data Guard broker: REINSTATE DATABASE ${name} failed on "${statement}": ${refused.trim()}`);
+        return [...lines, `Error: ${ORACLE_ERRORS.ORA_16653}`];
+      }
+    }
+    member.needsReinstate = false;
+    destinationFor(instance, name, member.identifier, member.logXptMode);
+    remoteExecute(device, member.identifier, ['ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION']);
+    instance.switchLogfile();
+    return [...lines, `Reinstatement of database "${name}" succeeded`];
+  }
   const switchover = /^SWITCHOVER\s+TO\s+('[^']*'|"[^"]*"|\S+)$/i.exec(text);
   if (switchover) {
     const target = unquote(switchover[1]).toUpperCase();

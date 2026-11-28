@@ -215,6 +215,8 @@ export const ORACLE_ERRORS = {
   ORA_16626: 'ORA-16626: failed to enable specified member',
   ORA_16698: 'ORA-16698: member has a LOG_ARCHIVE_DEST_n parameter setting conflict',
   ORA_16778: 'ORA-16778: redo transport error for one or more members',
+  ORA_16661: 'ORA-16661: the standby database needs to be reinstated',
+  ORA_16653: 'ORA-16653: failed to reinstate database',
 } as const;
 
 export function oracleError(template: string, ...values: readonly (string | number)[]): string {

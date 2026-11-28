@@ -159,6 +159,11 @@ export class InstanceAdminExecutor {
       if (answer !== 'Database altered.') throw new OracleError(oracleErrorCode(answer), answer.replace(/^ORA-\d+:\s*/, ''));
       return emptyResult(answer);
     }
+    if (/^\s*CONVERT\s+TO\s+PHYSICAL\s+STANDBY\s*$/i.test(stmt.action)) {
+      const answer = this.instance.convertToPhysicalStandby();
+      if (answer !== 'Database altered.') throw new OracleError(oracleErrorCode(answer), answer.replace(/^ORA-\d+:\s*/, ''));
+      return emptyResult(answer);
+    }
     const flashbackMode = /^\s*FLASHBACK\s+(ON|OFF)\s*$/i.exec(stmt.action);
     if (flashbackMode) {
       const answer = this.instance.setFlashbackMode(flashbackMode[1].toUpperCase() === 'ON');

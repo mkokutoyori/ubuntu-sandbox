@@ -1656,6 +1656,14 @@ export class OracleInstance {
     return 'Database altered.';
   }
 
+  convertToPhysicalStandby(): string {
+    if (this._state !== 'MOUNT') return ORACLE_ERRORS.ORA_01126;
+    this.setDatabaseRole('PHYSICAL STANDBY');
+    this._resetlogsRequired = false;
+    this.logAlert('ALTER DATABASE CONVERT TO PHYSICAL STANDBY');
+    return 'Database altered.';
+  }
+
   flashbackDatabase(target: FlashbackTarget): string {
     if (this._state !== 'MOUNT') return `${ORACLE_ERRORS.ORA_38757}`;
     if (!this._archiveLogMode) return `${ORACLE_ERRORS.ORA_38707}`;
