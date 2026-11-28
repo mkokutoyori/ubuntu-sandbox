@@ -476,9 +476,9 @@ export class RmanJobEngine implements IRmanJobEngine {
     return out;
   }
 
-  private _restoreArchivedLogFromBackup(path: string): boolean {
+  private _restoreArchivedLogFromBackup(path: string): string | null {
     const snap = this._catalog.listAll();
-    if (snap.ok === false) return false;
+    if (snap.ok === false) return null;
     for (const set of snap.value.sets) {
       if (set.type !== 'ARCHIVELOG') continue;
       for (const piece of set.pieces) {
@@ -488,10 +488,10 @@ export class RmanJobEngine implements IRmanJobEngine {
         const body = image?.archivedLogs?.[path];
         if (body === undefined) continue;
         const written = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
-        if (written.ok) return true;
+        if (written.ok) return piece.path;
       }
     }
-    return false;
+    return null;
   }
 
   private _applyArchivedLogs(paths: ReadonlyArray<string>, untilScn?: number): void {
@@ -973,8 +973,14 @@ export class RmanJobEngine implements IRmanJobEngine {
           + ` with sequence 1 and starting SCN of ${this._restoredScn}`,
       });
     }
-    const absent = logs.filter(l =>
-      !this._ctx.vfs.fileExists(l.path) && !this._restoreArchivedLogFromBackup(l.path));
+    const restoredFrom = new Map<string, string>();
+    const absent = logs.filter(l => {
+      if (this._ctx.vfs.fileExists(l.path)) return false;
+      const piece = this._restoreArchivedLogFromBackup(l.path);
+      if (piece === null) return true;
+      restoredFrom.set(l.path, piece);
+      return false;
+    });
     if (absent.length > 0) {
       return err({
         code: 'RMAN_06053',
@@ -990,7 +996,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       const firstScn = log.firstScn > 0 ? log.firstScn : log.sequence;
       this._bus.emit({
         type: 'ARCHIVELOG_APPLIED', jobId: job.id,
-        thread: log.thread, sequence: log.sequence, path: log.path,
+        thread: log.thread, sequence: log.sequence, path: log.path, restoredFrom: restoredFrom.get(log.path),
         firstScn, nextScn: log.nextScn > firstScn ? log.nextScn : firstScn + 1,
       });
     }
