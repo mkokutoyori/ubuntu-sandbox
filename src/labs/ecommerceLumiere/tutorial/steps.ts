@@ -8,7 +8,7 @@ const LOGS = '/home/oracle/logs';
 const ALERT_LOG = '/u01/app/oracle/diag/rdbms/orcl/ORCL/trace/alert_ORCL.log';
 const CF_FORMAT = '/backup/cf_%F';
 
-type Extra = Pick<TutorialStep, 'forbids' | 'capture' | 'head' | 'tail'>;
+type Extra = Pick<TutorialStep, 'forbids' | 'capture' | 'head' | 'tail' | 'advanceMs'>;
 
 function step(kind: StepKind, id: string, device: string, user: 'root' | 'oracle', input: string, expects: readonly RegExp[], extra: Extra = {}): TutorialStep {
   return { id, device, user, kind, input, expects, ...extra };
@@ -137,6 +137,8 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   oracle('dr-broker-standby', STB, "dgmgrl / <<'E'\nSHOW CONFIGURATION;\nE", [/Configuration - lumiere_dg/, /ORCL - Primary database/, /ORCL_STB - Physical standby database/, /SUCCESS/]),
   oracle('dr-protection', PRD, "dgmgrl / <<'E'\nEDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;\nEDIT DATABASE 'ORCL_STB' SET PROPERTY LogXptMode='SYNC';\nEDIT CONFIGURATION SET PROTECTION MODE AS MaxAvailability;\nSHOW CONFIGURATION;\nE", [/ORA-16627/, /Succeeded\./, /Protection Mode: MaxAvailability/]),
   sql('dr-niveau', 'SELECT protection_mode, protection_level FROM v$database;', [/MAXIMUM AVAILABILITY\s+MAXIMUM AVAILABILITY/]),
+  oracle('dr-fsfo', 'BKP-HQ', "dgmgrl sys/oracle@10.10.30.10:1521/ORCL <<'E'\nENABLE FAST_START FAILOVER;\nSTART OBSERVER observateur1;\nSHOW FAST_START FAILOVER;\nE", [/Enabled in Zero Data Loss Mode\./, /Observer started/, /Active Target:\s+ORCL_STB/, /Threshold:\s+30 seconds/]),
+  oracle('dr-observateur', 'BKP-HQ', "dgmgrl sys/oracle@10.10.30.10:1521/ORCL <<'E'\nSHOW OBSERVER;\nE", [/Observer "observateur1" - Master/, /Last Ping to Primary:\s+\d+ seconds? ago/], { advanceMs: 9000 }),
   sql('dr-commande', "INSERT INTO shop.orders VALUES (3001, 2, SYSDATE, 'NEW', 42);\nCOMMIT;\nALTER SYSTEM SWITCH LOGFILE;\nINSERT INTO shop.orders VALUES (3002, 3, SYSDATE, 'NEW', 17);\nCOMMIT;\nSELECT dest_id, status, destination FROM v$archive_dest WHERE dest_id <= 2;", [/10\.20\.30\.10:1521\/ORCL/, /VALID/]),
   sql('dr-lecture', 'SELECT COUNT(*) AS logs_appliques FROM v$archived_log WHERE applied = \'YES\';\nALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL;\nALTER DATABASE OPEN READ ONLY;\nSELECT COUNT(*) AS commande_3001 FROM shop.orders WHERE order_id = 3001;\nSELECT COUNT(*) AS commande_3002 FROM shop.orders WHERE order_id = 3002;', [/LOGS_APPLIQUES/, /COMMANDE_3001/, /COMMANDE_3002/, /READ ONLY|Database altered/], undefined, STB),
   sql('dr-sinistre', 'SHUTDOWN ABORT', [/ORACLE instance shut down/]),

@@ -1141,6 +1141,22 @@ Le broker ne laisse activer un mode synchrone que si un membre est lui-même **s
 
 👀 **Lire la sortie.** `PROTECTION_MODE` est le mode **demandé**, `PROTECTION_LEVEL` celui qui est **effectivement tenu** à cet instant (il passerait à `RESYNCHRONIZATION` si la standby se taisait, et à `UNPROTECTED` sans destination synchrone). `MAXIMUM PROTECTION` se règle de la même façon, mais base **montée** (`ORA-01126` sinon) : la production **s'arrêterait** à la première validation sans accusé.
 
+### 14.6 bis — Armer la bascule automatique (*fast-start failover*)
+
+🧠 **Comprendre.** Plus loin (14.8) c'est **toi** qui taperas `FAILOVER`. En production, personne n'est là à 3 h du matin : le **fast-start failover** confie la décision à un petit programme, l'**observateur** (*observer*), lancé sur une **troisième machine** pour qu'il ne tombe pas avec le siège. Il sonde la primaire toutes les 3 secondes ; si elle se tait depuis `FastStartFailoverThreshold` secondes (**30** par défaut) **et** que la standby répond, il fait lui-même le `FAILOVER` et ouvre la nouvelle primaire. Les commandes, dans l'ordre. L'observateur tourne ici sur `BKP-HQ`, une machine **qui ne porte pas la base** : la production peut brûler, lui reste debout.
+
+🔧 **Manipuler.**
+
+{{step:dr-fsfo}}
+
+👀 **Lire la sortie.** `Enabled in Zero Data Loss Mode.` : la bascule automatique est armée, *sans perte possible* puisque la standby est en `SYNC`. `Observer started` : l'observateur surveille. Dans `SHOW FAST_START FAILOVER`, retiens `Threshold: 30 seconds` (le silence toléré), `Active Target: ORCL_STB` (qui sera promue) et `Observer:` (qui surveille). Quelques secondes plus tard, l'observateur est enregistré et il a déjà sondé les deux bases :
+
+{{step:dr-observateur}}
+
+Deux conditions, que le simulateur vérifie : le mode de protection doit être `MaxAvailability` et la standby doit être en `SYNC` (sinon `ORA-16693`). Tant qu'aucun observateur n'est démarré, `SHOW CONFIGURATION` affiche `ORA-16819: fast-start failover observer not started` sous chaque membre. `STOP OBSERVER` et `DISABLE FAST_START FAILOVER` ferment la porte.
+
+> ℹ️ Le **déclenchement** (la primaire se tait 30 secondes, l'observateur bascule seul) n'est pas rejoué ici : le 14.8 bascule à la main juste après, et la base ne peut tomber qu'une fois. C'est le test `oracle-dgmgrl-observer` du dépôt qui le rejoue de bout en bout : la bascule au bout du seuil, rien avant, l'arrêt de l'observateur, la désactivation et le refus d'un quatrième observateur.
+
 ### 14.7 Une commande tombe, elle arrive de l'autre côté
 
 🔧 **Manipuler.** Deux commandes validées : la `3001`, suivie d'un **changement de journal**, et la `3002`, validée **sans** changement de journal.
@@ -1166,22 +1182,6 @@ Sur le site de reprise, on **promeut** la standby :
 👀 **Lire la sortie.** `ALTER DATABASE FAILOVER TO ORCL` fait de la standby la **base primaire**, ouverte en `READ WRITE`. Les commandes `3001` **et** `3002` sont là : **aucune transaction validée n'a été perdue**. Il ne reste qu'à pointer les frontaux web (`WEB-DR`) sur cette base. (Avec le broker, la même opération se tape `FAILOVER TO 'ORCL_STB'` dans `dgmgrl`, connecté à la standby ; la bascule **programmée** depuis la production est `SWITCHOVER TO 'ORCL_STB'`.)
 
 ⚠️ **Piège.** Un `FAILOVER` est **à sens unique** : l'ancienne primaire, si elle revient, **ne peut plus rejoindre** la configuration sans être reconstruite. Un `SWITCHOVER`, lui, est réversible : c'est l'opération **planifiée**.
-
-### Pour aller plus loin : que la bascule se fasse toute seule
-
-🧠 **Comprendre.** Au chapitre précédent c'est **toi** qui as tapé `FAILOVER`. En production, personne n'est là à 3 h du matin : le **fast-start failover** confie la décision à un petit programme, l'**observateur** (*observer*), lancé sur une **troisième machine** pour qu'il ne tombe pas avec le siège. Il sonde la primaire toutes les 3 secondes ; si elle se tait depuis `FastStartFailoverThreshold` secondes (**30** par défaut) **et** que la standby répond, il fait lui-même le `FAILOVER` et ouvre la nouvelle primaire. Les commandes, dans l'ordre :
-
-```
-DGMGRL> ENABLE FAST_START FAILOVER;
-Enabled in Zero Data Loss Mode.
-DGMGRL> START OBSERVER;
-Observer started
-DGMGRL> SHOW FAST_START FAILOVER;
-```
-
-Deux conditions, que le simulateur vérifie : le mode de protection doit être `MaxAvailability` et la standby doit être en `SYNC` (sinon `ORA-16693`). Tant qu'aucun observateur n'est démarré, `SHOW CONFIGURATION` affiche `ORA-16819: fast-start failover observer not started` sous chaque membre. `STOP OBSERVER` et `DISABLE FAST_START FAILOVER` ferment la porte.
-
-> ℹ️ Ce passage est **décrit** et non rejoué dans ce document, parce qu'il faut faire avancer l'horloge de 30 secondes après l'arrêt de la primaire : c'est le test `oracle-dgmgrl-observer` du dépôt qui le rejoue, et qui vérifie la bascule, l'arrêt de l'observateur et le refus d'un quatrième observateur.
 
 ### ✅ La leçon
 
@@ -1367,13 +1367,13 @@ Un tutoriel honnête dit où s'arrête son terrain. Pendant la rédaction de ce 
 | Les modes de protection Data Guard sont **imposés** (redo synchrone au `COMMIT`, arrêt de la primaire sous `MAXIMUM PROTECTION`) et le broker (`dgmgrl`) existe | chapitre 14 |
 | La configuration du broker est **répliquée** sur chaque membre : `SHOW CONFIGURATION` la lit aussi sur la standby | chapitre 14 |
 | Un changement tapé sur une standby, ou dans une session `dgmgrl` distante, est **routé vers la primaire** par le broker | chapitre 14.5 |
-| Le **fast-start failover** : `ENABLE FAST_START FAILOVER`, un **observateur** (`START OBSERVER`) qui sonde la primaire et bascule seul au bout du seuil | chapitre 14.8 (décrit) et test `oracle-dgmgrl-observer` |
+| Le **fast-start failover** : `ENABLE FAST_START FAILOVER`, un **observateur** (`START OBSERVER`) qui sonde la primaire et bascule seul au bout du seuil | chapitre 14.6 bis (armement et observation rejoués) et test `oracle-dgmgrl-observer` (déclenchement) |
 
 Ce qui reste hors du terrain :
 
 | Écart | Ce que fait un vrai Oracle | Ce que fait le simulateur |
 |---|---|---|
-| Le broker : mode **Potential Data Loss** (`MaxPerformance` avec une limite de retard), réinstallation automatique de l'ancienne primaire (*auto-reinstate*), observateurs multiples avec bascule du maître | Fonctionnent | Le *fast-start failover* en mode **Zero Data Loss** est réel (voir la fin du chapitre 14) ; les autres modes ne sont pas implémentés, l'ancienne primaire n'est pas réinstallée et `START OBSERVER` rend la main au lieu de bloquer |
+| Le broker : mode **Potential Data Loss** (`MaxPerformance` avec une limite de retard), réinstallation automatique de l'ancienne primaire (*auto-reinstate*), observateurs multiples avec bascule du maître | Fonctionnent | Le *fast-start failover* en mode **Zero Data Loss** est réel (voir le chapitre 14.6 bis) ; les autres modes ne sont pas implémentés, l'ancienne primaire n'est pas réinstallée et `START OBSERVER` rend la main au lieu de bloquer |
 | Temps de sauvegarde et de restauration | Dépend du disque, du réseau et de la charge | Une **seule règle** : taille du fichier ÷ **50 Mo/s** (minimum 1 s), la même pour `BACKUP`, `RESTORE` et `RECOVER`, et l'horloge de la machine avance d'autant. Le débit est un **modèle**, pas une mesure de disque : compare les durées entre elles, pas à ta production |
 
 ---

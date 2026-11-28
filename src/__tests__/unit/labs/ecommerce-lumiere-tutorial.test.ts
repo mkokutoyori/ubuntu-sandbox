@@ -19,6 +19,7 @@ import { __setLegacyRouterPortCount, __setInterfacesBootShutdown } from '@/netwo
 import { __setOpenNoarchivelogBackupAllowed } from '@/terminal/subshells/rman/job/NoarchivelogBackupPolicy';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
 import type { Equipment } from '@/network';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { runTutorial } from '@/labs/ecommerceLumiere/tutorial/engine';
 import { renderTutorial } from '@/labs/ecommerceLumiere/tutorial/render';
 import { TUTORIAL_STEPS } from '@/labs/ecommerceLumiere/tutorial/steps';
@@ -28,6 +29,7 @@ const TEMPLATE_FILE = resolve(process.cwd(), 'src/labs/ecommerceLumiere/tutorial
 const README_FILE = resolve(process.cwd(), 'labs/ecommerce-lumiere/tutoriel-oracle-rman/README.md');
 
 beforeEach(() => {
+  __setDefaultScheduler(new VirtualTimeScheduler());
   __setLegacyRouterPortCount(null);
   __setSuperuserIsOsdba(false);
   __setOpenNoarchivelogBackupAllowed(false);

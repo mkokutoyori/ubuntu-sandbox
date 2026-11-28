@@ -1,4 +1,5 @@
 import type { Equipment } from '@/network';
+import { getDefaultScheduler } from '@/events/Scheduler';
 
 export type StepKind = 'shell' | 'sql' | 'rman';
 
@@ -13,6 +14,7 @@ export interface TutorialStep {
   readonly capture?: Readonly<Record<string, RegExp>>;
   readonly head?: number;
   readonly tail?: number;
+  readonly advanceMs?: number;
 }
 
 export interface TutorialPart {
@@ -76,6 +78,8 @@ export async function runTutorial(devices: ReadonlyMap<string, Equipment>, steps
   for (const step of steps) {
     const device = devices.get(step.device) as unknown as SessionCapableDevice | undefined;
     if (device === undefined) throw new Error(`tutorial step ${step.id}: no device named ${step.device}`);
+    const scheduler = getDefaultScheduler() as { advance?: (ms: number) => void };
+    if (step.advanceMs !== undefined && scheduler.advance !== undefined) scheduler.advance(step.advanceMs);
     const user = step.user ?? 'root';
     const key = `${step.device}/${user}`;
     if (device.openShellSession !== undefined && !sessions.has(key)) sessions.set(key, device.openShellSession({ user }));
